@@ -1,0 +1,79 @@
+name: Deploy Metron
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: make test
+
+      - name: Build Metron binary
+        run: |
+          mkdir -p build
+          go build -o build/metron ./cmd/metron
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metron-binary
+          path: build/metron
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download built binary
+        uses: actions/download-artifact@v4
+        with:
+          name: metron-binary
+          path: .
+
+      - name: Copy binary to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "metron"
+          target: "/opt/metron/metron"
+          overwrite: true
+
+      - name: Upload config.json from secret
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            echo '${{ secrets.METRON_CONFIG_JSON }}' | sudo tee /opt/metron/config.json > /dev/null
+            sudo chmod 600 /opt/metron/config.json
+            sudo chown metron:metron /opt/metron/config.json
+
+      - name: Restart Metron service
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            sudo chmod +x /opt/metron/metron
+            sudo systemctl daemon-reload
+            sudo systemctl restart metron
+            sudo systemctl status metron --no-pager
