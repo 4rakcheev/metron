@@ -1,0 +1,39 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "database": {
+    "path": "./metron.db"
+  },
+  "security": {
+    "api_key": "your-secret-api-key-here",
+    "allowed_ips": [],
+    "enable_ip_check": false
+  },
+  "telegram": {
+    "bot_token": "your-telegram-bot-token",
+    "webhook_url": "https://your-domain.com/telegram/webhook",
+    "webhook_secret": "your-webhook-secret",
+    "allowed_users": [123456789]
+  },
+  "aqara": {
+    "app_id": "your-aqara-app-id",
+    "app_key": "your-aqara-app-key",
+    "key_id": "your-aqara-key-id",
+    "access_token": "your-aqara-access-token",
+    "base_url": "https://open-cn.aqara.com",
+    "devices": [
+      {
+        "id": "device-id-1",
+        "name": "Living Room TV",
+        "device_type": "tv"
+      }
+    ],
+    "scenes": {
+      "tv_pin_entry": "scene-id-for-pin-entry",
+      "tv_warning": "scene-id-for-warning",
+      "tv_power_off": "scene-id-for-power-off"
+    }
+  }
+}
