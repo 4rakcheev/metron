@@ -62,9 +62,10 @@ func TestDriver_StartSession(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request method and path
 		assert.Equal(t, "POST", r.Method)
-		assert.Equal(t, "/open/api/v1/scene/run", r.URL.Path)
+		assert.Equal(t, "/v3.0/open/api", r.URL.Path)
 
 		// Verify headers
+		assert.NotEmpty(t, r.Header.Get("Accesstoken"))
 		assert.NotEmpty(t, r.Header.Get("Appid"))
 		assert.NotEmpty(t, r.Header.Get("Keyid"))
 		assert.NotEmpty(t, r.Header.Get("Time"))
@@ -79,24 +80,30 @@ func TestDriver_StartSession(t *testing.T) {
 		var req map[string]interface{}
 		err = json.Unmarshal(body, &req)
 		require.NoError(t, err)
-		assert.Equal(t, "pin-scene-123", req["sceneId"])
+		assert.Equal(t, "config.scene.run", req["intent"])
+		data, ok := req["data"].(map[string]interface{})
+		require.True(t, ok, "data field should be a map")
+		assert.Equal(t, "pin-scene-123", data["sceneId"])
 
 		// Send success response
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code":    0,
-			"message": "success",
+			"code":      0,
+			"message":   "success",
+			"result":    map[string]interface{}{},
+			"requestId": "test-request-id",
 		})
 	}))
 	defer server.Close()
 
 	// Create driver
 	driver := NewDriver(Config{
-		AppID:      "test-app-id",
-		AppKey:     "test-app-key",
-		KeyID:      "test-key-id",
-		BaseURL:    server.URL,
-		PINSceneID: "pin-scene-123",
+		AppID:       "test-app-id",
+		AppKey:      "test-app-key",
+		KeyID:       "test-key-id",
+		AccessToken: "test-access-token",
+		BaseURL:     server.URL,
+		PINSceneID:  "pin-scene-123",
 	})
 
 	// Test StartSession
@@ -132,6 +139,10 @@ func TestDriver_StartSession_NoPINScene(t *testing.T) {
 func TestDriver_StopSession(t *testing.T) {
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify request method and path
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/v3.0/open/api", r.URL.Path)
+
 		// Verify body
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -139,24 +150,30 @@ func TestDriver_StopSession(t *testing.T) {
 		var req map[string]interface{}
 		err = json.Unmarshal(body, &req)
 		require.NoError(t, err)
-		assert.Equal(t, "off-scene-456", req["sceneId"])
+		assert.Equal(t, "config.scene.run", req["intent"])
+		data, ok := req["data"].(map[string]interface{})
+		require.True(t, ok, "data field should be a map")
+		assert.Equal(t, "off-scene-456", data["sceneId"])
 
 		// Send success response
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code":    0,
-			"message": "success",
+			"code":      0,
+			"message":   "success",
+			"result":    map[string]interface{}{},
+			"requestId": "test-request-id",
 		})
 	}))
 	defer server.Close()
 
 	// Create driver
 	driver := NewDriver(Config{
-		AppID:      "test-app-id",
-		AppKey:     "test-app-key",
-		KeyID:      "test-key-id",
-		BaseURL:    server.URL,
-		OffSceneID: "off-scene-456",
+		AppID:       "test-app-id",
+		AppKey:      "test-app-key",
+		KeyID:       "test-key-id",
+		AccessToken: "test-access-token",
+		BaseURL:     server.URL,
+		OffSceneID:  "off-scene-456",
 	})
 
 	// Test StopSession
@@ -173,6 +190,10 @@ func TestDriver_StopSession(t *testing.T) {
 func TestDriver_ApplyWarning(t *testing.T) {
 	// Create mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify request method and path
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/v3.0/open/api", r.URL.Path)
+
 		// Verify body
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err)
@@ -180,13 +201,18 @@ func TestDriver_ApplyWarning(t *testing.T) {
 		var req map[string]interface{}
 		err = json.Unmarshal(body, &req)
 		require.NoError(t, err)
-		assert.Equal(t, "warn-scene-789", req["sceneId"])
+		assert.Equal(t, "config.scene.run", req["intent"])
+		data, ok := req["data"].(map[string]interface{})
+		require.True(t, ok, "data field should be a map")
+		assert.Equal(t, "warn-scene-789", data["sceneId"])
 
 		// Send success response
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"code":    0,
-			"message": "success",
+			"code":      0,
+			"message":   "success",
+			"result":    map[string]interface{}{},
+			"requestId": "test-request-id",
 		})
 	}))
 	defer server.Close()
@@ -196,6 +222,7 @@ func TestDriver_ApplyWarning(t *testing.T) {
 		AppID:       "test-app-id",
 		AppKey:      "test-app-key",
 		KeyID:       "test-key-id",
+		AccessToken: "test-access-token",
 		BaseURL:     server.URL,
 		WarnSceneID: "warn-scene-789",
 	})
@@ -244,11 +271,12 @@ func TestDriver_APIError(t *testing.T) {
 
 	// Create driver
 	driver := NewDriver(Config{
-		AppID:      "test-app-id",
-		AppKey:     "test-app-key",
-		KeyID:      "test-key-id",
-		BaseURL:    server.URL,
-		PINSceneID: "invalid-scene",
+		AppID:       "test-app-id",
+		AppKey:      "test-app-key",
+		KeyID:       "test-key-id",
+		AccessToken: "test-access-token",
+		BaseURL:     server.URL,
+		PINSceneID:  "invalid-scene",
 	})
 
 	// Test StartSession with API error
@@ -273,11 +301,12 @@ func TestDriver_HTTPError(t *testing.T) {
 
 	// Create driver
 	driver := NewDriver(Config{
-		AppID:      "test-app-id",
-		AppKey:     "test-app-key",
-		KeyID:      "test-key-id",
-		BaseURL:    server.URL,
-		PINSceneID: "pin-scene-123",
+		AppID:       "test-app-id",
+		AppKey:      "test-app-key",
+		KeyID:       "test-key-id",
+		AccessToken: "test-access-token",
+		BaseURL:     server.URL,
+		PINSceneID:  "pin-scene-123",
 	})
 
 	// Test StartSession with HTTP error
@@ -311,26 +340,26 @@ func TestDriver_InterfaceImplementation(t *testing.T) {
 
 func TestGenerateSignature(t *testing.T) {
 	driver := NewDriver(Config{
-		AppID:  "test-app-id",
-		AppKey: "test-app-key",
-		KeyID:  "test-key-id",
+		AppID:       "test-app-id",
+		AppKey:      "test-app-key",
+		KeyID:       "test-key-id",
+		AccessToken: "test-access-token",
 	})
 
 	timestamp := int64(1638360000000)
 	nonce := "123456789"
-	body := `{"sceneId":"test-scene"}`
 
 	// Generate signature
-	sig1 := driver.generateSignature(timestamp, nonce, body)
+	sig1 := driver.generateSignature(timestamp, nonce)
 	assert.NotEmpty(t, sig1)
 	assert.Equal(t, 32, len(sig1)) // MD5 hash is 32 hex characters
 
 	// Same input should produce same signature
-	sig2 := driver.generateSignature(timestamp, nonce, body)
+	sig2 := driver.generateSignature(timestamp, nonce)
 	assert.Equal(t, sig1, sig2)
 
 	// Different input should produce different signature
-	sig3 := driver.generateSignature(timestamp+1, nonce, body)
+	sig3 := driver.generateSignature(timestamp+1, nonce)
 	assert.NotEqual(t, sig1, sig3)
 }
 
