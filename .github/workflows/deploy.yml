@@ -52,7 +52,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           source: "metron"
-          target: "/opt/metron"
+          target: "/opt/metron/metron_new"
           overwrite: true
 
       - name: Upload config.json from secret
@@ -65,6 +65,17 @@ jobs:
             echo '${{ secrets.METRON_CONFIG_JSON }}' > /opt/metron/config.json
             chmod 600 /opt/metron/config.json
 
+      - name: Activate new binary
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            sudo -n /usr/bin/systemctl stop metron
+            mv /opt/metron/metron_new /opt/metron/metron
+            sudo -n /usr/bin/chmod +x /opt/metron/metron
+
       - name: Restart Metron service
         uses: appleboy/ssh-action@v0.1.9
         with:
@@ -72,7 +83,6 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            sudo -n /usr/bin/chmod +x /opt/metron/metron
             sudo -n /usr/bin/systemctl daemon-reload
             sudo -n /usr/bin/systemctl restart metron
             sudo -n /usr/bin/systemctl status metron --no-pager
