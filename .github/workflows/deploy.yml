@@ -72,9 +72,9 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            sudo -n /usr/bin/systemctl stop metron
+            #sudo -n systemctl stop metron
             mv /opt/metron/metron_new/metron /opt/metron/metron
-            sudo -n /usr/bin/chmod +x /opt/metron/metron
+            sudo -n chmod +x /opt/metron/metron
 
       - name: Restart Metron service
         uses: appleboy/ssh-action@v0.1.9
@@ -83,6 +83,6 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            sudo -n /usr/bin/systemctl daemon-reload
-            sudo -n /usr/bin/systemctl restart metron
-            sudo -n /usr/bin/systemctl is-active metron
+            sudo -n systemctl daemon-reload
+            sudo -n systemctl restart metron
+            systemctl is-active metron
