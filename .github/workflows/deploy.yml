@@ -53,7 +53,6 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           source: "metron"
           target: "/opt/metron/metron_new"
-          strip_components: 1
           overwrite: true
 
       - name: Upload config.json from secret
@@ -74,7 +73,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             sudo -n /usr/bin/systemctl stop metron
-            mv /opt/metron/metron_new /opt/metron/metron
+            mv /opt/metron/metron_new/metron /opt/metron/metron
             sudo -n /usr/bin/chmod +x /opt/metron/metron
 
       - name: Restart Metron service
