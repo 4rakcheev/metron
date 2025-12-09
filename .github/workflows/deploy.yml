@@ -72,7 +72,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            sudo chmod +x /opt/metron/metron
-            sudo systemctl daemon-reload
-            sudo systemctl restart metron
-            sudo systemctl status metron --no-pager
+            sudo -n chmod +x /opt/metron/metron
+            sudo -n systemctl daemon-reload
+            sudo -n systemctl restart metron
+            sudo -n systemctl status metron --no-pager
