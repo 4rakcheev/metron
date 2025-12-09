@@ -62,9 +62,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            echo '${{ secrets.METRON_CONFIG_JSON }}' | sudo tee /opt/metron/config.json > /dev/null
-            sudo chmod 600 /opt/metron/config.json
-            sudo chown metron:metron /opt/metron/config.json
+            echo '${{ secrets.METRON_CONFIG_JSON }}' > /opt/metron/config.json
+            chmod 600 /opt/metron/config.json
 
       - name: Restart Metron service
         uses: appleboy/ssh-action@v0.1.9
