@@ -112,6 +112,47 @@ make build
 go build -o bin/metron ./cmd/metron
 ```
 
+### 6. Run Application
+
+```bash
+# Run with default settings (JSON logs, INFO level)
+./bin/metron
+
+# Or use make
+make run-metron
+
+# Configure logging format and level
+./bin/metron -log-format json -log-level info    # JSON format (default, best for production)
+./bin/metron -log-format text -log-level debug   # Human-readable text format
+./bin/metron -log-level debug                     # Enable debug logging
+./bin/metron -log-level error                     # Only errors and above
+
+# Use custom config file
+./bin/metron -config /path/to/config.json
+
+# Load config from environment variables
+./bin/metron -env
+
+# Production example
+./bin/metron -config /etc/metron/config.json -log-format json -log-level info
+```
+
+**Command-line Flags:**
+- **`-config string`**: Path to configuration file (default: `config.json`)
+- **`-env`**: Load configuration from environment variables instead of file
+- **`-log-format string`**: Output format - `json` (default) or `text`
+  - `json` - Structured JSON logs, best for production and log aggregation systems
+  - `text` - Human-readable text format, best for local development
+- **`-log-level string`**: Minimum log level - `debug`, `info` (default), `warn`, or `error`
+
+**What happens on startup:**
+- Initializes SQLite database
+- Registers device drivers (Aqara Cloud)
+- Starts session scheduler (1-minute intervals)
+- Starts REST API server
+- All logs written to **stdout** (not stderr)
+- Handles graceful shutdown on SIGINT/SIGTERM
+
 ## Configuration
 
 ### File-based Configuration

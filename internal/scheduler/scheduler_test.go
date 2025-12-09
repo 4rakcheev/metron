@@ -3,7 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"metron/internal/core"
 	"os"
 	"testing"
@@ -122,7 +122,7 @@ func TestScheduler_ProcessSession_Expired(t *testing.T) {
 	driver := newMockDriver()
 	registry := &mockRegistry{driver: driver}
 
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewScheduler(storage, registry, time.Minute, logger)
 
 	// Create child
@@ -170,7 +170,7 @@ func TestScheduler_ProcessSession_Warning(t *testing.T) {
 	driver := newMockDriver()
 	registry := &mockRegistry{driver: driver}
 
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewScheduler(storage, registry, time.Minute, logger)
 
 	// Create child
@@ -213,7 +213,7 @@ func TestScheduler_ProcessSession_NoWarning(t *testing.T) {
 	driver := newMockDriver()
 	registry := &mockRegistry{driver: driver}
 
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewScheduler(storage, registry, time.Minute, logger)
 
 	// Create child
@@ -256,7 +256,7 @@ func TestScheduler_ProcessSession_BreakRule(t *testing.T) {
 	driver := newMockDriver()
 	registry := &mockRegistry{driver: driver}
 
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewScheduler(storage, registry, time.Minute, logger)
 
 	// Create child with break rule
@@ -304,7 +304,7 @@ func TestScheduler_ProcessSession_InBreak(t *testing.T) {
 	driver := newMockDriver()
 	registry := &mockRegistry{driver: driver}
 
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewScheduler(storage, registry, time.Minute, logger)
 
 	// Create child
@@ -350,7 +350,7 @@ func TestScheduler_ProcessSession_BreakEnded(t *testing.T) {
 	driver := newMockDriver()
 	registry := &mockRegistry{driver: driver}
 
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewScheduler(storage, registry, time.Minute, logger)
 
 	// Create child
@@ -391,7 +391,7 @@ func TestScheduler_Tick(t *testing.T) {
 	driver := newMockDriver()
 	registry := &mockRegistry{driver: driver}
 
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewScheduler(storage, registry, time.Minute, logger)
 
 	// Create child
@@ -443,7 +443,7 @@ func TestScheduler_StartStop(t *testing.T) {
 	driver := newMockDriver()
 	registry := &mockRegistry{driver: driver}
 
-	logger := log.New(os.Stdout, "[test] ", log.LstdFlags)
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	scheduler := NewScheduler(storage, registry, 100*time.Millisecond, logger)
 
 	// Start scheduler in goroutine

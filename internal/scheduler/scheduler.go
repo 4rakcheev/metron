@@ -2,7 +2,7 @@ package scheduler
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"metron/internal/core"
 	"time"
 )
@@ -33,13 +33,13 @@ type Scheduler struct {
 	registry  DriverRegistry
 	interval  time.Duration
 	stopChan  chan struct{}
-	logger    *log.Logger
+	logger    *slog.Logger
 }
 
 // NewScheduler creates a new scheduler
-func NewScheduler(storage Storage, registry DriverRegistry, interval time.Duration, logger *log.Logger) *Scheduler {
+func NewScheduler(storage Storage, registry DriverRegistry, interval time.Duration, logger *slog.Logger) *Scheduler {
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.Default()
 	}
 	return &Scheduler{
 		storage:  storage,
@@ -52,7 +52,7 @@ func NewScheduler(storage Storage, registry DriverRegistry, interval time.Durati
 
 // Start begins the scheduler loop
 func (s *Scheduler) Start() {
-	s.logger.Println("Scheduler started")
+	s.logger.Info("Scheduler started")
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 
@@ -61,7 +61,7 @@ func (s *Scheduler) Start() {
 		case <-ticker.C:
 			s.tick()
 		case <-s.stopChan:
-			s.logger.Println("Scheduler stopped")
+			s.logger.Info("Scheduler stopped")
 			return
 		}
 	}
@@ -78,13 +78,13 @@ func (s *Scheduler) tick() {
 
 	sessions, err := s.storage.ListActiveSessions(ctx)
 	if err != nil {
-		s.logger.Printf("Error listing active sessions: %v", err)
+		s.logger.Error("Failed to list active sessions", "error", err)
 		return
 	}
 
 	for _, session := range sessions {
 		if err := s.processSession(ctx, session); err != nil {
-			s.logger.Printf("Error processing session %s: %v", session.ID, err)
+			s.logger.Error("Failed to process session", "session_id", session.ID, "error", err)
 		}
 	}
 }
@@ -97,7 +97,7 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 			// Break has ended, resume session
 			session.BreakEndsAt = nil
 			session.Status = core.SessionStatusActive
-			s.logger.Printf("Session %s: break ended, resuming", session.ID)
+			s.logger.Info("Session break ended, resuming", "session_id", session.ID)
 			return s.storage.UpdateSession(ctx, session)
 		} else {
 			// Still in break
@@ -120,13 +120,15 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 			session.BreakEndsAt = &breakEnds
 			session.Status = core.SessionStatusPaused
 
-			s.logger.Printf("Session %s: enforcing %d minute break for child %s",
-				session.ID, child.BreakRule.BreakDurationMinutes, child.Name)
+			s.logger.Info("Enforcing mandatory break",
+				"session_id", session.ID,
+				"break_duration", child.BreakRule.BreakDurationMinutes,
+				"child", child.Name)
 
 			// Get driver and trigger warning/pause
 			driver, err := s.registry.Get(session.DeviceType)
 			if err != nil {
-				s.logger.Printf("Error getting driver for session %s: %v", session.ID, err)
+				s.logger.Error("Failed to get driver", "session_id", session.ID, "error", err)
 			} else {
 				// Use warning mechanism to notify about break
 				driver.ApplyWarning(ctx, session, 0)
@@ -142,7 +144,7 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 
 	if expectedRemaining <= 0 {
 		// Session time expired
-		s.logger.Printf("Session %s: time expired, stopping", session.ID)
+		s.logger.Info("Session time expired, stopping", "session_id", session.ID)
 		return s.endSession(ctx, session)
 	}
 
@@ -153,7 +155,9 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 	if expectedRemaining <= 5 && expectedRemaining > 0 {
 		driver, err := s.registry.Get(session.DeviceType)
 		if err == nil {
-			s.logger.Printf("Session %s: %d minutes remaining, sending warning", session.ID, expectedRemaining)
+			s.logger.Info("Sending time remaining warning",
+				"session_id", session.ID,
+				"minutes_remaining", expectedRemaining)
 			driver.ApplyWarning(ctx, session, expectedRemaining)
 		}
 	}
@@ -171,7 +175,7 @@ func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error
 
 	// Stop session on device
 	if err := driver.StopSession(ctx, session); err != nil {
-		s.logger.Printf("Error stopping session %s on device: %v", session.ID, err)
+		s.logger.Error("Failed to stop session on device", "session_id", session.ID, "error", err)
 		// Continue anyway to update session status
 	}
 
@@ -189,10 +193,10 @@ func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error
 
 	for _, childID := range session.ChildIDs {
 		if err := s.storage.IncrementDailyUsage(ctx, childID, today, elapsed); err != nil {
-			s.logger.Printf("Error updating daily usage for child %s: %v", childID, err)
+			s.logger.Error("Failed to update daily usage", "child_id", childID, "error", err)
 		}
 	}
 
-	s.logger.Printf("Session %s ended after %d minutes", session.ID, elapsed)
+	s.logger.Info("Session ended", "session_id", session.ID, "duration_minutes", elapsed)
 	return nil
 }

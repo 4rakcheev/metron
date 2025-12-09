@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"metron/internal/core"
 	"net/http"
 	"strings"
@@ -30,13 +30,13 @@ type API struct {
 	manager SessionManager
 	storage Storage
 	apiKey  string
-	logger  *log.Logger
+	logger  *slog.Logger
 }
 
 // NewAPI creates a new API instance
-func NewAPI(manager SessionManager, storage Storage, apiKey string, logger *log.Logger) *API {
+func NewAPI(manager SessionManager, storage Storage, apiKey string, logger *slog.Logger) *API {
 	if logger == nil {
-		logger = log.Default()
+		logger = slog.Default()
 	}
 	return &API{
 		manager: manager,
@@ -129,7 +129,7 @@ func (a *API) handleStartTVSession(w http.ResponseWriter, r *http.Request) {
 
 	session, err := a.manager.StartSession(r.Context(), "tv", "tv1", req.ChildIDs, req.Minutes)
 	if err != nil {
-		a.logger.Printf("Error starting session: %v", err)
+		a.logger.Error("Failed to start session", "error", err, "child_ids", req.ChildIDs, "minutes", req.Minutes)
 		a.errorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -180,7 +180,7 @@ func (a *API) handleSessionRoutes(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleGetSession(w http.ResponseWriter, r *http.Request, sessionID string) {
 	session, err := a.manager.GetSession(r.Context(), sessionID)
 	if err != nil {
-		a.logger.Printf("Error getting session: %v", err)
+		a.logger.Error("Failed to get session", "error", err, "session_id", sessionID)
 		a.errorResponse(w, "Session not found", http.StatusNotFound)
 		return
 	}
@@ -202,7 +202,7 @@ func (a *API) handleExtendSession(w http.ResponseWriter, r *http.Request, sessio
 
 	session, err := a.manager.ExtendSession(r.Context(), sessionID, req.AdditionalMinutes)
 	if err != nil {
-		a.logger.Printf("Error extending session: %v", err)
+		a.logger.Error("Failed to extend session", "error", err, "session_id", sessionID, "additional_minutes", req.AdditionalMinutes)
 		a.errorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -212,7 +212,7 @@ func (a *API) handleExtendSession(w http.ResponseWriter, r *http.Request, sessio
 
 func (a *API) handleStopSession(w http.ResponseWriter, r *http.Request, sessionID string) {
 	if err := a.manager.StopSession(r.Context(), sessionID); err != nil {
-		a.logger.Printf("Error stopping session: %v", err)
+		a.logger.Error("Failed to stop session", "error", err, "session_id", sessionID)
 		a.errorResponse(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -228,7 +228,7 @@ func (a *API) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	sessions, err := a.manager.ListActiveSessions(r.Context())
 	if err != nil {
-		a.logger.Printf("Error listing active sessions: %v", err)
+		a.logger.Error("Failed to list active sessions", "error", err)
 		a.errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -249,7 +249,7 @@ func (a *API) handleChildren(w http.ResponseWriter, r *http.Request) {
 
 	children, err := a.storage.ListChildren(r.Context())
 	if err != nil {
-		a.logger.Printf("Error listing children: %v", err)
+		a.logger.Error("Failed to list children", "error", err)
 		a.errorResponse(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -291,7 +291,7 @@ func (a *API) handleChildRoutes(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleChildStatus(w http.ResponseWriter, r *http.Request, childID string) {
 	status, err := a.manager.GetChildStatus(r.Context(), childID)
 	if err != nil {
-		a.logger.Printf("Error getting child status: %v", err)
+		a.logger.Error("Failed to get child status", "error", err, "child_id", childID)
 		a.errorResponse(w, "Child not found", http.StatusNotFound)
 		return
 	}

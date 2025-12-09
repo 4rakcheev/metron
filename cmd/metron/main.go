@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -61,26 +61,71 @@ type schedulerDriverAdapter struct {
 }
 
 func main() {
-	if err := run(); err != nil {
-		log.Fatalf("Application error: %v", err)
-	}
-}
-
-func run() error {
 	// Parse command-line flags
 	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
 	useEnv := flag.Bool("env", false, "Load configuration from environment variables")
+	logFormat := flag.String("log-format", "json", "Log format: json or text")
+	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
 	flag.Parse()
 
+	// Configure structured logger
+	var handler slog.Handler
+	var level slog.Level
+
+	// Parse log level
+	switch *logLevel {
+	case "debug":
+		level = slog.LevelDebug
+	case "info":
+		level = slog.LevelInfo
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	// Configure handler based on format
+	opts := &slog.HandlerOptions{
+		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// Rename timestamp key for better readability
+			if a.Key == slog.TimeKey {
+				a.Key = "timestamp"
+			}
+			return a
+		},
+	}
+
+	if *logFormat == "text" {
+		handler = slog.NewTextHandler(os.Stdout, opts)
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, opts)
+	}
+
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	// Create main component logger
+	mainLogger := slog.Default().With("component", "main")
+
+	if err := run(*configPath, *useEnv, mainLogger); err != nil {
+		mainLogger.Error("Application failed", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	// Load configuration
-	log.Println("Loading configuration...")
+	logger.Info("Loading configuration", "use_env", useEnv, "config_path", configPath)
 	var cfg *config.Config
 	var err error
 
-	if *useEnv {
+	if useEnv {
 		cfg, err = config.LoadFromEnv()
 	} else {
-		cfg, err = config.Load(*configPath)
+		cfg, err = config.Load(configPath)
 	}
 
 	if err != nil {
@@ -88,7 +133,7 @@ func run() error {
 	}
 
 	// Initialize database
-	log.Printf("Initializing SQLite database at %s...", cfg.Database.Path)
+	logger.Info("Initializing database", "path", cfg.Database.Path)
 	db, err := sqlite.New(cfg.Database.Path)
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -96,11 +141,16 @@ func run() error {
 	defer db.Close()
 
 	// Initialize driver registry
-	log.Println("Initializing device driver registry...")
+	logger.Info("Initializing device driver registry")
 	driverRegistry := drivers.NewRegistry()
 
 	// Register Aqara driver
-	log.Println("Registering Aqara Cloud driver...")
+	logger.Info("Registering Aqara Cloud driver",
+		"base_url", cfg.Aqara.BaseURL,
+		"pin_scene", cfg.Aqara.Scenes.TVPINEntry,
+		"warn_scene", cfg.Aqara.Scenes.TVWarning,
+		"off_scene", cfg.Aqara.Scenes.TVPowerOff)
+
 	aqaraConfig := aqara.Config{
 		AppID:       cfg.Aqara.AppID,
 		AppKey:      cfg.Aqara.AppKey,
@@ -115,17 +165,21 @@ func run() error {
 	driverRegistry.Register(aqaraDriver)
 
 	// Initialize session manager
-	log.Println("Initializing session manager...")
+	logger.Info("Initializing session manager")
 	sessionManager := core.NewSessionManager(db, &coreDriverRegistry{driverRegistry})
 
+	// Create component-specific loggers
+	schedulerLogger := slog.Default().With("component", "scheduler")
+	apiLogger := slog.Default().With("component", "api")
+
 	// Start scheduler
-	log.Println("Starting session scheduler...")
-	sched := scheduler.NewScheduler(db, &schedulerDriverRegistry{driverRegistry}, 1*time.Minute, nil)
+	logger.Info("Starting session scheduler", "interval", "1m")
+	sched := scheduler.NewScheduler(db, &schedulerDriverRegistry{driverRegistry}, 1*time.Minute, schedulerLogger)
 	go sched.Start()
 
 	// Initialize REST API
-	log.Println("Initializing REST API server...")
-	apiInstance := api.NewAPI(sessionManager, db, cfg.Security.APIKey, nil)
+	logger.Info("Initializing REST API server")
+	apiInstance := api.NewAPI(sessionManager, db, cfg.Security.APIKey, apiLogger)
 	mux := http.NewServeMux()
 	apiInstance.RegisterRoutes(mux)
 
@@ -140,8 +194,10 @@ func run() error {
 	// Start server in a goroutine
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("Starting HTTP server on %s:%d...", cfg.Server.Host, cfg.Server.Port)
-		log.Printf("API endpoints available at http://%s:%d", cfg.Server.Host, cfg.Server.Port)
+		logger.Info("HTTP server starting",
+			"host", cfg.Server.Host,
+			"port", cfg.Server.Port,
+			"endpoint", fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port))
 		serverErrors <- server.ListenAndServe()
 	}()
 
@@ -154,14 +210,14 @@ func run() error {
 		return fmt.Errorf("server error: %w", err)
 
 	case sig := <-shutdown:
-		log.Printf("Received signal: %v. Starting graceful shutdown...", sig)
+		logger.Info("Shutdown signal received", "signal", sig.String())
 
 		// Stop scheduler
-		log.Println("Stopping scheduler...")
+		logger.Info("Stopping scheduler")
 		sched.Stop()
 
 		// Shutdown HTTP server
-		log.Println("Shutting down HTTP server...")
+		logger.Info("Shutting down HTTP server", "timeout", shutdownTimeout)
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer shutdownCancel()
 
@@ -169,7 +225,7 @@ func run() error {
 			return fmt.Errorf("server shutdown error: %w", err)
 		}
 
-		log.Println("Graceful shutdown complete")
+		logger.Info("Graceful shutdown complete")
 	}
 
 	return nil

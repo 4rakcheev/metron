@@ -36,11 +36,15 @@ help:
 	@echo "  make help               - Show this help message"
 
 ## build: Build all binaries
-build: build-aqara-test
+build: build-metron build-aqara-test
+	@echo "All binaries built successfully"
+
+## build-metron: Build main application
+build-metron:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	@echo "Note: Main application not yet implemented"
-	@echo "Built: $(BUILD_DIR)/$(AQARA_TEST_BINARY)"
+	$(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/metron
+	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
 
 ## build-aqara-test: Build Aqara test CLI
 build-aqara-test:
@@ -103,6 +107,11 @@ install-deps:
 	$(GOMOD) download
 	$(GOMOD) tidy
 	@echo "Dependencies installed"
+
+## run-metron: Run main application
+run-metron: build-metron
+	@echo "Starting Metron application..."
+	./$(BUILD_DIR)/$(BINARY_NAME)
 
 ## run-aqara-test: Run Aqara test CLI (use ACTION=warn or ACTION=off to change action)
 run-aqara-test: build-aqara-test
