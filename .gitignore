@@ -31,8 +31,6 @@ vendor/
 .claude/
 
 # Application specific
-metron
-aqara-test
 config.json
 config.test.json
 *.db
