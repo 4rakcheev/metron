@@ -85,4 +85,4 @@ jobs:
           script: |
             sudo -n /usr/bin/systemctl daemon-reload
             sudo -n /usr/bin/systemctl restart metron
-            sudo -n /usr/bin/systemctl status metron --no-pager
+            sudo -n /usr/bin/systemctl is-active metron
