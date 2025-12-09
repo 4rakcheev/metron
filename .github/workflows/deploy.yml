@@ -52,7 +52,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           source: "metron"
-          target: "/opt/metron/metron"
+          target: "/opt/metron"
           overwrite: true
 
       - name: Upload config.json from secret
@@ -72,7 +72,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            sudo -n chmod +x /opt/metron/metron
-            sudo -n systemctl daemon-reload
-            sudo -n systemctl restart metron
-            sudo -n systemctl status metron --no-pager
+            sudo -n /usr/bin/chmod +x /opt/metron/metron
+            sudo -n /usr/bin/systemctl daemon-reload
+            sudo -n /usr/bin/systemctl restart metron
+            sudo -n /usr/bin/systemctl status metron --no-pager
