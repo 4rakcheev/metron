@@ -54,6 +54,39 @@ List all children with their screen-time limits.
 ]
 ```
 
+#### POST /v1/children
+
+Create a new child.
+
+**Request Body:**
+```json
+{
+  "name": "Alice",
+  "weekday_limit": 60,
+  "weekend_limit": 120,
+  "break_rule": {
+    "break_after_minutes": 45,
+    "break_duration_minutes": 10
+  }
+}
+```
+
+**Response:** (201 Created)
+```json
+{
+  "id": "child-uuid",
+  "name": "Alice",
+  "weekday_limit": 60,
+  "weekend_limit": 120,
+  "break_rule": {
+    "break_after_minutes": 45,
+    "break_duration_minutes": 10
+  },
+  "created_at": "2025-12-09T15:30:45Z",
+  "updated_at": "2025-12-09T15:30:45Z"
+}
+```
+
 #### GET /v1/children/:id
 
 Get detailed information about a specific child, including today's usage.
@@ -77,6 +110,48 @@ Get detailed information about a specific child, including today's usage.
   "sessions_today": 2
 }
 ```
+
+#### PATCH /v1/children/:id
+
+Update a child's name, limits, or break rules.
+
+**Request Body:** (all fields optional)
+```json
+{
+  "name": "Alice Johnson",
+  "weekday_limit": 90,
+  "weekend_limit": 150,
+  "break_rule": {
+    "break_after_minutes": 60,
+    "break_duration_minutes": 15
+  }
+}
+```
+
+**Response:** (200 OK)
+```json
+{
+  "id": "child-uuid",
+  "name": "Alice Johnson",
+  "weekday_limit": 90,
+  "weekend_limit": 150,
+  "break_rule": {
+    "break_after_minutes": 60,
+    "break_duration_minutes": 15
+  },
+  "created_at": "2025-12-09T15:30:45Z",
+  "updated_at": "2025-12-09T16:00:00Z"
+}
+```
+
+#### DELETE /v1/children/:id
+
+Delete a child from the system.
+
+**Response:** (204 No Content)
+
+**Error Responses:**
+- `404` - Child not found
 
 ---
 

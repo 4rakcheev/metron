@@ -48,7 +48,10 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			config.Logger,
 		)
 		v1.GET("/children", childrenHandler.ListChildren)
+		v1.POST("/children", childrenHandler.CreateChild)
 		v1.GET("/children/:id", childrenHandler.GetChild)
+		v1.PATCH("/children/:id", childrenHandler.UpdateChild)
+		v1.DELETE("/children/:id", childrenHandler.DeleteChild)
 
 		// Devices endpoints
 		devicesHandler := handlers.NewDevicesHandler(

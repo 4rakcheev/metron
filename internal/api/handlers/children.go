@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"metron/internal/core"
+	"metron/internal/idgen"
 	"metron/internal/storage"
 	"net/http"
 
@@ -119,6 +120,222 @@ func (h *ChildrenHandler) GetChild(c *gin.Context) {
 		"today_limit":     status.TodayLimit,
 		"sessions_today":  status.SessionsToday,
 	})
+}
+
+// CreateChild creates a new child
+// POST /children
+func (h *ChildrenHandler) CreateChild(c *gin.Context) {
+	var req struct {
+		Name         string `json:"name" binding:"required"`
+		WeekdayLimit int    `json:"weekday_limit" binding:"required,gt=0"`
+		WeekendLimit int    `json:"weekend_limit" binding:"required,gt=0"`
+		BreakRule    *struct {
+			BreakAfterMinutes    int `json:"break_after_minutes" binding:"required,gt=0"`
+			BreakDurationMinutes int `json:"break_duration_minutes" binding:"required,gt=0"`
+		} `json:"break_rule,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"code":    "INVALID_REQUEST",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Create child model
+	child := &core.Child{
+		ID:           idgen.NewChild(),
+		Name:         req.Name,
+		WeekdayLimit: req.WeekdayLimit,
+		WeekendLimit: req.WeekendLimit,
+	}
+
+	// Add break rule if provided
+	if req.BreakRule != nil {
+		child.BreakRule = &core.BreakRule{
+			BreakAfterMinutes:    req.BreakRule.BreakAfterMinutes,
+			BreakDurationMinutes: req.BreakRule.BreakDurationMinutes,
+		}
+	}
+
+	// Validate
+	if err := child.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+			"code":  "VALIDATION_ERROR",
+		})
+		return
+	}
+
+	// Save to storage
+	if err := h.storage.CreateChild(c.Request.Context(), child); err != nil {
+		h.logger.Error("Failed to create child",
+			"component", "api",
+			"name", req.Name,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create child",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"id":            child.ID,
+		"name":          child.Name,
+		"weekday_limit": child.WeekdayLimit,
+		"weekend_limit": child.WeekendLimit,
+		"break_rule":    formatBreakRule(child.BreakRule),
+		"created_at":    child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"updated_at":    child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
+// UpdateChild updates an existing child
+// PATCH /children/:id
+func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
+	childID := c.Param("id")
+
+	// Get existing child
+	child, err := h.storage.GetChild(c.Request.Context(), childID)
+	if err != nil {
+		if err == core.ErrChildNotFound {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Child not found",
+				"code":  "CHILD_NOT_FOUND",
+			})
+			return
+		}
+
+		h.logger.Error("Failed to get child for update",
+			"component", "api",
+			"child_id", childID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve child",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	// Parse update request
+	var req struct {
+		Name         *string `json:"name,omitempty"`
+		WeekdayLimit *int    `json:"weekday_limit,omitempty"`
+		WeekendLimit *int    `json:"weekend_limit,omitempty"`
+		BreakRule    *struct {
+			BreakAfterMinutes    int `json:"break_after_minutes" binding:"required,gt=0"`
+			BreakDurationMinutes int `json:"break_duration_minutes" binding:"required,gt=0"`
+		} `json:"break_rule,omitempty"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"code":    "INVALID_REQUEST",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Update fields if provided
+	if req.Name != nil {
+		child.Name = *req.Name
+	}
+	if req.WeekdayLimit != nil {
+		child.WeekdayLimit = *req.WeekdayLimit
+	}
+	if req.WeekendLimit != nil {
+		child.WeekendLimit = *req.WeekendLimit
+	}
+	if req.BreakRule != nil {
+		child.BreakRule = &core.BreakRule{
+			BreakAfterMinutes:    req.BreakRule.BreakAfterMinutes,
+			BreakDurationMinutes: req.BreakRule.BreakDurationMinutes,
+		}
+	}
+
+	// Validate
+	if err := child.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+			"code":  "VALIDATION_ERROR",
+		})
+		return
+	}
+
+	// Save
+	if err := h.storage.UpdateChild(c.Request.Context(), child); err != nil {
+		h.logger.Error("Failed to update child",
+			"component", "api",
+			"child_id", childID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to update child",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":            child.ID,
+		"name":          child.Name,
+		"weekday_limit": child.WeekdayLimit,
+		"weekend_limit": child.WeekendLimit,
+		"break_rule":    formatBreakRule(child.BreakRule),
+		"created_at":    child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"updated_at":    child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
+// DeleteChild deletes a child
+// DELETE /children/:id
+func (h *ChildrenHandler) DeleteChild(c *gin.Context) {
+	childID := c.Param("id")
+
+	// Check if child exists
+	_, err := h.storage.GetChild(c.Request.Context(), childID)
+	if err != nil {
+		if err == core.ErrChildNotFound {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Child not found",
+				"code":  "CHILD_NOT_FOUND",
+			})
+			return
+		}
+
+		h.logger.Error("Failed to get child for deletion",
+			"component", "api",
+			"child_id", childID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve child",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	// Delete
+	if err := h.storage.DeleteChild(c.Request.Context(), childID); err != nil {
+		h.logger.Error("Failed to delete child",
+			"component", "api",
+			"child_id", childID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to delete child",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
 }
 
 func formatBreakRule(rule *core.BreakRule) interface{} {

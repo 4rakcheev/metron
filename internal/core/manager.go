@@ -3,9 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"metron/internal/idgen"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // Storage interface defines required storage operations
@@ -87,7 +86,7 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceType string, de
 
 	// Create session
 	session := &Session{
-		ID:               uuid.New().String(),
+		ID:               idgen.NewSession(),
 		DeviceType:       deviceType,
 		DeviceID:         deviceID,
 		ChildIDs:         childIDs,

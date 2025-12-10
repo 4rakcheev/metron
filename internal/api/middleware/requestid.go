@@ -1,8 +1,9 @@
 package middleware
 
 import (
+	"metron/internal/idgen"
+
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 )
 
 const RequestIDKey = "X-Request-ID"
@@ -12,7 +13,7 @@ func RequestID() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := c.GetHeader(RequestIDKey)
 		if requestID == "" {
-			requestID = uuid.New().String()
+			requestID = idgen.New()
 		}
 		c.Header(RequestIDKey, requestID)
 		c.Set(RequestIDKey, requestID)
