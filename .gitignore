@@ -33,6 +33,7 @@ vendor/
 # Application specific
 config.json
 config.test.json
+bot-config.json
 *.db
 *.db-shm
 *.db-wal

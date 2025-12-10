@@ -1,0 +1,15 @@
+{
+  "telegram": {
+    "token": "YOUR_TELEGRAM_BOT_TOKEN_HERE",
+    "allowed_users": [
+      123456789,
+      987654321
+    ],
+    "webhook_url": "https://metron-api.secueval.com/telegram/webhook",
+    "webhook_secret": "put-your-secret-here"
+  },
+  "metron": {
+    "base_url": "http://localhost:8080",
+    "api_key": "your-metron-api-key-here"
+  }
+}

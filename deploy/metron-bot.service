@@ -1,0 +1,25 @@
+[Unit]
+Description=Metron Telegram Bot
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=metron
+Group=metron
+WorkingDirectory=/opt/metron-bot
+ExecStart=/opt/metron-bot/metron-bot -config /opt/metron-bot/bot-config.json -log-format json
+Restart=always
+RestartSec=10
+StandardOutput=append:/opt/metron-bot/logs/metron-bot.log
+StandardError=append:/opt/metron-bot/logs/metron-bot.err
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/metron-bot
+
+[Install]
+WantedBy=multi-user.target

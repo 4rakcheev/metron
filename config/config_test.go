@@ -28,9 +28,6 @@ func TestConfig_Validate(t *testing.T) {
 				Security: SecurityConfig{
 					APIKey: "test-key",
 				},
-				Telegram: TelegramConfig{
-					BotToken: "test-token",
-				},
 				Aqara: AqaraConfig{
 					AppID:  "app-id",
 					AppKey: "app-key",
@@ -47,7 +44,6 @@ func TestConfig_Validate(t *testing.T) {
 				},
 				Database: DatabaseConfig{Path: "/path/to/db"},
 				Security: SecurityConfig{APIKey: "test-key"},
-				Telegram: TelegramConfig{BotToken: "test-token"},
 				Aqara:    AqaraConfig{AppID: "app-id", AppKey: "app-key", KeyID: "key-id"},
 			},
 			wantErr: true,
@@ -60,7 +56,6 @@ func TestConfig_Validate(t *testing.T) {
 				},
 				Database: DatabaseConfig{Path: "/path/to/db"},
 				Security: SecurityConfig{APIKey: "test-key"},
-				Telegram: TelegramConfig{BotToken: "test-token"},
 				Aqara:    AqaraConfig{AppID: "app-id", AppKey: "app-key", KeyID: "key-id"},
 			},
 			wantErr: true,
@@ -70,7 +65,6 @@ func TestConfig_Validate(t *testing.T) {
 			config: Config{
 				Server:   ServerConfig{Port: 8080},
 				Security: SecurityConfig{APIKey: "test-key"},
-				Telegram: TelegramConfig{BotToken: "test-token"},
 				Aqara:    AqaraConfig{AppID: "app-id", AppKey: "app-key", KeyID: "key-id"},
 			},
 			wantErr: true,
@@ -80,17 +74,6 @@ func TestConfig_Validate(t *testing.T) {
 			config: Config{
 				Server:   ServerConfig{Port: 8080},
 				Database: DatabaseConfig{Path: "/path/to/db"},
-				Telegram: TelegramConfig{BotToken: "test-token"},
-				Aqara:    AqaraConfig{AppID: "app-id", AppKey: "app-key", KeyID: "key-id"},
-			},
-			wantErr: true,
-		},
-		{
-			name: "missing Telegram bot token",
-			config: Config{
-				Server:   ServerConfig{Port: 8080},
-				Database: DatabaseConfig{Path: "/path/to/db"},
-				Security: SecurityConfig{APIKey: "test-key"},
 				Aqara:    AqaraConfig{AppID: "app-id", AppKey: "app-key", KeyID: "key-id"},
 			},
 			wantErr: true,
@@ -101,7 +84,6 @@ func TestConfig_Validate(t *testing.T) {
 				Server:   ServerConfig{Port: 8080},
 				Database: DatabaseConfig{Path: "/path/to/db"},
 				Security: SecurityConfig{APIKey: "test-key"},
-				Telegram: TelegramConfig{BotToken: "test-token"},
 			},
 			wantErr: true,
 		},
@@ -135,11 +117,6 @@ func TestLoad(t *testing.T) {
 		"security": {
 			"api_key": "test-key"
 		},
-		"telegram": {
-			"bot_token": "test-token",
-			"webhook_url": "https://example.com/webhook",
-			"webhook_secret": "webhook-secret"
-		},
 		"aqara": {
 			"app_id": "app-id",
 			"app_key": "app-key",
@@ -163,7 +140,6 @@ func TestLoad(t *testing.T) {
 	assert.Equal(t, 8080, config.Server.Port)
 	assert.Equal(t, "/path/to/db", config.Database.Path)
 	assert.Equal(t, "test-key", config.Security.APIKey)
-	assert.Equal(t, "test-token", config.Telegram.BotToken)
 	assert.Equal(t, "app-id", config.Aqara.AppID)
 	assert.Equal(t, "scene-1", config.Aqara.Scenes.TVPINEntry)
 
@@ -186,7 +162,6 @@ func TestLoadFromEnv(t *testing.T) {
 	os.Setenv("METRON_PORT", "9090")
 	os.Setenv("METRON_DB_PATH", "/custom/db/path")
 	os.Setenv("METRON_API_KEY", "env-api-key")
-	os.Setenv("METRON_TELEGRAM_BOT_TOKEN", "env-bot-token")
 	os.Setenv("METRON_AQARA_APP_ID", "env-app-id")
 	os.Setenv("METRON_AQARA_APP_KEY", "env-app-key")
 	os.Setenv("METRON_AQARA_KEY_ID", "env-key-id")
@@ -197,7 +172,6 @@ func TestLoadFromEnv(t *testing.T) {
 		os.Unsetenv("METRON_PORT")
 		os.Unsetenv("METRON_DB_PATH")
 		os.Unsetenv("METRON_API_KEY")
-		os.Unsetenv("METRON_TELEGRAM_BOT_TOKEN")
 		os.Unsetenv("METRON_AQARA_APP_ID")
 		os.Unsetenv("METRON_AQARA_APP_KEY")
 		os.Unsetenv("METRON_AQARA_KEY_ID")
@@ -211,7 +185,6 @@ func TestLoadFromEnv(t *testing.T) {
 	assert.Equal(t, 9090, config.Server.Port)
 	assert.Equal(t, "/custom/db/path", config.Database.Path)
 	assert.Equal(t, "env-api-key", config.Security.APIKey)
-	assert.Equal(t, "env-bot-token", config.Telegram.BotToken)
 	assert.Equal(t, "env-app-id", config.Aqara.AppID)
 	assert.Equal(t, true, config.Security.EnableIPCheck)
 }

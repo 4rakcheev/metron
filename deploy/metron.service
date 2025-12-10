@@ -1,0 +1,15 @@
+[Unit]
+Description=Metron Screen-Time Orchestrator
+After=network.target
+
+[Service]
+User=metron
+WorkingDirectory=/opt/metron
+ExecStart=/opt/metron/metron -config /opt/metron/config.json -log-format json -log-level info
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/metron/logs/metron.log
+StandardError=append:/opt/metron/logs/metron.err
+
+[Install]
+WantedBy=multi-user.target

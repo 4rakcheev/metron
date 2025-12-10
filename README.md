@@ -12,7 +12,7 @@ Metron is a centralized backend orchestrator that manages children's daily scree
 - ✅ **Warnings** - notifications before session ends
 - ✅ **Aqara Cloud integration** - control smart home scenes
 - ✅ **REST API** - programmatic control with token authentication
-- 🚧 **Telegram bot** - parent control interface (coming soon)
+- ✅ **Telegram bot** - parent control interface with multi-step flows
 
 ## Architecture
 
@@ -20,19 +20,20 @@ Metron is a centralized backend orchestrator that manages children's daily scree
 metron/
 ├── cmd/
 │   ├── aqara-test/      # CLI tool for testing Aqara integration
-│   └── metron/          # Main application (coming soon)
+│   ├── metron/          # Main REST API application
+│   └── metron-bot/      # Telegram bot application
 ├── config/              # Configuration management
 ├── internal/
 │   ├── api/             # REST API handlers
+│   ├── bot/             # Telegram bot handlers and flows
 │   ├── core/            # Domain models and business logic
 │   ├── devices/         # Device driver interface
 │   ├── drivers/
 │   │   ├── aqara/       # Aqara Cloud driver
 │   │   └── registry.go  # Driver registry
 │   ├── scheduler/       # Generic session scheduler
-│   ├── storage/
-│   │   └── sqlite/      # SQLite persistence layer
-│   └── telegram/        # Telegram bot (coming soon)
+│   └── storage/
+│       └── sqlite/      # SQLite persistence layer
 └── tests/               # Integration tests
 ```
 
@@ -198,6 +199,46 @@ export METRON_AQARA_TV_PIN_SCENE="scene-id-1"
 export METRON_AQARA_TV_WARNING_SCENE="scene-id-2"
 export METRON_AQARA_TV_POWEROFF_SCENE="scene-id-3"
 ```
+
+## Telegram Bot
+
+Metron includes a fully-functional Telegram bot that provides a convenient parent interface for managing screen time. The bot uses webhooks for real-time updates and features multi-step flows with inline buttons.
+
+### Features
+
+- 📊 **Today's Stats** - View real-time usage for all children
+- ➕ **New Session** - Multi-step flow (child → device → duration)
+- ⏱ **Extend Session** - Add time to active sessions
+- 🔒 **Whitelist Security** - Only authorized users can access
+- 👶 **Manage Children** - View configured children and limits
+- 📺 **View Devices** - List available device types
+
+### Quick Start
+
+See [BOT_README.md](BOT_README.md) for detailed setup instructions.
+
+```bash
+# Build bot
+make build-bot
+
+# Configure
+cp bot-config.example.json bot-config.json
+# Edit bot-config.json with your settings
+
+# Run
+./bin/metron-bot -config bot-config.json
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Show welcome and quick actions |
+| `/today` | View today's screen time summary |
+| `/newsession` | Start new session (3-step flow) |
+| `/extend` | Extend active session |
+| `/children` | List all children |
+| `/devices` | List available devices |
 
 ## REST API
 

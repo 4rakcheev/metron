@@ -1,8 +1,9 @@
-.PHONY: all build test clean install-deps fmt vet lint test-coverage build-aqara-test run-aqara-test help
+.PHONY: all build test clean install-deps fmt vet lint test-coverage build-metron build-aqara-test build-bot run-aqara-test help
 
 # Variables
 BINARY_NAME=metron
 AQARA_TEST_BINARY=aqara-test
+BOT_BINARY=metron-bot
 BUILD_DIR=bin
 COVERAGE_FILE=coverage.out
 COVERAGE_HTML=coverage.html
@@ -36,7 +37,7 @@ help:
 	@echo "  make help               - Show this help message"
 
 ## build: Build all binaries
-build: build-metron build-aqara-test
+build: build-metron build-aqara-test build-bot
 	@echo "All binaries built successfully"
 
 ## build-metron: Build main application
@@ -52,6 +53,13 @@ build-aqara-test:
 	@mkdir -p $(BUILD_DIR)
 	$(GOBUILD) -o $(BUILD_DIR)/$(AQARA_TEST_BINARY) ./cmd/aqara-test
 	@echo "Built: $(BUILD_DIR)/$(AQARA_TEST_BINARY)"
+
+## build-bot: Build Telegram bot
+build-bot:
+	@echo "Building $(BOT_BINARY)..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOBUILD) -o $(BUILD_DIR)/$(BOT_BINARY) ./cmd/metron-bot
+	@echo "Built: $(BUILD_DIR)/$(BOT_BINARY)"
 
 ## test: Run all tests
 test:

@@ -16,7 +16,6 @@ var (
 type Config struct {
 	Server   ServerConfig   `json:"server"`
 	Database DatabaseConfig `json:"database"`
-	Telegram TelegramConfig `json:"telegram"`
 	Security SecurityConfig `json:"security"`
 	Aqara    AqaraConfig    `json:"aqara"`
 }
@@ -32,19 +31,11 @@ type DatabaseConfig struct {
 	Path string `json:"path"`
 }
 
-// TelegramConfig contains Telegram bot settings
-type TelegramConfig struct {
-	BotToken      string   `json:"bot_token"`
-	WebhookURL    string   `json:"webhook_url"`
-	WebhookSecret string   `json:"webhook_secret"`
-	AllowedUsers  []int64  `json:"allowed_users"`
-}
-
 // SecurityConfig contains security settings
 type SecurityConfig struct {
-	APIKey       string   `json:"api_key"`
-	AllowedIPs   []string `json:"allowed_ips"`
-	EnableIPCheck bool    `json:"enable_ip_check"`
+	APIKey        string   `json:"api_key"`
+	AllowedIPs    []string `json:"allowed_ips"`
+	EnableIPCheck bool     `json:"enable_ip_check"`
 }
 
 // AqaraConfig contains Aqara Cloud API settings
@@ -67,9 +58,9 @@ type AqaraDevice struct {
 
 // AqaraScenes contains scene IDs for different actions
 type AqaraScenes struct {
-	TVPINEntry  string `json:"tv_pin_entry"`
-	TVWarning   string `json:"tv_warning"`
-	TVPowerOff  string `json:"tv_power_off"`
+	TVPINEntry string `json:"tv_pin_entry"`
+	TVWarning  string `json:"tv_warning"`
+	TVPowerOff string `json:"tv_power_off"`
 }
 
 // Validate validates the configuration
@@ -84,10 +75,6 @@ func (c *Config) Validate() error {
 
 	if c.Security.APIKey == "" {
 		return fmt.Errorf("%w: API key is required", ErrInvalidConfig)
-	}
-
-	if c.Telegram.BotToken == "" {
-		return fmt.Errorf("%w: Telegram bot token is required", ErrInvalidConfig)
 	}
 
 	if c.Aqara.AppID == "" || c.Aqara.AppKey == "" || c.Aqara.KeyID == "" {
@@ -134,13 +121,8 @@ func LoadFromEnv() (*Config, error) {
 		Database: DatabaseConfig{
 			Path: getEnv("METRON_DB_PATH", "./metron.db"),
 		},
-		Telegram: TelegramConfig{
-			BotToken:      getEnv("METRON_TELEGRAM_BOT_TOKEN", ""),
-			WebhookURL:    getEnv("METRON_TELEGRAM_WEBHOOK_URL", ""),
-			WebhookSecret: getEnv("METRON_TELEGRAM_WEBHOOK_SECRET", ""),
-		},
 		Security: SecurityConfig{
-			APIKey:       getEnv("METRON_API_KEY", ""),
+			APIKey:        getEnv("METRON_API_KEY", ""),
 			EnableIPCheck: getEnvBool("METRON_ENABLE_IP_CHECK", false),
 		},
 		Aqara: AqaraConfig{
