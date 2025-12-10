@@ -201,66 +201,74 @@ export METRON_AQARA_TV_POWEROFF_SCENE="scene-id-3"
 
 ## REST API
 
-All endpoints require `X-Metron-Key` header for authentication.
+Metron provides a comprehensive REST API v1 following TMF630 guidelines. All `/v1/*` endpoints require `X-Metron-Key` header for authentication.
 
-### Start TV Session
+### Quick Examples
 
+**Get today's statistics:**
 ```bash
-POST /sessions/tv/start
-Content-Type: application/json
-X-Metron-Key: your-api-key
-
-{
-  "child_ids": ["child1", "child2"],
-  "minutes": 30
-}
+curl -H "X-Metron-Key: your-api-key" \
+  http://localhost:8080/v1/stats/today
 ```
 
-### Extend Session
-
+**Start a session:**
 ```bash
-POST /sessions/{id}/extend
-Content-Type: application/json
-X-Metron-Key: your-api-key
-
-{
-  "additional_minutes": 15
-}
+curl -X POST http://localhost:8080/v1/sessions \
+  -H "X-Metron-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "device_type": "tv",
+    "child_ids": ["child-uuid"],
+    "minutes": 30
+  }'
 ```
 
-### Stop Session
-
+**Extend a session:**
 ```bash
-POST /sessions/{id}/stop
-X-Metron-Key: your-api-key
+curl -X PATCH http://localhost:8080/v1/sessions/{session-id} \
+  -H "X-Metron-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "extend",
+    "additional_minutes": 15
+  }'
 ```
 
-### Get Session Status
-
+**Stop a session:**
 ```bash
-GET /sessions/{id}
-X-Metron-Key: your-api-key
+curl -X PATCH http://localhost:8080/v1/sessions/{session-id} \
+  -H "X-Metron-Key: your-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "stop"}'
 ```
 
-### Get Active Sessions
+### Complete API Documentation
 
+📖 **[API_V1.md](API_V1.md)** - Complete human-readable API documentation with Telegram bot integration examples
+
+📋 **[openapi.yaml](openapi.yaml)** - Full OpenAPI 3.0 specification
+
+**Available Endpoints:**
+- `GET /health` - Health check (no auth required)
+- `GET /v1/children` - List all children
+- `GET /v1/children/:id` - Get child with today's stats
+- `GET /v1/devices` - List available devices
+- `GET /v1/sessions` - List sessions (with filters)
+- `POST /v1/sessions` - Start new session
+- `GET /v1/sessions/:id` - Get session details
+- `PATCH /v1/sessions/:id` - Extend or stop session
+- `GET /v1/stats/today` - Today's statistics
+
+**View OpenAPI Spec:**
 ```bash
-GET /status
-X-Metron-Key: your-api-key
-```
+# Using Swagger UI (docker)
+docker run -p 8081:8080 -e SWAGGER_JSON=/openapi.yaml \
+  -v $(pwd)/openapi.yaml:/openapi.yaml \
+  swaggerapi/swagger-ui
 
-### List Children
-
-```bash
-GET /children
-X-Metron-Key: your-api-key
-```
-
-### Get Child Status
-
-```bash
-GET /children/{id}/status
-X-Metron-Key: your-api-key
+# Or use online editor
+# Visit: https://editor.swagger.io/
+# Import the openapi.yaml file
 ```
 
 ## Development

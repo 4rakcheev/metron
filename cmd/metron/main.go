@@ -177,15 +177,19 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	sched := scheduler.NewScheduler(db, &schedulerDriverRegistry{driverRegistry}, 1*time.Minute, schedulerLogger)
 	go sched.Start()
 
-	// Initialize REST API
+	// Initialize REST API with Gin
 	logger.Info("Initializing REST API server")
-	apiInstance := api.NewAPI(sessionManager, db, cfg.Security.APIKey, apiLogger)
-	mux := http.NewServeMux()
-	apiInstance.RegisterRoutes(mux)
+	router := api.NewRouter(api.RouterConfig{
+		Storage:  db,
+		Manager:  sessionManager,
+		Registry: driverRegistry,
+		APIKey:   cfg.Security.APIKey,
+		Logger:   apiLogger,
+	})
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
-		Handler:      mux,
+		Handler:      router,
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,

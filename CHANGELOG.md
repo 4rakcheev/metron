@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Gin-based REST API v1** (TMF630 compliant)
+  - Modular handler architecture (children, devices, sessions, stats, health)
+  - Middleware stack (request ID, logging, recovery, content-type, auth)
+  - All endpoints under `/v1/` prefix
+  - Health check endpoint (no auth required)
+  - Children endpoints: GET list, GET single with today's stats
+  - Devices endpoint: GET list with capabilities
+  - Sessions endpoints: GET list (filtered), POST create, GET single, PATCH update (extend/stop)
+  - Stats endpoint: GET today's summary for all children
+  - TMF630 error responses with standardized codes
+  - Full OpenAPI 3.0 specification (openapi.yaml)
+  - Comprehensive API documentation (API_V1.md)
+  - Telegram bot ready endpoints
 - Core domain models (Child, Session, DailyUsage)
 - SQLite storage layer with foreign key constraints
 - Session manager with multi-child support
@@ -35,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test suite (48/48 tests passing)
 - Complete documentation (README, ARCHITECTURE, API, TESTING, LOGGING, CHANGELOG)
 - Development tooling (Makefile, .editorconfig, .golangci.yml)
+
+### Changed
+- **API refactored from net/http to Gin framework**
+  - Replaced monolithic handlers.go with modular handler structure
+  - Improved error handling with standardized TMF630 responses
+  - Added comprehensive middleware stack
+  - Better separation of concerns following Uber Go Style Guide
 
 ### Fixed
 - `.gitignore` no longer ignores source code directories

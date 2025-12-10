@@ -1,0 +1,752 @@
+openapi: 3.0.3
+info:
+  title: Metron Screen-Time Orchestration API
+  description: |
+    Metron is a unified screen-time orchestration system that tracks children's screen time
+    across multiple devices (TV, PS5, iPad, etc.) with driver-based integrations.
+
+    This API provides endpoints for managing children, sessions, devices, and viewing statistics.
+
+    ## Features
+    - Multi-child session management
+    - Device driver integration (Aqara Cloud, PS5, etc.)
+    - Break rule enforcement
+    - Daily usage tracking
+    - Real-time session control
+
+    ## Authentication
+    All `/v1/*` endpoints require API key authentication via the `X-Metron-Key` header.
+    The `/health` endpoint does not require authentication.
+
+  version: 1.0.0
+  contact:
+    name: Metron API Support
+    url: https://github.com/4rakcheev/metron
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://metron.example.com
+    description: Production server
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Health
+    description: Service health check
+  - name: Children
+    description: Manage children and view their screen-time limits
+  - name: Devices
+    description: List available device types and capabilities
+  - name: Sessions
+    description: Manage screen-time sessions
+  - name: Statistics
+    description: View usage statistics
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the service. No authentication required.
+      operationId: getHealth
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: UP
+                service: metron
+
+  /v1/children:
+    get:
+      tags:
+        - Children
+      summary: List all children
+      description: Returns a list of all registered children with their screen-time limits and break rules
+      operationId: listChildren
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Child'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/children/{id}:
+    get:
+      tags:
+        - Children
+      summary: Get child details
+      description: Returns detailed information about a specific child including today's usage statistics
+      operationId: getChild
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Child ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChildWithStatus'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/ChildNotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/devices:
+    get:
+      tags:
+        - Devices
+      summary: List available devices
+      description: Returns all available device types and their capabilities
+      operationId: listDevices
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/sessions:
+    get:
+      tags:
+        - Sessions
+      summary: List sessions
+      description: Returns a list of sessions with optional filtering by child, active status, or date
+      operationId: listSessions
+      parameters:
+        - name: childId
+          in: query
+          description: Filter sessions by child ID
+          schema:
+            type: string
+            format: uuid
+        - name: active
+          in: query
+          description: Filter by active status
+          schema:
+            type: boolean
+        - name: date
+          in: query
+          description: Filter by date (YYYY-MM-DD)
+          schema:
+            type: string
+            format: date
+            example: "2025-12-09"
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - Sessions
+      summary: Start a new session
+      description: Creates and starts a new screen-time session for one or more children
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+            examples:
+              singleChild:
+                summary: Session for one child
+                value:
+                  device_type: tv
+                  device_id: tv1
+                  child_ids:
+                    - "550e8400-e29b-41d4-a716-446655440000"
+                  minutes: 30
+              multipleChildren:
+                summary: Shared session for multiple children
+                value:
+                  device_type: tv
+                  child_ids:
+                    - "550e8400-e29b-41d4-a716-446655440000"
+                    - "660e8400-e29b-41d4-a716-446655440001"
+                  minutes: 60
+      responses:
+        '201':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/sessions/{id}:
+    get:
+      tags:
+        - Sessions
+      summary: Get session details
+      description: Returns detailed information about a specific session
+      operationId: getSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Session ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/SessionNotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    patch:
+      tags:
+        - Sessions
+      summary: Update session
+      description: Extends or stops an existing session
+      operationId: updateSession
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Session ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionRequest'
+            examples:
+              extend:
+                summary: Extend session by 15 minutes
+                value:
+                  action: extend
+                  additional_minutes: 15
+              stop:
+                summary: Stop session
+                value:
+                  action: stop
+      responses:
+        '200':
+          description: Session extended successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '204':
+          description: Session stopped successfully (no content)
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/SessionNotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/stats/today:
+    get:
+      tags:
+        - Statistics
+      summary: Get today's statistics
+      description: Returns usage statistics for all children for the current day
+      operationId: getTodayStats
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodayStats'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-Metron-Key
+      description: API key for authentication
+
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          enum: [UP, DOWN]
+          description: Health status of the service
+        service:
+          type: string
+          description: Service name
+          example: metron
+
+    Child:
+      type: object
+      required:
+        - id
+        - name
+        - weekday_limit
+        - weekend_limit
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique identifier for the child
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        name:
+          type: string
+          description: Child's name
+          example: Alice
+          minLength: 1
+        weekday_limit:
+          type: integer
+          description: Daily screen-time limit for weekdays (minutes)
+          minimum: 1
+          example: 60
+        weekend_limit:
+          type: integer
+          description: Daily screen-time limit for weekends (minutes)
+          minimum: 1
+          example: 120
+        break_rule:
+          $ref: '#/components/schemas/BreakRule'
+        created_at:
+          type: string
+          format: date-time
+          description: When the child record was created
+          example: "2025-12-09T15:30:45Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: When the child record was last updated
+          example: "2025-12-09T15:30:45Z"
+
+    ChildWithStatus:
+      allOf:
+        - $ref: '#/components/schemas/Child'
+        - type: object
+          required:
+            - today_used
+            - today_remaining
+            - today_limit
+            - sessions_today
+          properties:
+            today_used:
+              type: integer
+              description: Minutes used today
+              minimum: 0
+              example: 30
+            today_remaining:
+              type: integer
+              description: Minutes remaining today
+              minimum: 0
+              example: 30
+            today_limit:
+              type: integer
+              description: Total daily limit for today
+              minimum: 0
+              example: 60
+            sessions_today:
+              type: integer
+              description: Number of sessions today
+              minimum: 0
+              example: 2
+
+    BreakRule:
+      type: object
+      required:
+        - break_after_minutes
+        - break_duration_minutes
+      properties:
+        break_after_minutes:
+          type: integer
+          description: Require a break after this many minutes
+          minimum: 1
+          example: 45
+        break_duration_minutes:
+          type: integer
+          description: Break must last this many minutes
+          minimum: 1
+          example: 10
+      nullable: true
+
+    Device:
+      type: object
+      required:
+        - type
+        - name
+      properties:
+        type:
+          type: string
+          description: Device type identifier
+          example: aqara
+        name:
+          type: string
+          description: Human-readable device name
+          example: aqara
+        capabilities:
+          $ref: '#/components/schemas/DeviceCapabilities'
+
+    DeviceCapabilities:
+      type: object
+      properties:
+        supports_warnings:
+          type: boolean
+          description: Whether the device supports time-remaining warnings
+          example: true
+        supports_live_state:
+          type: boolean
+          description: Whether the device supports live state queries
+          example: true
+        supports_scheduling:
+          type: boolean
+          description: Whether the device supports scheduled sessions
+          example: false
+
+    Session:
+      type: object
+      required:
+        - id
+        - device_type
+        - device_id
+        - child_ids
+        - start_time
+        - expected_duration
+        - remaining_minutes
+        - status
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique session identifier
+          example: "770e8400-e29b-41d4-a716-446655440002"
+        device_type:
+          type: string
+          description: Type of device (tv, ps5, ipad, etc.)
+          example: tv
+        device_id:
+          type: string
+          description: Specific device identifier
+          example: tv1
+        child_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: IDs of children in this session
+          minItems: 1
+          example: ["550e8400-e29b-41d4-a716-446655440000"]
+        start_time:
+          type: string
+          format: date-time
+          description: When the session started
+          example: "2025-12-09T15:30:45Z"
+        expected_duration:
+          type: integer
+          description: Expected session duration in minutes
+          minimum: 1
+          example: 30
+        remaining_minutes:
+          type: integer
+          description: Minutes remaining in the session
+          minimum: 0
+          example: 25
+        status:
+          type: string
+          enum: [active, paused, completed, expired]
+          description: Current session status
+          example: active
+        last_break_at:
+          type: string
+          format: date-time
+          description: When the last break started
+          nullable: true
+          example: "2025-12-09T16:15:45Z"
+        break_ends_at:
+          type: string
+          format: date-time
+          description: When the current break ends
+          nullable: true
+          example: "2025-12-09T16:25:45Z"
+        created_at:
+          type: string
+          format: date-time
+          description: When the session was created
+          example: "2025-12-09T15:30:45Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: When the session was last updated
+          example: "2025-12-09T15:31:00Z"
+
+    CreateSessionRequest:
+      type: object
+      required:
+        - device_type
+        - child_ids
+        - minutes
+      properties:
+        device_type:
+          type: string
+          description: Type of device for the session
+          example: tv
+          minLength: 1
+        device_id:
+          type: string
+          description: Specific device ID (optional, defaults to {device_type}1)
+          example: tv1
+        child_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: IDs of children for this session
+          minItems: 1
+          example: ["550e8400-e29b-41d4-a716-446655440000"]
+        minutes:
+          type: integer
+          description: Duration of the session in minutes
+          minimum: 1
+          maximum: 1440
+          example: 30
+
+    UpdateSessionRequest:
+      type: object
+      required:
+        - action
+      properties:
+        action:
+          type: string
+          enum: [extend, stop]
+          description: Action to perform on the session
+          example: extend
+        additional_minutes:
+          type: integer
+          description: Additional minutes to add (required when action is 'extend')
+          minimum: 1
+          maximum: 1440
+          example: 15
+
+    TodayStats:
+      type: object
+      required:
+        - date
+        - children
+        - active_sessions
+        - total_children
+      properties:
+        date:
+          type: string
+          format: date
+          description: Date of the statistics
+          example: "2025-12-09"
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChildStats'
+          description: Statistics for each child
+        active_sessions:
+          type: integer
+          description: Number of currently active sessions
+          minimum: 0
+          example: 1
+        total_children:
+          type: integer
+          description: Total number of registered children
+          minimum: 0
+          example: 2
+
+    ChildStats:
+      type: object
+      required:
+        - child_id
+        - child_name
+        - today_used
+        - today_remaining
+        - today_limit
+        - sessions_today
+        - usage_percent
+      properties:
+        child_id:
+          type: string
+          format: uuid
+          description: Child's unique identifier
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        child_name:
+          type: string
+          description: Child's name
+          example: Alice
+        today_used:
+          type: integer
+          description: Minutes used today
+          minimum: 0
+          example: 30
+        today_remaining:
+          type: integer
+          description: Minutes remaining today
+          minimum: 0
+          example: 30
+        today_limit:
+          type: integer
+          description: Total daily limit
+          minimum: 0
+          example: 60
+        sessions_today:
+          type: integer
+          description: Number of sessions today
+          minimum: 0
+          example: 2
+        usage_percent:
+          type: integer
+          description: Percentage of daily limit used
+          minimum: 0
+          maximum: 100
+          example: 50
+
+    Error:
+      type: object
+      required:
+        - error
+        - code
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: Session not found
+        code:
+          type: string
+          description: Machine-readable error code
+          example: SESSION_NOT_FOUND
+        details:
+          type: string
+          description: Additional error details (optional)
+          example: Invalid JSON in request body
+
+  responses:
+    UnauthorizedError:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Unauthorized
+            code: UNAUTHORIZED
+
+    BadRequestError:
+      description: Invalid request parameters or body
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            invalidRequest:
+              summary: Invalid request body
+              value:
+                error: Invalid request body
+                code: INVALID_REQUEST
+                details: "minutes must be positive"
+            insufficientTime:
+              summary: Insufficient time remaining
+              value:
+                error: Child has insufficient remaining time
+                code: INSUFFICIENT_TIME
+            invalidAction:
+              summary: Invalid action
+              value:
+                error: Invalid action. Must be 'extend' or 'stop'
+                code: INVALID_ACTION
+
+    SessionNotFoundError:
+      description: Session not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Session not found
+            code: SESSION_NOT_FOUND
+
+    ChildNotFoundError:
+      description: Child not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Child not found
+            code: CHILD_NOT_FOUND
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Internal server error
+            code: INTERNAL_ERROR

@@ -1,0 +1,425 @@
+# Metron REST API v1 Documentation
+
+## Overview
+
+Metron now uses the Gin framework with TMF630 REST API guidelines. All endpoints are mounted under `/v1/` and require API key authentication (except `/health`).
+
+## Authentication
+
+All `/v1/*` endpoints require the `X-Metron-Key` header:
+
+```bash
+curl -H "X-Metron-Key: your-api-key-here" http://localhost:8080/v1/children
+```
+
+## Endpoints
+
+### Health Check
+
+#### GET /health
+
+No authentication required. Returns service health status.
+
+**Response:**
+```json
+{
+  "status": "UP",
+  "service": "metron"
+}
+```
+
+---
+
+### Children
+
+#### GET /v1/children
+
+List all children with their screen-time limits.
+
+**Response:**
+```json
+[
+  {
+    "id": "child-uuid",
+    "name": "Alice",
+    "weekday_limit": 60,
+    "weekend_limit": 120,
+    "break_rule": {
+      "break_after_minutes": 45,
+      "break_duration_minutes": 10
+    },
+    "created_at": "2025-12-09T15:30:45Z",
+    "updated_at": "2025-12-09T15:30:45Z"
+  }
+]
+```
+
+#### GET /v1/children/:id
+
+Get detailed information about a specific child, including today's usage.
+
+**Response:**
+```json
+{
+  "id": "child-uuid",
+  "name": "Alice",
+  "weekday_limit": 60,
+  "weekend_limit": 120,
+  "break_rule": {
+    "break_after_minutes": 45,
+    "break_duration_minutes": 10
+  },
+  "created_at": "2025-12-09T15:30:45Z",
+  "updated_at": "2025-12-09T15:30:45Z",
+  "today_used": 30,
+  "today_remaining": 30,
+  "today_limit": 60,
+  "sessions_today": 2
+}
+```
+
+---
+
+### Devices
+
+#### GET /v1/devices
+
+List all available device types and their capabilities.
+
+**Response:**
+```json
+[
+  {
+    "type": "aqara",
+    "name": "aqara",
+    "capabilities": {
+      "supports_warnings": true,
+      "supports_live_state": true,
+      "supports_scheduling": false
+    }
+  }
+]
+```
+
+---
+
+### Sessions
+
+#### GET /v1/sessions
+
+List sessions with optional filtering.
+
+**Query Parameters:**
+- `childId` - Filter by child ID
+- `active` - Filter active sessions (true/false)
+- `date` - Filter by date (YYYY-MM-DD)
+
+**Examples:**
+```bash
+# List all active sessions
+GET /v1/sessions?active=true
+
+# List sessions for a specific child
+GET /v1/sessions?childId=child-uuid
+
+# List sessions for a specific date
+GET /v1/sessions?date=2025-12-09
+```
+
+**Response:**
+```json
+[
+  {
+    "id": "session-uuid",
+    "device_type": "tv",
+    "device_id": "tv1",
+    "child_ids": ["child-uuid"],
+    "start_time": "2025-12-09T15:30:45Z",
+    "expected_duration": 30,
+    "remaining_minutes": 25,
+    "status": "active",
+    "created_at": "2025-12-09T15:30:45Z",
+    "updated_at": "2025-12-09T15:30:45Z"
+  }
+]
+```
+
+#### POST /v1/sessions
+
+Start a new session.
+
+**Request Body:**
+```json
+{
+  "device_type": "tv",
+  "device_id": "tv1",
+  "child_ids": ["child-uuid-1", "child-uuid-2"],
+  "minutes": 30
+}
+```
+
+**Response:** (201 Created)
+```json
+{
+  "id": "session-uuid",
+  "device_type": "tv",
+  "device_id": "tv1",
+  "child_ids": ["child-uuid-1", "child-uuid-2"],
+  "start_time": "2025-12-09T15:30:45Z",
+  "expected_duration": 30,
+  "remaining_minutes": 30,
+  "status": "active",
+  "created_at": "2025-12-09T15:30:45Z",
+  "updated_at": "2025-12-09T15:30:45Z"
+}
+```
+
+**Error Responses:**
+- `400` - Invalid request or insufficient time
+- `401` - Unauthorized
+
+#### GET /v1/sessions/:id
+
+Get details of a specific session.
+
+**Response:**
+```json
+{
+  "id": "session-uuid",
+  "device_type": "tv",
+  "device_id": "tv1",
+  "child_ids": ["child-uuid"],
+  "start_time": "2025-12-09T15:30:45Z",
+  "expected_duration": 30,
+  "remaining_minutes": 25,
+  "status": "active",
+  "created_at": "2025-12-09T15:30:45Z",
+  "updated_at": "2025-12-09T15:30:45Z"
+}
+```
+
+#### PATCH /v1/sessions/:id
+
+Update a session (extend or stop).
+
+**Extend Session:**
+```json
+{
+  "action": "extend",
+  "additional_minutes": 15
+}
+```
+
+**Response:** (200 OK)
+```json
+{
+  "id": "session-uuid",
+  "device_type": "tv",
+  "device_id": "tv1",
+  "child_ids": ["child-uuid"],
+  "start_time": "2025-12-09T15:30:45Z",
+  "expected_duration": 45,
+  "remaining_minutes": 40,
+  "status": "active",
+  "created_at": "2025-12-09T15:30:45Z",
+  "updated_at": "2025-12-09T15:31:00Z"
+}
+```
+
+**Stop Session:**
+```json
+{
+  "action": "stop"
+}
+```
+
+**Response:** (204 No Content)
+
+**Error Responses:**
+- `400` - Invalid action or insufficient time
+- `404` - Session not found
+
+---
+
+### Statistics
+
+#### GET /v1/stats/today
+
+Get today's usage statistics for all children.
+
+**Response:**
+```json
+{
+  "date": "2025-12-09",
+  "children": [
+    {
+      "child_id": "child-uuid",
+      "child_name": "Alice",
+      "today_used": 30,
+      "today_remaining": 30,
+      "today_limit": 60,
+      "sessions_today": 2,
+      "usage_percent": 50
+    }
+  ],
+  "active_sessions": 1,
+  "total_children": 2
+}
+```
+
+---
+
+## Telegram Bot Integration Examples
+
+### 1. Get Today's Summary
+
+```bash
+GET /v1/stats/today
+```
+
+Display in Telegram:
+```
+📊 Today's Screen Time Summary
+Date: 2025-12-09
+
+👧 Alice
+├ Used: 30 mins (50%)
+├ Remaining: 30 mins
+└ Sessions: 2
+
+Active sessions: 1
+```
+
+### 2. Start a Session
+
+```bash
+POST /v1/sessions
+{
+  "device_type": "tv",
+  "child_ids": ["alice-uuid"],
+  "minutes": 30
+}
+```
+
+Telegram buttons:
+- ✅ Start 30 mins
+- ✅ Start 60 mins
+- ✅ Start 120 mins
+
+### 3. Extend Session
+
+```bash
+PATCH /v1/sessions/{session-id}
+{
+  "action": "extend",
+  "additional_minutes": 15
+}
+```
+
+Telegram inline buttons:
+- ⏱ +5 mins
+- ⏱ +15 mins
+- ⏱ +30 mins
+- ⏱ +60 mins
+- ⏱ +120 mins
+
+### 4. Stop Session
+
+```bash
+PATCH /v1/sessions/{session-id}
+{
+  "action": "stop"
+}
+```
+
+Telegram button:
+- ⏹ Stop Session
+
+### 5. List Devices
+
+```bash
+GET /v1/devices
+```
+
+Display available devices:
+```
+📺 Available Devices
+├ TV (Aqara)
+├ PS5 (Not configured)
+└ iPad (Not configured)
+```
+
+### 6. List Children
+
+```bash
+GET /v1/children
+```
+
+Display for selection:
+```
+👶 Select Children:
+☑ Alice (30/60 mins used)
+☐ Bob (0/60 mins used)
+☑ All Children (shared time)
+```
+
+---
+
+## Error Responses
+
+All errors follow TMF630 format:
+
+```json
+{
+  "error": "Human-readable error message",
+  "code": "ERROR_CODE"
+}
+```
+
+### Common Error Codes:
+
+- `UNAUTHORIZED` (401) - Missing or invalid API key
+- `SESSION_NOT_FOUND` (404) - Session ID does not exist
+- `CHILD_NOT_FOUND` (404) - Child ID does not exist
+- `INSUFFICIENT_TIME` (400) - Child has insufficient remaining time
+- `INVALID_REQUEST` (400) - Malformed request body
+- `INVALID_ACTION` (400) - Invalid action specified
+- `INTERNAL_ERROR` (500) - Server error
+
+---
+
+## Middleware
+
+All requests pass through the following middleware:
+
+1. **Request ID** - Adds unique `X-Request-ID` header
+2. **Recovery** - Catches panics and returns 500 errors
+3. **Logging** - Structured logging with component, request_id, method, path, status, latency
+4. **Content-Type** - Enforces `application/json` for POST/PATCH requests
+5. **Authentication** - Validates `X-Metron-Key` header (for /v1/* endpoints)
+
+---
+
+## Component-Based Logging
+
+All API logs include `component=api` for easy filtering:
+
+```json
+{
+  "timestamp": "2025-12-09T15:30:45Z",
+  "level": "INFO",
+  "msg": "HTTP request",
+  "component": "api",
+  "request_id": "uuid",
+  "method": "POST",
+  "path": "/v1/sessions",
+  "status": 201,
+  "latency": "15ms",
+  "client_ip": "127.0.0.1"
+}
+```
+
+Filter API logs:
+```bash
+./bin/metron -log-format json | jq 'select(.component == "api")'
+```
