@@ -9,12 +9,14 @@ import (
 
 // CallbackData represents the data embedded in callback buttons
 type CallbackData struct {
-	Action   string `json:"a"`           // Action type
-	Step     int    `json:"s,omitempty"` // Current step in flow
-	ChildID  string `json:"c,omitempty"` // Child ID
-	Device   string `json:"d,omitempty"` // Device type
-	Duration int    `json:"m,omitempty"` // Duration in minutes
-	Session  string `json:"ses,omitempty"` // Session ID
+	Action      string `json:"a"`            // Action type
+	Step        int    `json:"s,omitempty"`  // Current step in flow
+	ChildID     string `json:"c,omitempty"`  // Child ID (resolved from index)
+	ChildIndex  int    `json:"ci,omitempty"` // Child index in list (for compact callback)
+	Device      string `json:"d,omitempty"`  // Device type
+	Duration    int    `json:"m,omitempty"`  // Duration in minutes
+	Session     string `json:"ses,omitempty"` // Session ID (resolved from index)
+	SessionIndex int   `json:"si,omitempty"` // Session index in list (for compact callback)
 }
 
 // MarshalCallback converts CallbackData to JSON string
@@ -40,13 +42,13 @@ func UnmarshalCallback(data string) (*CallbackData, error) {
 func BuildChildrenButtons(children []Child, action string, step int) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
-	// Individual children
-	for _, child := range children {
+	// Individual children - use index instead of full UUID
+	for i, child := range children {
 		emoji := getChildEmoji(child.Name)
 		callback := MarshalCallback(CallbackData{
-			Action:  action,
-			Step:    step,
-			ChildID: child.ID,
+			Action:     action,
+			Step:       step,
+			ChildIndex: i, // Use index to keep callback data small
 		})
 
 		btn := tgbotapi.NewInlineKeyboardButtonData(
@@ -56,17 +58,12 @@ func BuildChildrenButtons(children []Child, action string, step int) tgbotapi.In
 		rows = append(rows, []tgbotapi.InlineKeyboardButton{btn})
 	}
 
-	// "Shared" option (all children)
+	// "Shared" option (all children) - use special index -1
 	if len(children) > 1 {
-		var childIDs []string
-		for _, child := range children {
-			childIDs = append(childIDs, child.ID)
-		}
-
 		callback := MarshalCallback(CallbackData{
-			Action:  action,
-			Step:    step,
-			ChildID: "shared", // Special marker for shared sessions
+			Action:     action,
+			Step:       step,
+			ChildIndex: -1, // Special marker for shared sessions
 		})
 
 		btn := tgbotapi.NewInlineKeyboardButtonData("👨‍👩‍👧 Shared (All)", callback)
@@ -175,9 +172,9 @@ func BuildSessionsButtons(sessions []Session, action string) tgbotapi.InlineKeyb
 		label := fmt.Sprintf("%d. %s %s", i+1, emoji, session.DeviceType)
 
 		callback := MarshalCallback(CallbackData{
-			Action:  action,
-			Step:    1,
-			Session: session.ID,
+			Action:       action,
+			Step:         1,
+			SessionIndex: i, // Use index to keep callback data small
 		})
 
 		btn := tgbotapi.NewInlineKeyboardButtonData(label, callback)
@@ -195,7 +192,7 @@ func BuildSessionsButtons(sessions []Session, action string) tgbotapi.InlineKeyb
 }
 
 // BuildExtendDurationButtons creates buttons for selecting extension duration
-func BuildExtendDurationButtons(sessionID string) tgbotapi.InlineKeyboardMarkup {
+func BuildExtendDurationButtons(sessionIndex int) tgbotapi.InlineKeyboardMarkup {
 	durations := []int{5, 15, 30, 60, 120}
 	var rows [][]tgbotapi.InlineKeyboardButton
 
@@ -205,10 +202,10 @@ func BuildExtendDurationButtons(sessionID string) tgbotapi.InlineKeyboardMarkup 
 
 	for i, duration := range durations {
 		callback := MarshalCallback(CallbackData{
-			Action:   "extend",
-			Step:     2,
-			Session:  sessionID,
-			Duration: duration,
+			Action:       "extend",
+			Step:         2,
+			SessionIndex: sessionIndex, // Use index instead of full UUID
+			Duration:     duration,
 		})
 
 		label := fmt.Sprintf("+%d", duration)

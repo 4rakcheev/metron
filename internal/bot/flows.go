@@ -11,8 +11,12 @@ import (
 func (b *Bot) handleNewSessionFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
 	switch data.Step {
 	case 1:
-		// Step 1: Child selected, show devices
-		return b.newSessionStep2(ctx, message, data.ChildID)
+		// Step 1: Child selected (by index), resolve to ID and show devices
+		childID, err := b.resolveChildIndex(ctx, data.ChildIndex)
+		if err != nil {
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+		}
+		return b.newSessionStep2(ctx, message, childID)
 	case 2:
 		// Step 2: Device selected, show durations
 		return b.newSessionStep3(ctx, message, data.ChildID, data.Device)
@@ -23,6 +27,27 @@ func (b *Bot) handleNewSessionFlow(ctx context.Context, message *tgbotapi.Messag
 		return b.editMessage(message.Chat.ID, message.MessageID,
 			"❌ Invalid step in session creation flow.", nil)
 	}
+}
+
+// resolveChildIndex resolves a child index to a child ID
+// Index -1 is a special marker for "shared" (all children)
+func (b *Bot) resolveChildIndex(ctx context.Context, index int) (string, error) {
+	// Special case: index -1 means "shared"
+	if index == -1 {
+		return "shared", nil
+	}
+
+	// Fetch children list to resolve index
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	if index < 0 || index >= len(children) {
+		return "", fmt.Errorf("invalid child index: %d", index)
+	}
+
+	return children[index].ID, nil
 }
 
 // newSessionStep2 shows device selection
@@ -105,21 +130,41 @@ func (b *Bot) newSessionCreate(ctx context.Context, message *tgbotapi.Message, c
 func (b *Bot) handleExtendFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
 	switch data.Step {
 	case 1:
-		// Step 1: Session selected, show durations
-		return b.extendStep2(ctx, message, data.Session)
+		// Step 1: Session selected (by index), show durations
+		// Keep the session index for the next step
+		return b.extendStep2(ctx, message, data.SessionIndex)
 	case 2:
-		// Step 2: Duration selected, extend session
-		return b.extendSession(ctx, message, data.Session, data.Duration)
+		// Step 2: Duration selected, resolve session index and extend
+		sessionID, err := b.resolveSessionIndex(ctx, data.SessionIndex)
+		if err != nil {
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+		}
+		return b.extendSession(ctx, message, sessionID, data.Duration)
 	default:
 		return b.editMessage(message.Chat.ID, message.MessageID,
 			"❌ Invalid step in extend flow.", nil)
 	}
 }
 
+// resolveSessionIndex resolves a session index to a session ID
+func (b *Bot) resolveSessionIndex(ctx context.Context, index int) (string, error) {
+	// Fetch active sessions to resolve index
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return "", err
+	}
+
+	if index < 0 || index >= len(sessions) {
+		return "", fmt.Errorf("invalid session index: %d", index)
+	}
+
+	return sessions[index].ID, nil
+}
+
 // extendStep2 shows duration selection for extension
-func (b *Bot) extendStep2(ctx context.Context, message *tgbotapi.Message, sessionID string) error {
+func (b *Bot) extendStep2(ctx context.Context, message *tgbotapi.Message, sessionIndex int) error {
 	text := "⏱ *Extend Session*\n\nSelect additional minutes:"
-	keyboard := BuildExtendDurationButtons(sessionID)
+	keyboard := BuildExtendDurationButtons(sessionIndex)
 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
