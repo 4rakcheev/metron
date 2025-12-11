@@ -6,6 +6,7 @@ import (
 	"metron/internal/api/middleware"
 	"metron/internal/core"
 	"metron/internal/drivers"
+	"metron/internal/drivers/aqara"
 	"metron/internal/storage"
 
 	"github.com/gin-gonic/gin"
@@ -13,11 +14,12 @@ import (
 
 // RouterConfig holds dependencies for the API router
 type RouterConfig struct {
-	Storage  storage.Storage
-	Manager  *core.SessionManager
-	Registry *drivers.Registry
-	APIKey   string
-	Logger   *slog.Logger
+	Storage           storage.Storage
+	Manager           *core.SessionManager
+	Registry          *drivers.Registry
+	APIKey            string
+	Logger            *slog.Logger
+	AqaraTokenStorage aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
 }
 
 // NewRouter creates and configures the Gin router
@@ -78,6 +80,16 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			config.Logger,
 		)
 		v1.GET("/stats/today", statsHandler.GetTodayStats)
+
+		// Admin endpoints (only register if Aqara token storage is provided)
+		if config.AqaraTokenStorage != nil {
+			adminHandler := handlers.NewAdminHandler(
+				config.AqaraTokenStorage,
+				config.Logger,
+			)
+			v1.POST("/admin/aqara/refresh-token", adminHandler.UpdateAqaraRefreshToken)
+			v1.GET("/admin/aqara/token-status", adminHandler.GetAqaraTokenStatus)
+		}
 	}
 
 	return router

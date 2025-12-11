@@ -40,13 +40,12 @@ type SecurityConfig struct {
 
 // AqaraConfig contains Aqara Cloud API settings
 type AqaraConfig struct {
-	AppID       string        `json:"app_id"`
-	AppKey      string        `json:"app_key"`
-	KeyID       string        `json:"key_id"`
-	AccessToken string        `json:"access_token"`
-	BaseURL     string        `json:"base_url"`
-	Devices     []AqaraDevice `json:"devices"`
-	Scenes      AqaraScenes   `json:"scenes"`
+	AppID   string        `json:"app_id"`
+	AppKey  string        `json:"app_key"`
+	KeyID   string        `json:"key_id"`
+	BaseURL string        `json:"base_url"`
+	Devices []AqaraDevice `json:"devices"`
+	Scenes  AqaraScenes   `json:"scenes"`
 }
 
 // AqaraDevice represents a configured Aqara device
@@ -126,11 +125,10 @@ func LoadFromEnv() (*Config, error) {
 			EnableIPCheck: getEnvBool("METRON_ENABLE_IP_CHECK", false),
 		},
 		Aqara: AqaraConfig{
-			AppID:       getEnv("METRON_AQARA_APP_ID", ""),
-			AppKey:      getEnv("METRON_AQARA_APP_KEY", ""),
-			KeyID:       getEnv("METRON_AQARA_KEY_ID", ""),
-			AccessToken: getEnv("METRON_AQARA_ACCESS_TOKEN", ""),
-			BaseURL:     getEnv("METRON_AQARA_BASE_URL", "https://open-cn.aqara.com"),
+			AppID:   getEnv("METRON_AQARA_APP_ID", ""),
+			AppKey:  getEnv("METRON_AQARA_APP_KEY", ""),
+			KeyID:   getEnv("METRON_AQARA_KEY_ID", ""),
+			BaseURL: getEnv("METRON_AQARA_BASE_URL", "https://open-cn.aqara.com"),
 			Scenes: AqaraScenes{
 				TVPINEntry: getEnv("METRON_AQARA_TV_PIN_SCENE", ""),
 				TVWarning:  getEnv("METRON_AQARA_TV_WARNING_SCENE", ""),

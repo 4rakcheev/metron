@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"metron/internal/core"
+	"metron/internal/drivers/aqara"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -88,6 +89,15 @@ func (s *SQLiteStorage) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 		CREATE INDEX IF NOT EXISTS idx_sessions_device ON sessions(device_type, device_id);
 		CREATE INDEX IF NOT EXISTS idx_daily_usage_date ON daily_usage(date);
+
+		CREATE TABLE IF NOT EXISTS aqara_tokens (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			refresh_token TEXT NOT NULL,
+			access_token TEXT,
+			access_token_expires_at DATETIME,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		);
 	`
 
 	_, err := s.db.Exec(schema)
@@ -543,4 +553,66 @@ func (s *SQLiteStorage) scanSessions(ctx context.Context, rows *sql.Rows) ([]*co
 
 func normalizeDate(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+}
+
+// GetAqaraTokens retrieves the stored Aqara tokens
+// Implements aqara.AqaraTokenStorage interface
+func (s *SQLiteStorage) GetAqaraTokens(ctx context.Context) (*aqara.AqaraTokens, error) {
+	var tokens aqara.AqaraTokens
+	var expiresAt sql.NullTime
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT refresh_token, access_token, access_token_expires_at, created_at, updated_at
+		FROM aqara_tokens WHERE id = 1
+	`).Scan(&tokens.RefreshToken, &tokens.AccessToken, &expiresAt, &tokens.CreatedAt, &tokens.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No tokens stored yet
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if expiresAt.Valid {
+		tokens.AccessTokenExpiresAt = &expiresAt.Time
+	}
+
+	return &tokens, nil
+}
+
+// SaveAqaraTokens saves or updates the Aqara tokens
+// Implements aqara.AqaraTokenStorage interface
+func (s *SQLiteStorage) SaveAqaraTokens(ctx context.Context, tokens *aqara.AqaraTokens) error {
+	now := time.Now()
+	tokens.UpdatedAt = now
+
+	var expiresAt sql.NullTime
+	if tokens.AccessTokenExpiresAt != nil {
+		expiresAt = sql.NullTime{Time: *tokens.AccessTokenExpiresAt, Valid: true}
+	}
+
+	// Check if tokens exist
+	var exists bool
+	err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM aqara_tokens WHERE id = 1)").Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		// Update existing tokens
+		_, err = s.db.ExecContext(ctx, `
+			UPDATE aqara_tokens
+			SET refresh_token = ?, access_token = ?, access_token_expires_at = ?, updated_at = ?
+			WHERE id = 1
+		`, tokens.RefreshToken, tokens.AccessToken, expiresAt, tokens.UpdatedAt)
+	} else {
+		// Insert new tokens
+		tokens.CreatedAt = now
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO aqara_tokens (id, refresh_token, access_token, access_token_expires_at, created_at, updated_at)
+			VALUES (1, ?, ?, ?, ?, ?)
+		`, tokens.RefreshToken, tokens.AccessToken, expiresAt, tokens.CreatedAt, tokens.UpdatedAt)
+	}
+
+	return err
 }

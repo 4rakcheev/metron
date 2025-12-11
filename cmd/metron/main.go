@@ -155,13 +155,12 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		AppID:       cfg.Aqara.AppID,
 		AppKey:      cfg.Aqara.AppKey,
 		KeyID:       cfg.Aqara.KeyID,
-		AccessToken: cfg.Aqara.AccessToken,
 		BaseURL:     cfg.Aqara.BaseURL,
 		PINSceneID:  cfg.Aqara.Scenes.TVPINEntry,
 		WarnSceneID: cfg.Aqara.Scenes.TVWarning,
 		OffSceneID:  cfg.Aqara.Scenes.TVPowerOff,
 	}
-	aqaraDriver := aqara.NewDriver(aqaraConfig)
+	aqaraDriver := aqara.NewDriver(aqaraConfig, db) // Pass storage for token management
 	driverRegistry.Register(aqaraDriver)
 
 	// Initialize session manager
@@ -180,11 +179,12 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	// Initialize REST API with Gin
 	logger.Info("Initializing REST API server")
 	router := api.NewRouter(api.RouterConfig{
-		Storage:  db,
-		Manager:  sessionManager,
-		Registry: driverRegistry,
-		APIKey:   cfg.Security.APIKey,
-		Logger:   apiLogger,
+		Storage:           db,
+		Manager:           sessionManager,
+		Registry:          driverRegistry,
+		APIKey:            cfg.Security.APIKey,
+		Logger:            apiLogger,
+		AqaraTokenStorage: db, // SQLite storage also implements aqara.AqaraTokenStorage
 	})
 
 	server := &http.Server{

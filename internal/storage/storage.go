@@ -6,7 +6,8 @@ import (
 	"time"
 )
 
-// Storage defines the interface for data persistence
+// Storage defines the interface for core data persistence
+// Driver-specific storage needs (like Aqara tokens) should use separate interfaces
 type Storage interface {
 	// Children
 	CreateChild(ctx context.Context, child *core.Child) error

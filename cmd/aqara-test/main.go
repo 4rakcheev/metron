@@ -8,6 +8,7 @@ import (
 	"metron/config"
 	"metron/internal/core"
 	"metron/internal/drivers/aqara"
+	"metron/internal/storage/sqlite"
 	"os"
 	"time"
 )
@@ -16,7 +17,19 @@ func main() {
 	// Parse command line flags
 	configPath := flag.String("config", "config.json", "Path to configuration file")
 	action := flag.String("action", "pin", "Action to perform: pin, warn, off")
+	refreshToken := flag.String("refresh-token", "", "Aqara refresh token (required)")
 	flag.Parse()
+
+	// Validate refresh token
+	if *refreshToken == "" {
+		log.Fatal("❌ Error: -refresh-token is required\n\n" +
+			"To get a refresh token:\n" +
+			"1. Go to https://developer.aqara.com/console/app-management/\n" +
+			"2. Application Details → Authorization Management → Aqara account authorization\n" +
+			"3. Enter credentials and obtain access token\n" +
+			"4. Go to Authorization Details and copy the Refresh Token\n" +
+			"5. Run this test with: -refresh-token <token>\n")
+	}
 
 	// Load configuration
 	cfg, err := loadConfig(*configPath)
@@ -24,17 +37,33 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Create Aqara driver
+	// Create temporary in-memory database for token storage
+	db, err := sqlite.New(":memory:")
+	if err != nil {
+		log.Fatalf("Failed to create in-memory database: %v", err)
+	}
+	defer db.Close()
+
+	// Store the refresh token in the database
+	tokens := &aqara.AqaraTokens{
+		RefreshToken: *refreshToken,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	if err := db.SaveAqaraTokens(context.Background(), tokens); err != nil {
+		log.Fatalf("Failed to save refresh token: %v", err)
+	}
+
+	// Create Aqara driver with storage
 	driver := aqara.NewDriver(aqara.Config{
 		AppID:       cfg.Aqara.AppID,
 		AppKey:      cfg.Aqara.AppKey,
 		KeyID:       cfg.Aqara.KeyID,
-		AccessToken: cfg.Aqara.AccessToken,
 		BaseURL:     cfg.Aqara.BaseURL,
 		PINSceneID:  cfg.Aqara.Scenes.TVPINEntry,
 		WarnSceneID: cfg.Aqara.Scenes.TVWarning,
 		OffSceneID:  cfg.Aqara.Scenes.TVPowerOff,
-	})
+	}, db)
 
 	// Create dummy session for testing
 	session := &core.Session{
