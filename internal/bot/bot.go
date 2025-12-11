@@ -146,7 +146,21 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		b.logger.Error("Failed to answer callback", "error", err)
 	}
 
-	// Parse callback data
+	// Check if callback data is a raw command (starts with /)
+	if len(callback.Data) > 0 && callback.Data[0] == '/' {
+		// Handle as command
+		msg := &tgbotapi.Message{
+			Chat:    callback.Message.Chat,
+			From:    callback.From,
+			Text:    callback.Data,
+			Entities: []tgbotapi.MessageEntity{
+				{Type: "bot_command", Offset: 0, Length: len(callback.Data)},
+			},
+		}
+		return b.handleMessage(ctx, msg)
+	}
+
+	// Parse callback data as JSON
 	data, err := UnmarshalCallback(callback.Data)
 	if err != nil {
 		b.logger.Error("Failed to unmarshal callback data", "error", err)
@@ -162,20 +176,6 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 	case "extend":
 		return b.handleExtendFlow(ctx, callback.Message, data)
 	default:
-		// Handle simple button commands
-		if data.Action == "/today" || data.Action == "/newsession" || data.Action == "/extend" {
-			// Create a fake message for command handling
-			msg := &tgbotapi.Message{
-				Chat:    callback.Message.Chat,
-				From:    callback.From,
-				Text:    data.Action,
-				Entities: []tgbotapi.MessageEntity{
-					{Type: "bot_command", Offset: 0, Length: len(data.Action)},
-				},
-			}
-			return b.handleMessage(ctx, msg)
-		}
-
 		return b.sendMessage(callback.Message.Chat.ID,
 			"Unknown action.", nil)
 	}
