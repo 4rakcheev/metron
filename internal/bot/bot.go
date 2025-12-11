@@ -246,5 +246,5 @@ func (b *Bot) sendUnauthorizedMessage(update tgbotapi.Update) error {
 // handleCancel handles the cancel action
 func (b *Bot) handleCancel(ctx context.Context, message *tgbotapi.Message) error {
 	return b.editMessage(message.Chat.ID, message.MessageID,
-		"❌ Cancelled.", nil)
+		"❌ Cancelled.", BuildQuickActionsButtons())
 }

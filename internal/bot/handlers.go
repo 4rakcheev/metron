@@ -31,19 +31,19 @@ func (b *Bot) handleToday(ctx context.Context, message *tgbotapi.Message) error 
 	// Get today's stats
 	stats, err := b.client.GetTodayStats(ctx)
 	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), nil)
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	// Get active sessions
 	sessions, err := b.client.ListSessions(ctx, true, "")
 	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), nil)
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	// Get children for mapping
 	children, err := b.client.ListChildren(ctx)
 	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), nil)
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	childrenMap := make(map[string]Child)
@@ -52,29 +52,29 @@ func (b *Bot) handleToday(ctx context.Context, message *tgbotapi.Message) error 
 	}
 
 	text := FormatTodayStats(stats, sessions, childrenMap)
-	return b.sendMessage(message.Chat.ID, text, nil)
+	return b.sendMessage(message.Chat.ID, text, BuildQuickActionsButtons())
 }
 
 // handleChildren handles the /children command
 func (b *Bot) handleChildren(ctx context.Context, message *tgbotapi.Message) error {
 	children, err := b.client.ListChildren(ctx)
 	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), nil)
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	text := FormatChildren(children)
-	return b.sendMessage(message.Chat.ID, text, nil)
+	return b.sendMessage(message.Chat.ID, text, BuildQuickActionsButtons())
 }
 
 // handleDevices handles the /devices command
 func (b *Bot) handleDevices(ctx context.Context, message *tgbotapi.Message) error {
 	devices, err := b.client.ListDevices(ctx)
 	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), nil)
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	text := FormatDevices(devices)
-	return b.sendMessage(message.Chat.ID, text, nil)
+	return b.sendMessage(message.Chat.ID, text, BuildQuickActionsButtons())
 }
 
 // handleNewSession handles the /newsession command (step 0)
@@ -82,12 +82,12 @@ func (b *Bot) handleNewSession(ctx context.Context, message *tgbotapi.Message) e
 	// Get children list
 	children, err := b.client.ListChildren(ctx)
 	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), nil)
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	if len(children) == 0 {
 		return b.sendMessage(message.Chat.ID,
-			"❌ No children configured. Please add children first.", nil)
+			"❌ No children configured. Please add children first.", BuildQuickActionsButtons())
 	}
 
 	text := "➕ *New Session*\n\n👶 Step 1/3: Select child(ren)"
@@ -101,18 +101,18 @@ func (b *Bot) handleExtend(ctx context.Context, message *tgbotapi.Message) error
 	// Get active sessions
 	sessions, err := b.client.ListSessions(ctx, true, "")
 	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), nil)
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	if len(sessions) == 0 {
 		return b.sendMessage(message.Chat.ID,
-			"❌ No active sessions to extend.", nil)
+			"❌ No active sessions to extend.", BuildQuickActionsButtons())
 	}
 
 	// Get children for mapping
 	children, err := b.client.ListChildren(ctx)
 	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), nil)
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	childrenMap := make(map[string]Child)

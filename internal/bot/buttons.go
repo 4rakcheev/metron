@@ -251,3 +251,14 @@ func BuildMainMenuButtons() tgbotapi.InlineKeyboardMarkup {
 		),
 	)
 }
+
+// BuildQuickActionsButtons creates compact action buttons for attaching to responses
+func BuildQuickActionsButtons() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📊 Today", "/today"),
+			tgbotapi.NewInlineKeyboardButtonData("➕ New", "/newsession"),
+			tgbotapi.NewInlineKeyboardButtonData("⏱ Extend", "/extend"),
+		),
+	)
+}

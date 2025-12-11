@@ -63,7 +63,7 @@ func (b *Bot) newSessionCreate(ctx context.Context, message *tgbotapi.Message, c
 	if childID == "shared" {
 		children, err := b.client.ListChildren(ctx)
 		if err != nil {
-			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 		}
 
 		for _, child := range children {
@@ -82,13 +82,13 @@ func (b *Bot) newSessionCreate(ctx context.Context, message *tgbotapi.Message, c
 
 	session, err := b.client.CreateSession(ctx, req)
 	if err != nil {
-		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	// Get children for formatting
 	children, err := b.client.ListChildren(ctx)
 	if err != nil {
-		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	childrenMap := make(map[string]Child)
@@ -98,7 +98,7 @@ func (b *Bot) newSessionCreate(ctx context.Context, message *tgbotapi.Message, c
 
 	text := FormatSessionCreated(session, childrenMap)
 
-	return b.editMessage(message.Chat.ID, message.MessageID, text, nil)
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
 }
 
 // handleExtendFlow handles the multi-step flow for extending a session
@@ -128,10 +128,10 @@ func (b *Bot) extendStep2(ctx context.Context, message *tgbotapi.Message, sessio
 func (b *Bot) extendSession(ctx context.Context, message *tgbotapi.Message, sessionID string, additionalMinutes int) error {
 	session, err := b.client.ExtendSession(ctx, sessionID, additionalMinutes)
 	if err != nil {
-		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	text := FormatSessionExtended(session, additionalMinutes)
 
-	return b.editMessage(message.Chat.ID, message.MessageID, text, nil)
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
 }
