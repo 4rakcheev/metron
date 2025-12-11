@@ -209,7 +209,7 @@ func (d *Driver) refreshAccessToken(ctx context.Context, refreshToken string) (a
 		MessageDetail string `json:"messageDetail"`
 		Result        struct {
 			AccessToken  string `json:"accessToken"`
-			ExpiresIn    int    `json:"expiresIn"`
+			ExpiresIn    string `json:"expiresIn"` // Aqara returns this as a string
 			RefreshToken string `json:"refreshToken"`
 		} `json:"result"`
 	}
@@ -226,7 +226,13 @@ func (d *Driver) refreshAccessToken(ctx context.Context, refreshToken string) (a
 		return "", "", 0, fmt.Errorf("refresh token API returned error code %d: %s (%s)", apiResp.Code, apiResp.Message, apiResp.MessageDetail)
 	}
 
-	return apiResp.Result.AccessToken, apiResp.Result.RefreshToken, apiResp.Result.ExpiresIn, nil
+	// Convert expiresIn from string to int
+	expiresIn, parseErr := strconv.Atoi(apiResp.Result.ExpiresIn)
+	if parseErr != nil {
+		return "", "", 0, fmt.Errorf("failed to parse expiresIn value '%s': %w", apiResp.Result.ExpiresIn, parseErr)
+	}
+
+	return apiResp.Result.AccessToken, apiResp.Result.RefreshToken, expiresIn, nil
 }
 
 // Capabilities returns the driver capabilities
