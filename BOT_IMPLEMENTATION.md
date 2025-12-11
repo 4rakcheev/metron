@@ -125,6 +125,10 @@ Telegram → HTTPS → nginx → :8081/telegram/webhook
 ### bot-config.json
 ```json
 {
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8081
+  },
   "telegram": {
     "token": "BOT_TOKEN_FROM_BOTFATHER",
     "allowed_users": [123456789],
@@ -141,10 +145,11 @@ Telegram → HTTPS → nginx → :8081/telegram/webhook
 ### Command-Line Flags
 ```
 -config       Path to config file (default: bot-config.json)
--port         HTTP server port (default: 8081)
 -log-format   json|text (default: json)
 -log-level    debug|info|warn|error (default: info)
 ```
+
+**Note:** Server host and port are configured in the JSON file, not via command-line flags.
 
 ## 🚀 Deployment
 

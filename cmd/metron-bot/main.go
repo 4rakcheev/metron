@@ -17,13 +17,11 @@ import (
 
 const (
 	defaultConfigPath = "bot-config.json"
-	defaultPort       = 8081
 )
 
 func main() {
 	// Parse command-line flags
 	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
-	port := flag.Int("port", defaultPort, "HTTP server port")
 	logFormat := flag.String("log-format", "json", "Log format (json or text)")
 	logLevel := flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.Parse()
@@ -33,7 +31,6 @@ func main() {
 
 	logger.Info("Starting Metron Telegram Bot",
 		"config", *configPath,
-		"port", *port,
 	)
 
 	// Load configuration
@@ -44,6 +41,8 @@ func main() {
 	}
 
 	logger.Info("Configuration loaded",
+		"host", cfg.Server.Host,
+		"port", cfg.Server.Port,
 		"webhook_url", cfg.Telegram.WebhookURL,
 		"metron_url", cfg.Metron.BaseURL,
 		"allowed_users", len(cfg.Telegram.AllowedUsers),
@@ -74,13 +73,16 @@ func main() {
 	})
 
 	// Create HTTP server
-	addr := fmt.Sprintf(":%d", *port)
+	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	server := &gin.Engine{}
 	server = router
 
 	// Start server in goroutine
 	go func() {
-		logger.Info("Starting HTTP server", "addr", addr)
+		logger.Info("Starting HTTP server",
+			"host", cfg.Server.Host,
+			"port", cfg.Server.Port,
+			"addr", addr)
 		if err := server.Run(addr); err != nil {
 			logger.Error("HTTP server failed", "error", err)
 			os.Exit(1)

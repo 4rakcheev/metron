@@ -8,8 +8,15 @@ import (
 
 // BotConfig represents the Telegram bot configuration
 type BotConfig struct {
+	Server   BotServerConfig   `json:"server"`
 	Telegram TelegramBotConfig `json:"telegram"`
 	Metron   MetronAPIConfig   `json:"metron"`
+}
+
+// BotServerConfig contains HTTP server settings for the bot
+type BotServerConfig struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 // TelegramBotConfig contains Telegram bot settings
@@ -50,6 +57,10 @@ func LoadBotConfig(path string) (*BotConfig, error) {
 
 // Validate checks if the configuration is valid
 func (c *BotConfig) Validate() error {
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("%w: invalid server port", ErrInvalidConfig)
+	}
+
 	if c.Telegram.Token == "" {
 		return fmt.Errorf("%w: telegram.token is required", ErrInvalidConfig)
 	}
@@ -68,6 +79,11 @@ func (c *BotConfig) Validate() error {
 
 	if c.Metron.APIKey == "" {
 		return fmt.Errorf("%w: metron.api_key is required", ErrInvalidConfig)
+	}
+
+	// Set default host if not specified
+	if c.Server.Host == "" {
+		c.Server.Host = "0.0.0.0"
 	}
 
 	return nil

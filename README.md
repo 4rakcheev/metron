@@ -224,6 +224,9 @@ make build-bot
 # Configure
 cp bot-config.example.json bot-config.json
 # Edit bot-config.json with your settings
+# Set server.port (default: 8081)
+# Set telegram.token, allowed_users, webhook_url
+# Set metron.base_url and api_key
 
 # Run
 ./bin/metron-bot -config bot-config.json

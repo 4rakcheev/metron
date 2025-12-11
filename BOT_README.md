@@ -32,6 +32,10 @@ Edit `bot-config.json`:
 
 ```json
 {
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8081
+  },
   "telegram": {
     "token": "YOUR_BOT_TOKEN_FROM_BOTFATHER",
     "allowed_users": [
@@ -97,6 +101,11 @@ The bot will:
 4. Bot extends the session and confirms new end time
 
 ## Configuration Options
+
+### Server Settings
+
+- **host** (optional): Server bind address (default: `0.0.0.0`)
+- **port** (required): HTTP server port (e.g., `8081`)
 
 ### Telegram Settings
 
@@ -192,9 +201,10 @@ server {
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-config` | `bot-config.json` | Path to configuration file |
-| `-port` | `8081` | HTTP server port |
 | `-log-format` | `json` | Log format (json or text) |
 | `-log-level` | `info` | Log level (debug, info, warn, error) |
+
+**Note:** Server host and port are configured in `bot-config.json`, not via command-line flags.
 
 ## Security
 
