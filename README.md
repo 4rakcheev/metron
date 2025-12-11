@@ -88,7 +88,7 @@ make build-aqara-test
 ./bin/aqara-test -action off
 ```
 
-See [TESTING.md](TESTING.md) for detailed testing instructions.
+See [docs/TESTING.md](docs/TESTING.md) for detailed testing instructions.
 
 ### 4. Run Tests
 
@@ -215,7 +215,7 @@ Metron includes a fully-functional Telegram bot that provides a convenient paren
 
 ### Quick Start
 
-See [BOT_README.md](BOT_README.md) for detailed setup instructions.
+See [deploy/bot/README.md](deploy/bot/README.md) for detailed setup instructions.
 
 ```bash
 # Build bot
@@ -288,9 +288,9 @@ curl -X PATCH http://localhost:8080/v1/sessions/{session-id} \
 
 ### Complete API Documentation
 
-📖 **[API_V1.md](API_V1.md)** - Complete human-readable API documentation with Telegram bot integration examples
+📖 **[docs/api/v1.md](docs/api/v1.md)** - Complete human-readable API documentation with Telegram bot integration examples
 
-📋 **[openapi.yaml](openapi.yaml)** - Full OpenAPI 3.0 specification
+📋 **[docs/api/openapi.yaml](docs/api/openapi.yaml)** - Full OpenAPI 3.0 specification
 
 **Available Endpoints:**
 - `GET /health` - Health check (no auth required)
@@ -307,12 +307,12 @@ curl -X PATCH http://localhost:8080/v1/sessions/{session-id} \
 ```bash
 # Using Swagger UI (docker)
 docker run -p 8081:8080 -e SWAGGER_JSON=/openapi.yaml \
-  -v $(pwd)/openapi.yaml:/openapi.yaml \
+  -v $(pwd)/docs/api/openapi.yaml:/openapi.yaml \
   swaggerapi/swagger-ui
 
 # Or use online editor
 # Visit: https://editor.swagger.io/
-# Import the openapi.yaml file
+# Import the docs/api/openapi.yaml file
 ```
 
 ## Development
