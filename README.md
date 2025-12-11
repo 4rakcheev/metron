@@ -384,23 +384,28 @@ make vet
 - [x] SQLite storage
 - [x] Session management
 - [x] Generic scheduler
+- [x] Multi-device quota sharing
 - [x] Aqara Cloud driver
+- [x] Smart TV controls through Aqara (Samsung, LG, etc.)
 - [x] REST API
 - [x] Aqara test CLI
-- [ ] Telegram bot
-- [ ] Main application
-- [ ] Docker deployment
+- [x] Telegram bot
+- [x] Usage analytics
+- [x] Main application
 
 ### Future Enhancements
 - [ ] PS5 driver (presence detection + shutdown)
 - [ ] Android Family Link driver
 - [ ] iPad Kidslox driver
-- [ ] Smart TV drivers (Samsung, LG, etc.)
-- [ ] Browser plugin for usage tracking
-- [ ] Web dashboard
-- [ ] Multi-device quota sharing
-- [ ] Usage analytics and reports
-- [ ] Notifications (email, SMS, push)
+- [ ] Web application for kids
+- [ ] Kids can request Extend time (push to telegram)
+- [ ] Docker deployment
+
+### Security & Code Quality Roadmap
+- [ ] Code Quality Foundation (golangci-lint: govet, staticcheck, revive, errcheck, etc)
+- [ ] SAST Layer (gosec, semgrep)
+- [ ] Extended Security Checks (gitleaks, trivy fs, osv-scanner)
+- [ ] Security Gate & SBOM (GitHub CodeQL, CycloneDX, Security Gate)
 
 ## Contributing
 
