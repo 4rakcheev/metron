@@ -15,8 +15,44 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// mockTokenStorage is a mock implementation of AqaraTokenStorage for testing
+type mockTokenStorage struct {
+	tokens *AqaraTokens
+	err    error
+}
+
+func (m *mockTokenStorage) GetAqaraTokens(ctx context.Context) (*AqaraTokens, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.tokens, nil
+}
+
+func (m *mockTokenStorage) SaveAqaraTokens(ctx context.Context, tokens *AqaraTokens) error {
+	if m.err != nil {
+		return m.err
+	}
+	m.tokens = tokens
+	return nil
+}
+
+// newMockStorage creates a mock storage with a valid access token
+func newMockStorage() *mockTokenStorage {
+	now := time.Now()
+	expiresAt := now.Add(7 * 24 * time.Hour) // Valid for 7 days
+	return &mockTokenStorage{
+		tokens: &AqaraTokens{
+			RefreshToken:         "test-refresh-token",
+			AccessToken:          "test-access-token",
+			AccessTokenExpiresAt: &expiresAt,
+			CreatedAt:            now,
+			UpdatedAt:            now,
+		},
+	}
+}
+
 func TestDriver_Name(t *testing.T) {
-	driver := NewDriver(Config{})
+	driver := NewDriver(Config{}, newMockStorage())
 	assert.Equal(t, "aqara", driver.Name())
 }
 
@@ -48,7 +84,7 @@ func TestDriver_Capabilities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			driver := NewDriver(tt.config)
+			driver := NewDriver(tt.config, newMockStorage())
 			caps := driver.Capabilities()
 			assert.Equal(t, tt.wantWarn, caps.SupportsWarnings)
 			assert.Equal(t, tt.wantLive, caps.SupportsLiveState)
@@ -101,10 +137,9 @@ func TestDriver_StartSession(t *testing.T) {
 		AppID:       "test-app-id",
 		AppKey:      "test-app-key",
 		KeyID:       "test-key-id",
-		AccessToken: "test-access-token",
 		BaseURL:     server.URL,
 		PINSceneID:  "pin-scene-123",
-	})
+	}, newMockStorage())
 
 	// Test StartSession
 	session := &core.Session{
@@ -123,7 +158,7 @@ func TestDriver_StartSession_NoPINScene(t *testing.T) {
 		AppKey:  "test-app-key",
 		KeyID:   "test-key-id",
 		BaseURL: "http://localhost",
-	})
+	}, newMockStorage())
 
 	session := &core.Session{
 		ID:         "session-1",
@@ -171,10 +206,9 @@ func TestDriver_StopSession(t *testing.T) {
 		AppID:       "test-app-id",
 		AppKey:      "test-app-key",
 		KeyID:       "test-key-id",
-		AccessToken: "test-access-token",
 		BaseURL:     server.URL,
 		OffSceneID:  "off-scene-456",
-	})
+	}, newMockStorage())
 
 	// Test StopSession
 	session := &core.Session{
@@ -222,10 +256,9 @@ func TestDriver_ApplyWarning(t *testing.T) {
 		AppID:       "test-app-id",
 		AppKey:      "test-app-key",
 		KeyID:       "test-key-id",
-		AccessToken: "test-access-token",
 		BaseURL:     server.URL,
 		WarnSceneID: "warn-scene-789",
-	})
+	}, newMockStorage())
 
 	// Test ApplyWarning
 	session := &core.Session{
@@ -245,7 +278,7 @@ func TestDriver_ApplyWarning_NoScene(t *testing.T) {
 		AppKey:  "test-app-key",
 		KeyID:   "test-key-id",
 		BaseURL: "http://localhost",
-	})
+	}, newMockStorage())
 
 	// Test ApplyWarning - should succeed but do nothing
 	session := &core.Session{
@@ -274,10 +307,9 @@ func TestDriver_APIError(t *testing.T) {
 		AppID:       "test-app-id",
 		AppKey:      "test-app-key",
 		KeyID:       "test-key-id",
-		AccessToken: "test-access-token",
 		BaseURL:     server.URL,
 		PINSceneID:  "invalid-scene",
-	})
+	}, newMockStorage())
 
 	// Test StartSession with API error
 	session := &core.Session{
@@ -304,10 +336,9 @@ func TestDriver_HTTPError(t *testing.T) {
 		AppID:       "test-app-id",
 		AppKey:      "test-app-key",
 		KeyID:       "test-key-id",
-		AccessToken: "test-access-token",
 		BaseURL:     server.URL,
 		PINSceneID:  "pin-scene-123",
-	})
+	}, newMockStorage())
 
 	// Test StartSession with HTTP error
 	session := &core.Session{
@@ -322,7 +353,7 @@ func TestDriver_HTTPError(t *testing.T) {
 }
 
 func TestDriver_GetLiveState(t *testing.T) {
-	driver := NewDriver(Config{})
+	driver := NewDriver(Config{}, newMockStorage())
 
 	// GetLiveState is not implemented in MVP
 	state, err := driver.GetLiveState(context.Background(), "device-1")
@@ -343,23 +374,23 @@ func TestGenerateSignature(t *testing.T) {
 		AppID:       "test-app-id",
 		AppKey:      "test-app-key",
 		KeyID:       "test-key-id",
-		AccessToken: "test-access-token",
-	})
+	}, newMockStorage())
 
 	timestamp := int64(1638360000000)
 	nonce := "123456789"
+	accessToken := "test-access-token"
 
 	// Generate signature
-	sig1 := driver.generateSignature(timestamp, nonce)
+	sig1 := driver.generateSignature(accessToken, timestamp, nonce)
 	assert.NotEmpty(t, sig1)
 	assert.Equal(t, 32, len(sig1)) // MD5 hash is 32 hex characters
 
 	// Same input should produce same signature
-	sig2 := driver.generateSignature(timestamp, nonce)
+	sig2 := driver.generateSignature(accessToken, timestamp, nonce)
 	assert.Equal(t, sig1, sig2)
 
 	// Different input should produce different signature
-	sig3 := driver.generateSignature(timestamp+1, nonce)
+	sig3 := driver.generateSignature(accessToken, timestamp+1, nonce)
 	assert.NotEqual(t, sig1, sig3)
 }
 

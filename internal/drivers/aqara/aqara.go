@@ -111,7 +111,7 @@ func (d *Driver) getAccessToken(ctx context.Context) (string, error) {
 		return d.accessToken, nil
 	}
 
-	// Get refresh token from storage
+	// Get tokens from storage
 	tokens, err := d.storage.GetAqaraTokens(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to get tokens from storage: %w", err)
@@ -120,7 +120,15 @@ func (d *Driver) getAccessToken(ctx context.Context) (string, error) {
 		return "", ErrNoRefreshToken
 	}
 
-	// Refresh the access token
+	// Check if stored access token is still valid
+	if tokens.AccessToken != "" && tokens.AccessTokenExpiresAt != nil && time.Now().Before(*tokens.AccessTokenExpiresAt) {
+		// Use the stored token
+		d.accessToken = tokens.AccessToken
+		d.tokenExpiry = *tokens.AccessTokenExpiresAt
+		return tokens.AccessToken, nil
+	}
+
+	// Need to refresh the access token
 	newAccessToken, newRefreshToken, expiresIn, err := d.refreshAccessToken(ctx, tokens.RefreshToken)
 	if err != nil {
 		return "", err
