@@ -103,7 +103,7 @@ func BuildDevicesButtons(devices []Device, action string, step int, childIndex i
 	// Back button
 	backBtn := tgbotapi.NewInlineKeyboardButtonData(
 		"◀️ Back",
-		MarshalCallback(CallbackData{Action: action, Step: step - 1}),
+		MarshalCallback(CallbackData{Action: action, Step: step - 1, ChildIndex: childIndex}),
 	)
 
 	// Cancel button
@@ -150,7 +150,7 @@ func BuildDurationButtons(action string, step int, childIndex int, device string
 	// Back and Cancel buttons
 	backBtn := tgbotapi.NewInlineKeyboardButtonData(
 		"◀️ Back",
-		MarshalCallback(CallbackData{Action: action, Step: step - 1, ChildIndex: childIndex}),
+		MarshalCallback(CallbackData{Action: action, Step: step - 1, ChildIndex: childIndex, Device: device}),
 	)
 
 	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(

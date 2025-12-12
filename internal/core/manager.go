@@ -196,8 +196,14 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 	oldRemainingMinutes := session.RemainingMinutes
 
 	// Extend session
-	session.RemainingMinutes += additionalMinutes
 	session.ExpectedDuration += additionalMinutes
+
+	// Recalculate remaining minutes based on new expected duration
+	endTime := session.StartTime.Add(time.Duration(session.ExpectedDuration) * time.Minute)
+	session.RemainingMinutes = int(time.Until(endTime).Minutes())
+	if session.RemainingMinutes < 0 {
+		session.RemainingMinutes = 0
+	}
 
 	// Reset warning state so a new warning can be sent when time crosses 5 minutes again
 	session.WarningSentAt = nil

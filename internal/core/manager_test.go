@@ -379,7 +379,9 @@ func TestSessionManager_ExtendSession(t *testing.T) {
 	extended, err := manager.ExtendSession(context.Background(), session.ID, 10)
 	require.NoError(t, err)
 	assert.Equal(t, 30, extended.ExpectedDuration)
-	assert.Equal(t, 30, extended.RemainingMinutes)
+	// RemainingMinutes should be close to 30, but may be slightly less due to elapsed time
+	assert.GreaterOrEqual(t, extended.RemainingMinutes, 29)
+	assert.LessOrEqual(t, extended.RemainingMinutes, 30)
 }
 
 func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Telegram Bot Navigation**
+  - Fixed Back button in new session device selection step (now preserves child selection)
+  - Fixed Back button in new session duration selection step (now preserves device selection)
+  - Fixed session extension remaining time calculation (now accounts for elapsed time)
+- **Session Extension**
+  - Remaining minutes now correctly calculated from actual time instead of simple increment
+  - API now returns accurate remaining time in extension response
+
 ### Added
 - **Device/Driver Architecture Separation**
   - Global device registry with configurable devices
