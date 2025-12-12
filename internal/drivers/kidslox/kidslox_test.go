@@ -15,33 +15,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockDevice is a test mock for devices.Device
-type mockDevice struct {
-	id         string
-	params     map[string]interface{}
-}
-
-func (m *mockDevice) GetID() string     { return m.id }
-func (m *mockDevice) GetName() string   { return "Test Device" }
-func (m *mockDevice) GetType() string   { return "ipad" }
-func (m *mockDevice) GetDriver() string { return "kidslox" }
-func (m *mockDevice) GetParameter(key string) interface{} {
-	if m.params == nil {
-		return nil
+// createTestRegistry creates a device registry with a test device
+func createTestRegistry(deviceID string, params map[string]interface{}) *devices.Registry {
+	registry := devices.NewRegistry()
+	device := &devices.Device{
+		ID:         deviceID,
+		Name:       "Test Device",
+		Type:       "ipad",
+		Driver:     "kidslox",
+		Parameters: params,
 	}
-	return m.params[key]
-}
-func (m *mockDevice) GetParameters() map[string]interface{} {
-	return m.params
+	registry.Register(device)
+	return registry
 }
 
 func TestDriver_Name(t *testing.T) {
-	driver := NewDriver(Config{})
+	registry := devices.NewRegistry()
+	driver := NewDriver(Config{}, registry)
 	assert.Equal(t, "kidslox", driver.Name())
 }
 
 func TestDriver_Capabilities(t *testing.T) {
-	driver := NewDriver(Config{})
+	registry := devices.NewRegistry()
+	driver := NewDriver(Config{}, registry)
 	caps := driver.Capabilities()
 
 	assert.False(t, caps.SupportsWarnings, "Kidslox doesn't support warnings")
@@ -81,13 +77,19 @@ func TestDriver_StartSession(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// Create device registry with test device
+	registry := createTestRegistry("ipad1", map[string]interface{}{
+		"device_id":  "test-device-456",
+		"profile_id": "test-profile-123",
+	})
+
 	// Create driver
 	config := Config{
 		BaseURL:   server.URL,
 		APIKey:    "test-api-key",
 		AccountID: "test-account-123",
 	}
-	driver := NewDriver(config)
+	driver := NewDriver(config, registry)
 
 	// Create test session
 	session := &core.Session{
@@ -96,20 +98,8 @@ func TestDriver_StartSession(t *testing.T) {
 		ExpectedDuration: 30,
 	}
 
-	// Create mock device with parameters
-	device := &mockDevice{
-		id: "ipad1",
-		params: map[string]interface{}{
-			"device_id":  "test-device-456",
-			"profile_id": "test-profile-123",
-		},
-	}
-
-	// Add device to context
-	ctx := core.WithDevice(context.Background(), device)
-
-	// Call StartSession
-	err := driver.StartSession(ctx, session)
+	// Call StartSession (driver internally looks up device)
+	err := driver.StartSession(context.Background(), session)
 	require.NoError(t, err)
 
 	// Verify unlock was called
@@ -127,39 +117,35 @@ func TestDriver_StartSession(t *testing.T) {
 }
 
 func TestDriver_StartSession_MissingDeviceID(t *testing.T) {
-	driver := NewDriver(Config{})
-	session := &core.Session{}
+	// Create registry with device missing device_id parameter
+	registry := createTestRegistry("ipad1", map[string]interface{}{
+		"profile_id": "test-profile",
+	})
 
-	// Create mock device without device_id parameter
-	device := &mockDevice{
-		params: map[string]interface{}{
-			"profile_id": "test-profile",
-		},
+	driver := NewDriver(Config{}, registry)
+	session := &core.Session{
+		DeviceID: "ipad1",
 	}
 
-	ctx := core.WithDevice(context.Background(), device)
-
-	err := driver.StartSession(ctx, session)
+	err := driver.StartSession(context.Background(), session)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "device_id parameter is required")
+	assert.Contains(t, err.Error(), "device_id is required")
 }
 
 func TestDriver_StartSession_MissingProfileID(t *testing.T) {
-	driver := NewDriver(Config{})
-	session := &core.Session{}
+	// Create registry with device missing profile_id parameter
+	registry := createTestRegistry("ipad1", map[string]interface{}{
+		"device_id": "test-device",
+	})
 
-	// Create mock device without profile_id parameter
-	device := &mockDevice{
-		params: map[string]interface{}{
-			"device_id": "test-device",
-		},
+	driver := NewDriver(Config{}, registry)
+	session := &core.Session{
+		DeviceID: "ipad1",
 	}
 
-	ctx := core.WithDevice(context.Background(), device)
-
-	err := driver.StartSession(ctx, session)
+	err := driver.StartSession(context.Background(), session)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "profile_id parameter is required")
+	assert.Contains(t, err.Error(), "profile_id is required")
 }
 
 func TestDriver_StopSession(t *testing.T) {
@@ -183,13 +169,19 @@ func TestDriver_StopSession(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// Create device registry with test device
+	registry := createTestRegistry("ipad1", map[string]interface{}{
+		"device_id":  "test-device-456",
+		"profile_id": "test-profile-123",
+	})
+
 	// Create driver
 	config := Config{
 		BaseURL:   server.URL,
 		APIKey:    "test-api-key",
 		AccountID: "test-account-123",
 	}
-	driver := NewDriver(config)
+	driver := NewDriver(config, registry)
 
 	// Create test session
 	session := &core.Session{
@@ -197,19 +189,8 @@ func TestDriver_StopSession(t *testing.T) {
 		DeviceID: "ipad1",
 	}
 
-	// Create mock device
-	device := &mockDevice{
-		id: "ipad1",
-		params: map[string]interface{}{
-			"device_id":  "test-device-456",
-			"profile_id": "test-profile-123",
-		},
-	}
-
-	ctx := core.WithDevice(context.Background(), device)
-
 	// Call StopSession
-	err := driver.StopSession(ctx, session)
+	err := driver.StopSession(context.Background(), session)
 	require.NoError(t, err)
 
 	// Verify lock was called with correct profile
@@ -242,13 +223,19 @@ func TestDriver_ExtendSession(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// Create device registry with test device
+	registry := createTestRegistry("ipad1", map[string]interface{}{
+		"device_id":  "test-device-456",
+		"profile_id": "test-profile-123",
+	})
+
 	// Create driver
 	config := Config{
 		BaseURL:   server.URL,
 		APIKey:    "test-api-key",
 		AccountID: "test-account-123",
 	}
-	driver := NewDriver(config)
+	driver := NewDriver(config, registry)
 
 	// Create test session
 	session := &core.Session{
@@ -258,19 +245,8 @@ func TestDriver_ExtendSession(t *testing.T) {
 		ExpectedDuration: 20,
 	}
 
-	// Create mock device
-	device := &mockDevice{
-		id: "ipad1",
-		params: map[string]interface{}{
-			"device_id":  "test-device-456",
-			"profile_id": "test-profile-123",
-		},
-	}
-
-	ctx := core.WithDevice(context.Background(), device)
-
 	// Call ExtendSession
-	err := driver.ExtendSession(ctx, session, 15)
+	err := driver.ExtendSession(context.Background(), session, 15)
 	require.NoError(t, err)
 
 	// Verify extend was called
@@ -280,7 +256,8 @@ func TestDriver_ExtendSession(t *testing.T) {
 }
 
 func TestDriver_ApplyWarning(t *testing.T) {
-	driver := NewDriver(Config{})
+	registry := devices.NewRegistry()
+	driver := NewDriver(Config{}, registry)
 	session := &core.Session{}
 
 	// Warning should be a no-op
@@ -289,7 +266,8 @@ func TestDriver_ApplyWarning(t *testing.T) {
 }
 
 func TestDriver_GetLiveState(t *testing.T) {
-	driver := NewDriver(Config{})
+	registry := devices.NewRegistry()
+	driver := NewDriver(Config{}, registry)
 
 	// Live state not supported
 	state, err := driver.GetLiveState(context.Background(), "device1")
@@ -305,35 +283,34 @@ func TestDriver_APIError(t *testing.T) {
 	}))
 	defer server.Close()
 
+	// Create device registry with test device
+	registry := createTestRegistry("ipad1", map[string]interface{}{
+		"device_id":  "test-device",
+		"profile_id": "test-profile",
+	})
+
 	config := Config{
 		BaseURL:   server.URL,
 		APIKey:    "test-api-key",
 		AccountID: "test-account-123",
 	}
-	driver := NewDriver(config)
+	driver := NewDriver(config, registry)
 
 	session := &core.Session{
 		ID:               "session1",
+		DeviceID:         "ipad1",
 		ExpectedDuration: 30,
 	}
 
-	device := &mockDevice{
-		params: map[string]interface{}{
-			"device_id":  "test-device",
-			"profile_id": "test-profile",
-		},
-	}
-
-	ctx := core.WithDevice(context.Background(), device)
-
 	// Should fail
-	err := driver.StartSession(ctx, session)
+	err := driver.StartSession(context.Background(), session)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed")
 }
 
 func TestDriver_InterfaceImplementation(t *testing.T) {
-	driver := NewDriver(Config{})
+	registry := devices.NewRegistry()
+	driver := NewDriver(Config{}, registry)
 
 	// Verify implements DeviceDriver
 	var _ devices.DeviceDriver = driver

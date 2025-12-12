@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed "driver not found" error preventing sessions from being stopped automatically
   - Scheduler now correctly looks up device before getting driver
   - Sessions will now properly expire and trigger device power-off
+- **Device Parameters Architecture**
+  - Fixed "device not found in context" error when scheduler stops sessions
+  - Device parameters now embedded in Session object instead of passed via context
+  - More explicit and maintainable architecture with no context magic
+  - Device parameters persisted in database for session lifetime
 
 ### Added
 - **Kidslox Device Driver (iPad Support)**

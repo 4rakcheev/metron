@@ -70,6 +70,9 @@ type KidsloxConfig struct {
 	BaseURL   string `json:"base_url"`   // API base URL
 	APIKey    string `json:"api_key"`    // Static API key for authentication
 	AccountID string `json:"account_id"` // Account ID for actions
+	// Default device parameters (can be overridden by device-specific parameters)
+	DeviceID  string `json:"device_id,omitempty"`  // Default Kidslox device ID
+	ProfileID string `json:"profile_id,omitempty"` // Default Kidslox profile ID
 }
 
 // Validate validates the configuration

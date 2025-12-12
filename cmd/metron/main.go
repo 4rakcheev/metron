@@ -161,6 +161,10 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	}
 	defer db.Close()
 
+	// Initialize device registry first (needed by drivers)
+	logger.Info("Initializing device registry")
+	deviceRegistry := devices.NewRegistry()
+
 	// Initialize driver registry
 	logger.Info("Initializing device driver registry")
 	driverRegistry := drivers.NewRegistry()
@@ -191,14 +195,12 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 			BaseURL:   cfg.Kidslox.BaseURL,
 			APIKey:    cfg.Kidslox.APIKey,
 			AccountID: cfg.Kidslox.AccountID,
+			DeviceID:  cfg.Kidslox.DeviceID,
+			ProfileID: cfg.Kidslox.ProfileID,
 		}
-		kidsloxDriver := kidslox.NewDriver(kidsloxConfig)
+		kidsloxDriver := kidslox.NewDriver(kidsloxConfig, deviceRegistry)
 		driverRegistry.Register(kidsloxDriver)
 	}
-
-	// Initialize device registry
-	logger.Info("Initializing device registry")
-	deviceRegistry := devices.NewRegistry()
 
 	// Register devices from configuration
 	logger.Info("Registering devices", "count", len(cfg.Devices))

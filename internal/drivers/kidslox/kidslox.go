@@ -24,18 +24,23 @@ type Config struct {
 	BaseURL   string // API base URL
 	APIKey    string // Static API key for authentication
 	AccountID string // Account ID for actions
+	// Default device parameters (can be overridden by device-specific parameters)
+	DeviceID  string // Default Kidslox device ID
+	ProfileID string // Default Kidslox profile ID
 }
 
 // Driver implements the DeviceDriver interface for Kidslox
 type Driver struct {
-	config     Config
-	httpClient *http.Client
+	config         Config
+	deviceRegistry *devices.Registry
+	httpClient     *http.Client
 }
 
 // NewDriver creates a new Kidslox driver
-func NewDriver(config Config) *Driver {
+func NewDriver(config Config, deviceRegistry *devices.Registry) *Driver {
 	return &Driver{
-		config: config,
+		config:         config,
+		deviceRegistry: deviceRegistry,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -56,22 +61,44 @@ func (d *Driver) Capabilities() devices.DriverCapabilities {
 	}
 }
 
+// getDeviceConfig looks up device and merges driver config + device parameters
+// Device parameters override driver defaults
+func (d *Driver) getDeviceConfig(session *core.Session) (deviceID, profileID string, err error) {
+	// Look up device
+	device, err := d.deviceRegistry.Get(session.DeviceID)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get device %s: %w", session.DeviceID, err)
+	}
+
+	// Start with driver defaults
+	deviceID = d.config.DeviceID
+	profileID = d.config.ProfileID
+
+	// Override with device-specific parameters if present
+	if devID, ok := device.GetParameter("device_id").(string); ok && devID != "" {
+		deviceID = devID
+	}
+	if profID, ok := device.GetParameter("profile_id").(string); ok && profID != "" {
+		profileID = profID
+	}
+
+	// Validate required parameters
+	if deviceID == "" {
+		return "", "", fmt.Errorf("device_id is required (set in driver config or device parameters)")
+	}
+	if profileID == "" {
+		return "", "", fmt.Errorf("profile_id is required (set in driver config or device parameters)")
+	}
+
+	return deviceID, profileID, nil
+}
+
 // StartSession initiates a session by unlocking the device and setting initial time
 func (d *Driver) StartSession(ctx context.Context, session *core.Session) error {
-	// Get device-specific parameters
-	device, err := core.GetDeviceFromContext(ctx)
+	// Get merged config (driver defaults + device overrides)
+	deviceID, profileID, err := d.getDeviceConfig(session)
 	if err != nil {
-		return fmt.Errorf("failed to get device: %w", err)
-	}
-
-	deviceID, ok := device.GetParameter("device_id").(string)
-	if !ok || deviceID == "" {
-		return fmt.Errorf("device_id parameter is required for Kidslox devices")
-	}
-
-	profileID, ok := device.GetParameter("profile_id").(string)
-	if !ok || profileID == "" {
-		return fmt.Errorf("profile_id parameter is required for Kidslox devices")
+		return err
 	}
 
 	// Step 1: Unlock device (assign child profile)
@@ -90,15 +117,10 @@ func (d *Driver) StartSession(ctx context.Context, session *core.Session) error 
 
 // StopSession ends a session by locking the device
 func (d *Driver) StopSession(ctx context.Context, session *core.Session) error {
-	// Get device-specific parameters
-	device, err := core.GetDeviceFromContext(ctx)
+	// Get merged config (driver defaults + device overrides)
+	deviceID, _, err := d.getDeviceConfig(session)
 	if err != nil {
-		return fmt.Errorf("failed to get device: %w", err)
-	}
-
-	deviceID, ok := device.GetParameter("device_id").(string)
-	if !ok || deviceID == "" {
-		return fmt.Errorf("device_id parameter is required for Kidslox devices")
+		return err
 	}
 
 	// Lock device (assign lock profile)
@@ -117,15 +139,10 @@ func (d *Driver) ApplyWarning(ctx context.Context, session *core.Session, minute
 
 // ExtendSession extends an active session by adding more time
 func (d *Driver) ExtendSession(ctx context.Context, session *core.Session, additionalMinutes int) error {
-	// Get device-specific parameters
-	device, err := core.GetDeviceFromContext(ctx)
+	// Get merged config (driver defaults + device overrides)
+	_, profileID, err := d.getDeviceConfig(session)
 	if err != nil {
-		return fmt.Errorf("failed to get device: %w", err)
-	}
-
-	profileID, ok := device.GetParameter("profile_id").(string)
-	if !ok || profileID == "" {
-		return fmt.Errorf("profile_id parameter is required for Kidslox devices")
+		return err
 	}
 
 	// Extend time restriction

@@ -16,6 +16,11 @@ type Storage interface {
 	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
 }
 
+// Device interface for accessing device information
+type Device interface {
+	GetDriver() string
+}
+
 // DeviceDriver interface for device control
 type DeviceDriver interface {
 	StopSession(ctx context.Context, session *core.Session) error
@@ -25,11 +30,6 @@ type DeviceDriver interface {
 // DriverRegistry interface for getting device drivers
 type DriverRegistry interface {
 	Get(name string) (DeviceDriver, error)
-}
-
-// Device interface for device lookup
-type Device interface {
-	GetDriver() string
 }
 
 // DeviceRegistry interface for getting devices
@@ -166,7 +166,7 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 			if err != nil {
 				s.logger.Error("Failed to get driver", "session_id", session.ID, "error", err)
 			} else {
-				// Use warning mechanism to notify about break
+				// Use warning mechanism to notify about break (driver internally looks up device)
 				driver.ApplyWarning(ctx, session, 0)
 			}
 
@@ -226,7 +226,7 @@ func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error
 		return err
 	}
 
-	// Stop session on device
+	// Stop session on device (driver internally looks up device and merges config)
 	if err := driver.StopSession(ctx, session); err != nil {
 		s.logger.Error("Failed to stop session on device", "session_id", session.ID, "error", err)
 		// Continue anyway to update session status

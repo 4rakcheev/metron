@@ -6,20 +6,21 @@ import (
 )
 
 // DeviceDriver defines the interface that all device drivers must implement
+// Drivers internally look up device from session.DeviceID and merge driver config + device parameters
 type DeviceDriver interface {
 	// Name returns the unique name of this driver (e.g., "aqara", "ps5", "ipad")
 	Name() string
 
 	// StartSession initiates a session on the device
-	// It should trigger any necessary actions to allow usage (e.g., turn on TV, unlock device)
+	// Driver internally looks up device from session.DeviceID, merges config, and executes
 	StartSession(ctx context.Context, session *core.Session) error
 
 	// StopSession ends a session on the device
-	// It should trigger any necessary actions to stop usage (e.g., turn off TV, lock device)
+	// Driver internally looks up device from session.DeviceID, merges config, and executes
 	StopSession(ctx context.Context, session *core.Session) error
 
 	// ApplyWarning sends a warning to the device (optional)
-	// Returns nil if warnings are not supported
+	// Driver internally looks up device from session.DeviceID, merges config, and executes
 	ApplyWarning(ctx context.Context, session *core.Session, minutesRemaining int) error
 
 	// GetLiveState retrieves the current state of the device (optional)
@@ -52,5 +53,7 @@ type CapableDriver interface {
 // to support session extensions (e.g., adding more time to a running session)
 type ExtendableDriver interface {
 	DeviceDriver
+	// ExtendSession extends an active session by adding more time
+	// Driver internally looks up device from session.DeviceID, merges config, and executes
 	ExtendSession(ctx context.Context, session *core.Session, additionalMinutes int) error
 }
