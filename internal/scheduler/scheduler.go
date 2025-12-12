@@ -27,26 +27,38 @@ type DriverRegistry interface {
 	Get(name string) (DeviceDriver, error)
 }
 
+// Device interface for device lookup
+type Device interface {
+	GetDriver() string
+}
+
+// DeviceRegistry interface for getting devices
+type DeviceRegistry interface {
+	Get(id string) (Device, error)
+}
+
 // Scheduler manages periodic session updates
 type Scheduler struct {
-	storage   Storage
-	registry  DriverRegistry
-	interval  time.Duration
-	stopChan  chan struct{}
-	logger    *slog.Logger
+	storage        Storage
+	deviceRegistry DeviceRegistry
+	driverRegistry DriverRegistry
+	interval       time.Duration
+	stopChan       chan struct{}
+	logger         *slog.Logger
 }
 
 // NewScheduler creates a new scheduler
-func NewScheduler(storage Storage, registry DriverRegistry, interval time.Duration, logger *slog.Logger) *Scheduler {
+func NewScheduler(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, interval time.Duration, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Scheduler{
-		storage:  storage,
-		registry: registry,
-		interval: interval,
-		stopChan: make(chan struct{}),
-		logger:   logger,
+		storage:        storage,
+		deviceRegistry: deviceRegistry,
+		driverRegistry: driverRegistry,
+		interval:       interval,
+		stopChan:       make(chan struct{}),
+		logger:         logger,
 	}
 }
 
@@ -70,6 +82,21 @@ func (s *Scheduler) Start() {
 // Stop stops the scheduler
 func (s *Scheduler) Stop() {
 	close(s.stopChan)
+}
+
+// getDriverForSession looks up the driver for a session
+func (s *Scheduler) getDriverForSession(session *core.Session) (DeviceDriver, error) {
+	// Look up device
+	device, err := s.deviceRegistry.Get(session.DeviceID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get driver name from device
+	driverName := device.GetDriver()
+
+	// Look up driver
+	return s.driverRegistry.Get(driverName)
 }
 
 // tick performs one cycle of the scheduler
@@ -135,7 +162,7 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 				"child", child.Name)
 
 			// Get driver and trigger warning/pause
-			driver, err := s.registry.Get(session.DeviceType)
+			driver, err := s.getDriverForSession(session)
 			if err != nil {
 				s.logger.Error("Failed to get driver", "session_id", session.ID, "error", err)
 			} else {
@@ -162,7 +189,7 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 
 	// Trigger warning if less than 5 minutes remaining (only once)
 	if expectedRemaining <= 5 && expectedRemaining > 0 && session.WarningSentAt == nil {
-		driver, err := s.registry.Get(session.DeviceType)
+		driver, err := s.getDriverForSession(session)
 		if err == nil {
 			s.logger.Info("Sending time remaining warning",
 				"session_id", session.ID,
@@ -194,7 +221,7 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 // endSession ends a session and updates usage
 func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error {
 	// Get driver
-	driver, err := s.registry.Get(session.DeviceType)
+	driver, err := s.getDriverForSession(session)
 	if err != nil {
 		return err
 	}

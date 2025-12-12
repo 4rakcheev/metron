@@ -56,6 +56,14 @@ type coreDriverAdapter struct {
 	devices.DeviceDriver
 }
 
+type schedulerDeviceRegistry struct {
+	registry *devices.Registry
+}
+
+func (r *schedulerDeviceRegistry) Get(id string) (scheduler.Device, error) {
+	return r.registry.Get(id)
+}
+
 type schedulerDriverRegistry struct {
 	registry *drivers.Registry
 }
@@ -213,7 +221,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 
 	// Start scheduler
 	logger.Info("Starting session scheduler", "interval", "1m")
-	sched := scheduler.NewScheduler(db, &schedulerDriverRegistry{driverRegistry}, 1*time.Minute, schedulerLogger)
+	sched := scheduler.NewScheduler(db, &schedulerDeviceRegistry{deviceRegistry}, &schedulerDriverRegistry{driverRegistry}, 1*time.Minute, schedulerLogger)
 	go sched.Start()
 
 	// Initialize REST API with Gin

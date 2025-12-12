@@ -104,11 +104,42 @@ func (m *mockDriver) ApplyWarning(ctx context.Context, session *core.Session, mi
 	return nil
 }
 
-type mockRegistry struct {
+type mockDevice struct {
+	id     string
+	driver string
+}
+
+func (m *mockDevice) GetDriver() string {
+	return m.driver
+}
+
+type mockDeviceRegistry struct {
+	devices map[string]*mockDevice
+}
+
+func newMockDeviceRegistry() *mockDeviceRegistry {
+	return &mockDeviceRegistry{
+		devices: make(map[string]*mockDevice),
+	}
+}
+
+func (m *mockDeviceRegistry) Get(id string) (Device, error) {
+	device, ok := m.devices[id]
+	if !ok {
+		return nil, errors.New("device not found")
+	}
+	return device, nil
+}
+
+func (m *mockDeviceRegistry) addDevice(device *mockDevice) {
+	m.devices[device.id] = device
+}
+
+type mockDriverRegistry struct {
 	driver *mockDriver
 }
 
-func (m *mockRegistry) Get(name string) (DeviceDriver, error) {
+func (m *mockDriverRegistry) Get(name string) (DeviceDriver, error) {
 	if m.driver == nil {
 		return nil, errors.New("driver not found")
 	}
@@ -120,10 +151,14 @@ func (m *mockRegistry) Get(name string) (DeviceDriver, error) {
 func TestScheduler_ProcessSession_Expired(t *testing.T) {
 	storage := newMockStorage()
 	driver := newMockDriver()
-	registry := &mockRegistry{driver: driver}
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+
+	// Register device
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, registry, time.Minute, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, logger)
 
 	// Create child
 	child := &core.Child{
@@ -168,10 +203,14 @@ func TestScheduler_ProcessSession_Expired(t *testing.T) {
 func TestScheduler_ProcessSession_Warning(t *testing.T) {
 	storage := newMockStorage()
 	driver := newMockDriver()
-	registry := &mockRegistry{driver: driver}
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+
+	// Register device
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, registry, time.Minute, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, logger)
 
 	// Create child
 	child := &core.Child{
@@ -211,10 +250,14 @@ func TestScheduler_ProcessSession_Warning(t *testing.T) {
 func TestScheduler_ProcessSession_NoWarning(t *testing.T) {
 	storage := newMockStorage()
 	driver := newMockDriver()
-	registry := &mockRegistry{driver: driver}
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+
+	// Register device
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, registry, time.Minute, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, logger)
 
 	// Create child
 	child := &core.Child{
@@ -254,10 +297,14 @@ func TestScheduler_ProcessSession_NoWarning(t *testing.T) {
 func TestScheduler_ProcessSession_BreakRule(t *testing.T) {
 	storage := newMockStorage()
 	driver := newMockDriver()
-	registry := &mockRegistry{driver: driver}
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+
+	// Register device
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, registry, time.Minute, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, logger)
 
 	// Create child with break rule
 	child := &core.Child{
@@ -302,10 +349,14 @@ func TestScheduler_ProcessSession_BreakRule(t *testing.T) {
 func TestScheduler_ProcessSession_InBreak(t *testing.T) {
 	storage := newMockStorage()
 	driver := newMockDriver()
-	registry := &mockRegistry{driver: driver}
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+
+	// Register device
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, registry, time.Minute, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, logger)
 
 	// Create child
 	child := &core.Child{
@@ -348,10 +399,14 @@ func TestScheduler_ProcessSession_InBreak(t *testing.T) {
 func TestScheduler_ProcessSession_BreakEnded(t *testing.T) {
 	storage := newMockStorage()
 	driver := newMockDriver()
-	registry := &mockRegistry{driver: driver}
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+
+	// Register device
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, registry, time.Minute, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, logger)
 
 	// Create child
 	child := &core.Child{
@@ -389,10 +444,14 @@ func TestScheduler_ProcessSession_BreakEnded(t *testing.T) {
 func TestScheduler_Tick(t *testing.T) {
 	storage := newMockStorage()
 	driver := newMockDriver()
-	registry := &mockRegistry{driver: driver}
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+
+	// Register device
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, registry, time.Minute, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, logger)
 
 	// Create child
 	child := &core.Child{
@@ -441,10 +500,14 @@ func TestScheduler_Tick(t *testing.T) {
 func TestScheduler_StartStop(t *testing.T) {
 	storage := newMockStorage()
 	driver := newMockDriver()
-	registry := &mockRegistry{driver: driver}
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+
+	// Register device
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, registry, 100*time.Millisecond, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, 100*time.Millisecond, logger)
 
 	// Start scheduler in goroutine
 	go scheduler.Start()

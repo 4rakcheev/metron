@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Session Extension**
   - Remaining minutes now correctly calculated from actual time instead of simple increment
   - API now returns accurate remaining time in extension response
+- **Scheduler Session Management**
+  - Fixed "driver not found" error preventing sessions from being stopped automatically
+  - Scheduler now correctly looks up device before getting driver
+  - Sessions will now properly expire and trigger device power-off
 
 ### Added
 - **Device/Driver Architecture Separation**
