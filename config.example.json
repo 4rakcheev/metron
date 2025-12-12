@@ -11,23 +11,34 @@
     "allowed_ips": [],
     "enable_ip_check": false
   },
+  "devices": [
+    {
+      "id": "tv1",
+      "name": "Living Room TV",
+      "type": "tv",
+      "driver": "aqara",
+      "parameters": {
+        "pin_scene_id": "scene-id-for-pin-entry",
+        "warning_scene_id": "scene-id-for-warning",
+        "off_scene_id": "scene-id-for-power-off"
+      }
+    },
+    {
+      "id": "tv2",
+      "name": "Bedroom TV",
+      "type": "tv",
+      "driver": "aqara"
+    }
+  ],
   "aqara": {
     "app_id": "your-aqara-app-id",
-    "account_id": "your-aqara-aaccount-id",
     "app_key": "your-aqara-app-key",
     "key_id": "your-aqara-key-id",
     "base_url": "https://open-cn.aqara.com",
-    "devices": [
-      {
-        "id": "device-id-1",
-        "name": "Living Room TV",
-        "device_type": "tv"
-      }
-    ],
     "scenes": {
-      "tv_pin_entry": "scene-id-for-pin-entry",
-      "tv_warning": "scene-id-for-warning",
-      "tv_power_off": "scene-id-for-power-off"
+      "tv_pin_entry": "default-scene-id-for-pin-entry",
+      "tv_warning": "default-scene-id-for-warning",
+      "tv_power_off": "default-scene-id-for-power-off"
     }
   }
 }

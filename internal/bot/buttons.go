@@ -9,14 +9,14 @@ import (
 
 // CallbackData represents the data embedded in callback buttons
 type CallbackData struct {
-	Action      string `json:"a"`            // Action type
-	Step        int    `json:"s,omitempty"`  // Current step in flow
-	ChildID     string `json:"c,omitempty"`  // Child ID (resolved from index)
-	ChildIndex  int    `json:"ci,omitempty"` // Child index in list (for compact callback)
-	Device      string `json:"d,omitempty"`  // Device type
-	Duration    int    `json:"m,omitempty"`  // Duration in minutes
-	Session     string `json:"ses,omitempty"` // Session ID (resolved from index)
-	SessionIndex int   `json:"si,omitempty"` // Session index in list (for compact callback)
+	Action       string `json:"a"`             // Action type
+	Step         int    `json:"s,omitempty"`   // Current step in flow
+	ChildID      string `json:"c,omitempty"`   // Child ID (resolved from index)
+	ChildIndex   int    `json:"ci,omitempty"`  // Child index in list (for compact callback)
+	Device       string `json:"d,omitempty"`   // Device ID
+	Duration     int    `json:"m,omitempty"`   // Duration in minutes
+	Session      string `json:"ses,omitempty"` // Session ID (resolved from index)
+	SessionIndex int    `json:"si,omitempty"`  // Session index in list (for compact callback)
 }
 
 // MarshalCallback converts CallbackData to JSON string
@@ -90,7 +90,7 @@ func BuildDevicesButtons(devices []Device, action string, step int, childIndex i
 			Action:     action,
 			Step:       step,
 			ChildIndex: childIndex, // Use index to keep callback data small
-			Device:     device.Type,
+			Device:     device.ID,  // Use device ID, not type
 		})
 
 		btn := tgbotapi.NewInlineKeyboardButtonData(

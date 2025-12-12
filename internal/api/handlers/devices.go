@@ -10,8 +10,9 @@ import (
 
 // DevicesHandler handles device-related requests
 type DevicesHandler struct {
-	registry DriverRegistry
-	logger   *slog.Logger
+	deviceRegistry *devices.Registry
+	driverRegistry DriverRegistry
+	logger         *slog.Logger
 }
 
 // DriverRegistry interface for accessing device drivers
@@ -21,36 +22,42 @@ type DriverRegistry interface {
 }
 
 // NewDevicesHandler creates a new devices handler
-func NewDevicesHandler(registry DriverRegistry, logger *slog.Logger) *DevicesHandler {
+func NewDevicesHandler(deviceRegistry *devices.Registry, driverRegistry DriverRegistry, logger *slog.Logger) *DevicesHandler {
 	return &DevicesHandler{
-		registry: registry,
-		logger:   logger,
+		deviceRegistry: deviceRegistry,
+		driverRegistry: driverRegistry,
+		logger:         logger,
 	}
 }
 
-// ListDevices returns all available device types
+// ListDevices returns all available devices
 // GET /devices
 func (h *DevicesHandler) ListDevices(c *gin.Context) {
-	driverNames := h.registry.List()
+	deviceList := h.deviceRegistry.List()
 
-	response := make([]gin.H, 0, len(driverNames))
-	for _, name := range driverNames {
-		driver, err := h.registry.Get(name)
+	response := make([]gin.H, 0, len(deviceList))
+	for _, device := range deviceList {
+		deviceInfo := gin.H{
+			"id":   device.ID,
+			"name": device.Name,
+			"type": device.Type,
+		}
+
+		// Get driver capabilities
+		driver, err := h.driverRegistry.Get(device.Driver)
 		if err != nil {
-			h.logger.Error("Failed to get driver",
+			h.logger.Error("Failed to get driver for device",
 				"component", "api",
-				"driver_name", name,
+				"device_id", device.ID,
+				"driver_name", device.Driver,
 				"error", err,
 			)
+			// Include device without capabilities
+			response = append(response, deviceInfo)
 			continue
 		}
 
-		deviceInfo := gin.H{
-			"type": name,
-			"name": name,
-		}
-
-		// Check if driver supports capabilities
+		// Add driver capabilities
 		if capableDriver, ok := driver.(devices.CapableDriver); ok {
 			caps := capableDriver.Capabilities()
 			deviceInfo["capabilities"] = gin.H{

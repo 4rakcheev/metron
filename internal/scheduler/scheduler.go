@@ -82,7 +82,16 @@ func (s *Scheduler) tick() {
 		return
 	}
 
+	s.logger.Debug("Scheduler tick",
+		"active_sessions", len(sessions))
+
 	for _, session := range sessions {
+		s.logger.Debug("Processing session",
+			"session_id", session.ID,
+			"start_time", session.StartTime,
+			"expected_duration", session.ExpectedDuration,
+			"remaining_minutes", session.RemainingMinutes)
+
 		if err := s.processSession(ctx, session); err != nil {
 			s.logger.Error("Failed to process session", "session_id", session.ID, "error", err)
 		}

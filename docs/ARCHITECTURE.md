@@ -103,7 +103,53 @@ func (s *SQLiteStorage) GetAqaraTokens(...) (*aqara.AqaraTokens, error) { }
 func (s *SQLiteStorage) SaveAqaraTokens(...) error { }
 ```
 
-## Driver Architecture
+## Device vs Driver Architecture
+
+### Separation of Concerns
+
+Metron separates **devices** (user-facing entities) from **drivers** (control mechanisms):
+
+- **Device**: User-facing entity for display, statistics, and configuration
+  - Example: "Living Room TV" (id: "tv1", type: "tv")
+  - Multiple devices can use the same driver
+  - Device-specific parameters override driver defaults
+
+- **Driver**: Control mechanism implementing the protocol
+  - Example: Aqara driver controlling multiple TVs via scenes
+  - One driver can control multiple devices
+  - Provides default configuration
+
+### Device Registry
+
+Devices are registered globally in configuration:
+
+```json
+{
+  "devices": [
+    {
+      "id": "tv1",
+      "name": "Living Room TV",
+      "type": "tv",
+      "driver": "aqara",
+      "parameters": {
+        "pin_scene_id": "custom-scene"
+      }
+    },
+    {
+      "id": "tv2",
+      "name": "Bedroom TV",
+      "type": "tv",
+      "driver": "aqara"
+    }
+  ]
+}
+```
+
+**Device Constraints:**
+- ID must be ≤15 characters (Telegram callback data limit)
+- ID must be unique across all devices
+- Type used for display and statistics
+- Parameters are optional driver-specific overrides
 
 ### Device Driver Interface
 
@@ -119,6 +165,15 @@ type DeviceDriver interface {
     Capabilities() DriverCapabilities
 }
 ```
+
+### Session Flow with Devices
+
+1. User creates session with **device ID** (e.g., "tv1")
+2. Session manager looks up device in registry
+3. Gets driver name from device (e.g., "aqara")
+4. Looks up driver in driver registry
+5. Passes device parameters to driver (if any)
+6. Driver uses device-specific or default parameters
 
 ### Aqara Driver Example
 

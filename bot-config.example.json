@@ -10,7 +10,8 @@
       987654321
     ],
     "webhook_url": "https://metron-api.secueval.com/telegram/webhook",
-    "webhook_secret": "put-your-secret-here"
+    "webhook_secret": "put-your-secret-here",
+    "timezone": "Europe/Riga"
   },
   "metron": {
     "base_url": "http://localhost:8080",

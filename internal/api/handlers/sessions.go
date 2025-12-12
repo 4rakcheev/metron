@@ -21,7 +21,7 @@ type SessionsHandler struct {
 
 // FullSessionManager interface for all session operations
 type FullSessionManager interface {
-	StartSession(ctx context.Context, deviceType, deviceID string, childIDs []string, durationMinutes int) (*core.Session, error)
+	StartSession(ctx context.Context, deviceID string, childIDs []string, durationMinutes int) (*core.Session, error)
 	ExtendSession(ctx context.Context, sessionID string, additionalMinutes int) (*core.Session, error)
 	StopSession(ctx context.Context, sessionID string) error
 	GetSession(ctx context.Context, sessionID string) (*core.Session, error)
@@ -124,32 +124,25 @@ func (h *SessionsHandler) ListSessions(c *gin.Context) {
 // POST /sessions
 func (h *SessionsHandler) CreateSession(c *gin.Context) {
 	var req struct {
-		DeviceType string   `json:"device_type" binding:"required"`
-		DeviceID   string   `json:"device_id"`
-		ChildIDs   []string `json:"child_ids" binding:"required"`
-		Minutes    int      `json:"minutes" binding:"required,gt=0"`
+		DeviceID string   `json:"device_id" binding:"required"`
+		ChildIDs []string `json:"child_ids" binding:"required"`
+		Minutes  int      `json:"minutes" binding:"required,gt=0"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request body",
-			"code":  "INVALID_REQUEST",
+			"error":   "Invalid request body",
+			"code":    "INVALID_REQUEST",
 			"details": err.Error(),
 		})
 		return
 	}
 
-	// Default device ID if not provided
-	deviceID := req.DeviceID
-	if deviceID == "" {
-		deviceID = req.DeviceType + "1"
-	}
-
-	session, err := h.manager.StartSession(c.Request.Context(), req.DeviceType, deviceID, req.ChildIDs, req.Minutes)
+	session, err := h.manager.StartSession(c.Request.Context(), req.DeviceID, req.ChildIDs, req.Minutes)
 	if err != nil {
 		h.logger.Error("Failed to start session",
 			"component", "api",
-			"device_type", req.DeviceType,
+			"device_id", req.DeviceID,
 			"child_ids", req.ChildIDs,
 			"minutes", req.Minutes,
 			"error", err,

@@ -171,17 +171,51 @@ func (m *mockDriver) ApplyWarning(ctx context.Context, session *Session, minutes
 	return nil
 }
 
-type mockRegistry struct {
+type mockDevice struct {
+	id     string
+	name   string
+	dtype  string
+	driver string
+}
+
+func (m *mockDevice) GetID() string     { return m.id }
+func (m *mockDevice) GetName() string   { return m.name }
+func (m *mockDevice) GetType() string   { return m.dtype }
+func (m *mockDevice) GetDriver() string { return m.driver }
+
+type mockDeviceRegistry struct {
+	devices map[string]*mockDevice
+}
+
+func newMockDeviceRegistry() *mockDeviceRegistry {
+	return &mockDeviceRegistry{
+		devices: make(map[string]*mockDevice),
+	}
+}
+
+func (m *mockDeviceRegistry) Get(id string) (Device, error) {
+	device, ok := m.devices[id]
+	if !ok {
+		return nil, errors.New("device not found")
+	}
+	return device, nil
+}
+
+func (m *mockDeviceRegistry) addDevice(device *mockDevice) {
+	m.devices[device.id] = device
+}
+
+type mockDriverRegistry struct {
 	drivers map[string]*mockDriver
 }
 
-func newMockRegistry() *mockRegistry {
-	return &mockRegistry{
+func newMockDriverRegistry() *mockDriverRegistry {
+	return &mockDriverRegistry{
 		drivers: make(map[string]*mockDriver),
 	}
 }
 
-func (m *mockRegistry) Get(name string) (DeviceDriver, error) {
+func (m *mockDriverRegistry) Get(name string) (DeviceDriver, error) {
 	driver, ok := m.drivers[name]
 	if !ok {
 		return nil, errors.New("driver not found")
@@ -189,7 +223,7 @@ func (m *mockRegistry) Get(name string) (DeviceDriver, error) {
 	return driver, nil
 }
 
-func (m *mockRegistry) addDriver(driver *mockDriver) {
+func (m *mockDriverRegistry) addDriver(driver *mockDriver) {
 	m.drivers[driver.name] = driver
 }
 
@@ -197,8 +231,9 @@ func (m *mockRegistry) addDriver(driver *mockDriver) {
 
 func TestSessionManager_StartSession(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
 
 	// Create test child
 	child := &Child{
@@ -209,12 +244,20 @@ func TestSessionManager_StartSession(t *testing.T) {
 	}
 	storage.CreateChild(context.Background(), child)
 
-	// Create mock driver
-	driver := &mockDriver{name: "tv"}
-	registry.addDriver(driver)
+	// Create mock driver and device
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+
+	device := &mockDevice{
+		id:     "tv1",
+		name:   "Living Room TV",
+		dtype:  "tv",
+		driver: "aqara",
+	}
+	deviceRegistry.addDevice(device)
 
 	// Test StartSession
-	session, err := manager.StartSession(context.Background(), "tv", "tv1", []string{"child1"}, 30)
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 30)
 	require.NoError(t, err)
 	assert.NotNil(t, session)
 	assert.Equal(t, "tv", session.DeviceType)
@@ -227,8 +270,9 @@ func TestSessionManager_StartSession(t *testing.T) {
 
 func TestSessionManager_StartSession_InsufficientTime(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
 
 	// Create test child
 	child := &Child{
@@ -243,67 +287,74 @@ func TestSessionManager_StartSession_InsufficientTime(t *testing.T) {
 	today := time.Now()
 	storage.IncrementDailyUsage(context.Background(), "child1", today, 50)
 
-	// Create mock driver
-	driver := &mockDriver{name: "tv"}
-	registry.addDriver(driver)
+	// Create mock driver and device
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
+	deviceRegistry.addDevice(device)
 
 	// Try to start session for 30 minutes (only 10 remaining)
-	_, err := manager.StartSession(context.Background(), "tv", "tv1", []string{"child1"}, 30)
+	_, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 30)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrInsufficientTime)
 }
 
 func TestSessionManager_StartSession_InvalidInputs(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+
+	// Setup valid device
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
+	deviceRegistry.addDevice(device)
 
 	tests := []struct {
-		name           string
-		deviceType     string
-		deviceID       string
-		childIDs       []string
-		duration       int
-		expectedError  error
+		name          string
+		deviceID      string
+		childIDs      []string
+		duration      int
+		expectedError string
 	}{
 		{
-			name:          "empty device type",
-			deviceType:    "",
-			deviceID:      "tv1",
+			name:          "empty device ID",
+			deviceID:      "",
 			childIDs:      []string{"child1"},
 			duration:      30,
-			expectedError: ErrInvalidDeviceType,
+			expectedError: "device ID cannot be empty",
 		},
 		{
 			name:          "no children",
-			deviceType:    "tv",
 			deviceID:      "tv1",
 			childIDs:      []string{},
 			duration:      30,
-			expectedError: ErrNoChildren,
+			expectedError: ErrNoChildren.Error(),
 		},
 		{
 			name:          "zero duration",
-			deviceType:    "tv",
 			deviceID:      "tv1",
 			childIDs:      []string{"child1"},
 			duration:      0,
-			expectedError: ErrInvalidDuration,
+			expectedError: ErrInvalidDuration.Error(),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := manager.StartSession(context.Background(), tt.deviceType, tt.deviceID, tt.childIDs, tt.duration)
-			assert.ErrorIs(t, err, tt.expectedError)
+			_, err := manager.StartSession(context.Background(), tt.deviceID, tt.childIDs, tt.duration)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), tt.expectedError)
 		})
 	}
 }
 
 func TestSessionManager_ExtendSession(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
 
 	// Create test child
 	child := &Child{
@@ -314,12 +365,14 @@ func TestSessionManager_ExtendSession(t *testing.T) {
 	}
 	storage.CreateChild(context.Background(), child)
 
-	// Create mock driver
-	driver := &mockDriver{name: "tv"}
-	registry.addDriver(driver)
+	// Create mock driver and device
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
+	deviceRegistry.addDevice(device)
 
 	// Start session
-	session, err := manager.StartSession(context.Background(), "tv", "tv1", []string{"child1"}, 20)
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 20)
 	require.NoError(t, err)
 
 	// Extend session
@@ -331,8 +384,9 @@ func TestSessionManager_ExtendSession(t *testing.T) {
 
 func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
 
 	// Create test child with limited time
 	child := &Child{
@@ -347,12 +401,14 @@ func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {
 	today := time.Now()
 	storage.IncrementDailyUsage(context.Background(), "child1", today, 40)
 
-	// Create mock driver
-	driver := &mockDriver{name: "tv"}
-	registry.addDriver(driver)
+	// Create mock driver and device
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
+	deviceRegistry.addDevice(device)
 
 	// Start session for 10 minutes (total 50)
-	session, err := manager.StartSession(context.Background(), "tv", "tv1", []string{"child1"}, 10)
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 10)
 	require.NoError(t, err)
 
 	// Modify session start time to simulate 8 minutes elapsed
@@ -369,8 +425,9 @@ func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {
 
 func TestSessionManager_StopSession(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
 
 	// Create test child
 	child := &Child{
@@ -381,12 +438,14 @@ func TestSessionManager_StopSession(t *testing.T) {
 	}
 	storage.CreateChild(context.Background(), child)
 
-	// Create mock driver
-	driver := &mockDriver{name: "tv"}
-	registry.addDriver(driver)
+	// Create mock driver and device
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
+	deviceRegistry.addDevice(device)
 
 	// Start session
-	session, err := manager.StartSession(context.Background(), "tv", "tv1", []string{"child1"}, 30)
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 30)
 	require.NoError(t, err)
 
 	// Modify session start time to simulate elapsed time
@@ -413,8 +472,15 @@ func TestSessionManager_StopSession(t *testing.T) {
 
 func TestSessionManager_StopSession_NotActive(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+
+	// Create mock driver and device
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
+	deviceRegistry.addDevice(device)
 
 	// Create completed session directly in storage
 	session := &Session{
@@ -436,8 +502,9 @@ func TestSessionManager_StopSession_NotActive(t *testing.T) {
 
 func TestSessionManager_GetChildStatus(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
 
 	// Create test child
 	child := &Child{
@@ -470,8 +537,9 @@ func TestSessionManager_GetChildStatus(t *testing.T) {
 
 func TestSessionManager_MultipleChildren(t *testing.T) {
 	storage := newMockStorage()
-	registry := newMockRegistry()
-	manager := NewSessionManager(storage, registry)
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
 
 	// Create two children
 	child1 := &Child{
@@ -489,12 +557,14 @@ func TestSessionManager_MultipleChildren(t *testing.T) {
 	storage.CreateChild(context.Background(), child1)
 	storage.CreateChild(context.Background(), child2)
 
-	// Create mock driver
-	driver := &mockDriver{name: "tv"}
-	registry.addDriver(driver)
+	// Create mock driver and device
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
+	deviceRegistry.addDevice(device)
 
 	// Start session for both children
-	session, err := manager.StartSession(context.Background(), "tv", "tv1", []string{"child1", "child2"}, 30)
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1", "child2"}, 30)
 	require.NoError(t, err)
 	assert.Len(t, session.ChildIDs, 2)
 

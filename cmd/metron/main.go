@@ -28,6 +28,18 @@ const (
 
 // Adapter types to bridge interface differences between packages
 
+type coreDeviceRegistry struct {
+	registry *devices.Registry
+}
+
+func (r *coreDeviceRegistry) Get(id string) (core.Device, error) {
+	device, err := r.registry.Get(id)
+	if err != nil {
+		return nil, err
+	}
+	return device, nil
+}
+
 type coreDriverRegistry struct {
 	registry *drivers.Registry
 }
@@ -163,9 +175,37 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	aqaraDriver := aqara.NewDriver(aqaraConfig, db) // Pass storage for token management
 	driverRegistry.Register(aqaraDriver)
 
+	// Initialize device registry
+	logger.Info("Initializing device registry")
+	deviceRegistry := devices.NewRegistry()
+
+	// Register devices from configuration
+	logger.Info("Registering devices", "count", len(cfg.Devices))
+	for _, deviceCfg := range cfg.Devices {
+		device := &devices.Device{
+			ID:         deviceCfg.ID,
+			Name:       deviceCfg.Name,
+			Type:       deviceCfg.Type,
+			Driver:     deviceCfg.Driver,
+			Parameters: deviceCfg.Parameters,
+		}
+		if err := deviceRegistry.Register(device); err != nil {
+			logger.Error("Failed to register device",
+				"device_id", deviceCfg.ID,
+				"device_name", deviceCfg.Name,
+				"error", err)
+			return fmt.Errorf("failed to register device %s: %w", deviceCfg.ID, err)
+		}
+		logger.Info("Device registered",
+			"id", device.ID,
+			"name", device.Name,
+			"type", device.Type,
+			"driver", device.Driver)
+	}
+
 	// Initialize session manager
 	logger.Info("Initializing session manager")
-	sessionManager := core.NewSessionManager(db, &coreDriverRegistry{driverRegistry})
+	sessionManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry})
 
 	// Create component-specific loggers
 	schedulerLogger := slog.Default().With("component", "scheduler")
@@ -181,7 +221,8 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	router := api.NewRouter(api.RouterConfig{
 		Storage:           db,
 		Manager:           sessionManager,
-		Registry:          driverRegistry,
+		DriverRegistry:    driverRegistry,
+		DeviceRegistry:    deviceRegistry,
 		APIKey:            cfg.Security.APIKey,
 		Logger:            apiLogger,
 		AqaraTokenStorage: db, // SQLite storage also implements aqara.AqaraTokenStorage

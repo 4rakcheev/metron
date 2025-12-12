@@ -156,6 +156,8 @@ make run-metron
 
 ## Configuration
 
+Metron uses a modular device architecture that separates devices (user-facing entities) from drivers (control mechanisms). See [CONFIG.md](CONFIG.md) for comprehensive configuration guide.
+
 ### File-based Configuration
 
 ```json
@@ -170,18 +172,35 @@ make run-metron
   "security": {
     "api_key": "your-secret-api-key"
   },
+  "devices": [
+    {
+      "id": "tv1",
+      "name": "Living Room TV",
+      "type": "tv",
+      "driver": "aqara",
+      "parameters": {
+        "pin_scene_id": "custom-scene-for-this-tv"
+      }
+    }
+  ],
   "aqara": {
     "app_id": "your-app-id",
     "app_key": "your-app-key",
     "key_id": "your-key-id",
     "scenes": {
-      "tv_pin_entry": "scene-id-1",
-      "tv_warning": "scene-id-2",
-      "tv_power_off": "scene-id-3"
+      "tv_pin_entry": "default-scene-id",
+      "tv_warning": "default-warning-scene",
+      "tv_power_off": "default-off-scene"
     }
   }
 }
 ```
+
+**Key Changes:**
+- Devices defined in global `devices` array
+- Each device references a `driver` for control
+- Optional `parameters` for device-specific driver overrides
+- Driver defaults in driver-specific sections (e.g., `aqara.scenes`)
 
 ### Environment Variables
 
@@ -261,7 +280,7 @@ curl -X POST http://localhost:8080/v1/sessions \
   -H "X-Metron-Key: your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "device_type": "tv",
+    "device_id": "tv1",
     "child_ids": ["child-uuid"],
     "minutes": 30
   }'

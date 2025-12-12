@@ -112,9 +112,9 @@ func (b *Bot) newSessionCreate(ctx context.Context, message *tgbotapi.Message, c
 
 	// Create session request
 	req := CreateSessionRequest{
-		DeviceType: device,
-		ChildIDs:   childIDs,
-		Minutes:    duration,
+		DeviceID: device, // device parameter now holds device ID
+		ChildIDs: childIDs,
+		Minutes:  duration,
 	}
 
 	session, err := b.client.CreateSession(ctx, req)

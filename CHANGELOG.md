@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Device/Driver Architecture Separation**
+  - Global device registry with configurable devices
+  - Device-specific driver parameters for customization
+  - Device constraints: ID ≤15 chars for Telegram compatibility
+  - Support for multiple devices using same driver
+  - Device types for display/statistics vs drivers for control
+- **Enhanced Configuration**
+  - Device configuration in global `devices` array
+  - Device-specific parameter overrides (`parameters` field)
+  - Driver defaults with per-device customization
+  - Comprehensive configuration documentation (CONFIG.md)
+  - Updated example configurations with device architecture
+- **Timezone Support for Telegram Bot**
+  - Configurable timezone (IANA format, e.g., "Europe/Riga")
+  - Time display formatting at presentation layer
+  - Times stored in UTC, displayed in user's timezone
+- **Session Management Improvements**
+  - Immediate warning for short sessions (≤5 minutes)
+  - Warning state reset on session extension
+  - Single source of truth for time calculations
+  - Comprehensive logging for session extension and scheduler
+  - Debug logging for scheduler tick processing
 - **Gin-based REST API v1** (TMF630 compliant)
   - Modular handler architecture (children, devices, sessions, stats, health)
   - Middleware stack (request ID, logging, recovery, content-type, auth)

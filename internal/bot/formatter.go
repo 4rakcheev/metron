@@ -6,6 +6,27 @@ import (
 	"time"
 )
 
+// timezone is the IANA timezone for formatting times (set during bot initialization)
+var timezone *time.Location
+
+// SetTimezone sets the timezone for time formatting
+func SetTimezone(tz string) error {
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return fmt.Errorf("invalid timezone %s: %w", tz, err)
+	}
+	timezone = loc
+	return nil
+}
+
+// formatTime formats a time in the configured timezone
+func formatTime(t time.Time, layout string) string {
+	if timezone != nil {
+		t = t.In(timezone)
+	}
+	return t.Format(layout)
+}
+
 // FormatTodayStats formats today's statistics into a Telegram message
 func FormatTodayStats(stats *TodayStats, activeSessions []Session, childrenMap map[string]Child) string {
 	var sb strings.Builder
@@ -51,13 +72,14 @@ func FormatTodayStats(stats *TodayStats, activeSessions []Session, childrenMap m
 				deviceEmoji := getDeviceEmoji(sess.DeviceType)
 
 				// Check if shared
+				displayName := getDeviceDisplayName(sess.DeviceType)
 				if len(sess.ChildIDs) > 1 {
-					sb.WriteString(fmt.Sprintf("      %s %s (shared)\n", deviceEmoji, sess.DeviceType))
+					sb.WriteString(fmt.Sprintf("      %s %s (shared)\n", deviceEmoji, displayName))
 				} else {
-					sb.WriteString(fmt.Sprintf("      %s %s\n", deviceEmoji, sess.DeviceType))
+					sb.WriteString(fmt.Sprintf("      %s %s\n", deviceEmoji, displayName))
 				}
 				sb.WriteString(fmt.Sprintf("      Ends %s (+%d min left)\n",
-					endTime.Format("15:04"), remaining))
+					formatTime(endTime, "15:04"), remaining))
 			}
 		}
 
@@ -113,8 +135,9 @@ func FormatDevices(devices []Device) string {
 
 	for _, device := range devices {
 		emoji := getDeviceEmoji(device.Type)
-		sb.WriteString(fmt.Sprintf("%s *%s*\n", emoji, device.Name))
-		sb.WriteString(fmt.Sprintf("   Type: `%s`\n", device.Type))
+		displayName := getDeviceDisplayName(device.Type)
+		sb.WriteString(fmt.Sprintf("%s *%s*\n", emoji, displayName))
+		sb.WriteString(fmt.Sprintf("   Driver: `%s`\n", device.Type))
 
 		var features []string
 		if device.Capabilities.SupportsWarnings {
@@ -149,6 +172,7 @@ func FormatActiveSessions(sessions []Session, childrenMap map[string]Child) stri
 
 	for i, sess := range sessions {
 		deviceEmoji := getDeviceEmoji(sess.DeviceType)
+		displayName := getDeviceDisplayName(sess.DeviceType)
 		endTime, remaining := calculateSessionEnd(sess)
 
 		// Get child names
@@ -159,10 +183,10 @@ func FormatActiveSessions(sessions []Session, childrenMap map[string]Child) stri
 			}
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s *%s*\n", i+1, deviceEmoji, sess.DeviceType))
+		sb.WriteString(fmt.Sprintf("%d. %s *%s*\n", i+1, deviceEmoji, displayName))
 		sb.WriteString(fmt.Sprintf("   Children: %s\n", strings.Join(childNames, ", ")))
 		sb.WriteString(fmt.Sprintf("   Ends %s (+%d min left)\n",
-			endTime.Format("15:04"), remaining))
+			formatTime(endTime, "15:04"), remaining))
 		sb.WriteString(fmt.Sprintf("   ID: `%s`\n\n", sess.ID))
 	}
 
@@ -174,10 +198,11 @@ func FormatSessionCreated(session *Session, childrenMap map[string]Child) string
 	var sb strings.Builder
 
 	deviceEmoji := getDeviceEmoji(session.DeviceType)
+	displayName := getDeviceDisplayName(session.DeviceType)
 	endTime, _ := calculateSessionEnd(*session)
 
 	sb.WriteString("✅ *Session Started*\n\n")
-	sb.WriteString(fmt.Sprintf("%s Device: *%s*\n", deviceEmoji, session.DeviceType))
+	sb.WriteString(fmt.Sprintf("%s Device: *%s*\n", deviceEmoji, displayName))
 
 	// Get child names
 	var childNames []string
@@ -193,7 +218,7 @@ func FormatSessionCreated(session *Session, childrenMap map[string]Child) string
 	}
 
 	sb.WriteString(fmt.Sprintf("⏱ Duration: %d minutes\n", session.ExpectedDuration))
-	sb.WriteString(fmt.Sprintf("🏁 Ends at: %s\n", endTime.Format("15:04")))
+	sb.WriteString(fmt.Sprintf("🏁 Ends at: %s\n", formatTime(endTime, "15:04")))
 
 	return sb.String()
 }
@@ -207,7 +232,7 @@ func FormatSessionExtended(session *Session, additionalMinutes int) string {
 	sb.WriteString("✅ *Session Extended*\n\n")
 	sb.WriteString(fmt.Sprintf("➕ Added: %d minutes\n", additionalMinutes))
 	sb.WriteString(fmt.Sprintf("⏱ Remaining: %d minutes\n", remaining))
-	sb.WriteString(fmt.Sprintf("🏁 New end time: %s\n", endTime.Format("15:04")))
+	sb.WriteString(fmt.Sprintf("🏁 New end time: %s\n", formatTime(endTime, "15:04")))
 
 	return sb.String()
 }
@@ -218,6 +243,7 @@ func FormatError(err error) string {
 }
 
 // calculateSessionEnd calculates when a session will end and how many minutes remain
+// This is the single source of truth for end time and remaining calculation
 func calculateSessionEnd(session Session) (time.Time, int) {
 	startTime, err := time.Parse(time.RFC3339, session.StartTime)
 	if err != nil {
@@ -225,8 +251,14 @@ func calculateSessionEnd(session Session) (time.Time, int) {
 		startTime = time.Now()
 	}
 
+	// Calculate end time from start + expected duration (authoritative)
 	endTime := startTime.Add(time.Duration(session.ExpectedDuration) * time.Minute)
-	remaining := session.RemainingMinutes
+
+	// Calculate remaining minutes from end time - now (don't trust session.RemainingMinutes)
+	remaining := int(time.Until(endTime).Minutes())
+	if remaining < 0 {
+		remaining = 0
+	}
 
 	return endTime, remaining
 }
@@ -260,8 +292,28 @@ func getDeviceEmoji(deviceType string) string {
 	case strings.Contains(lowerType, "phone"):
 		return "📱"
 	case strings.Contains(lowerType, "aqara"):
-		return "🔌"
+		return "📺" // Aqara driver controls TV
 	default:
 		return "🖥"
+	}
+}
+
+// getDeviceDisplayName returns a user-friendly display name for a device type
+func getDeviceDisplayName(deviceType string) string {
+	lowerType := strings.ToLower(deviceType)
+
+	switch {
+	case strings.Contains(lowerType, "tv"):
+		return "TV"
+	case strings.Contains(lowerType, "ps5") || strings.Contains(lowerType, "playstation"):
+		return "PS5"
+	case strings.Contains(lowerType, "ipad") || strings.Contains(lowerType, "tablet"):
+		return "iPad"
+	case strings.Contains(lowerType, "phone"):
+		return "Phone"
+	case strings.Contains(lowerType, "aqara"):
+		return "TV" // Aqara driver controls TV, display as "TV"
+	default:
+		return deviceType
 	}
 }

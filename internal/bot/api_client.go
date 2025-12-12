@@ -67,11 +67,12 @@ type BreakRule struct {
 	BreakDurationMinutes int `json:"break_duration_minutes"`
 }
 
-// Device represents a device type
+// Device represents a device
 type Device struct {
-	Type         string             `json:"type"`
+	ID           string             `json:"id"`
 	Name         string             `json:"name"`
-	Capabilities DeviceCapabilities `json:"capabilities"`
+	Type         string             `json:"type"`
+	Capabilities DeviceCapabilities `json:"capabilities,omitempty"`
 }
 
 // DeviceCapabilities represents device capabilities
@@ -97,10 +98,9 @@ type Session struct {
 
 // CreateSessionRequest represents a request to create a session
 type CreateSessionRequest struct {
-	DeviceType string   `json:"device_type"`
-	DeviceID   string   `json:"device_id,omitempty"`
-	ChildIDs   []string `json:"child_ids"`
-	Minutes    int      `json:"minutes"`
+	DeviceID string   `json:"device_id"`
+	ChildIDs []string `json:"child_ids"`
+	Minutes  int      `json:"minutes"`
 }
 
 // ExtendSessionRequest represents a request to extend a session

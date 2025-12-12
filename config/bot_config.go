@@ -25,6 +25,7 @@ type TelegramBotConfig struct {
 	AllowedUsers  []int64 `json:"allowed_users"`
 	WebhookURL    string  `json:"webhook_url"`
 	WebhookSecret string  `json:"webhook_secret"`
+	Timezone      string  `json:"timezone"` // IANA timezone (e.g., "Europe/Riga", "UTC")
 }
 
 // MetronAPIConfig contains Metron API connection settings
@@ -84,6 +85,11 @@ func (c *BotConfig) Validate() error {
 	// Set default host if not specified
 	if c.Server.Host == "" {
 		c.Server.Host = "0.0.0.0"
+	}
+
+	// Set default timezone if not specified
+	if c.Telegram.Timezone == "" {
+		c.Telegram.Timezone = "UTC"
 	}
 
 	return nil

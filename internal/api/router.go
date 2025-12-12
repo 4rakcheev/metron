@@ -5,6 +5,7 @@ import (
 	"metron/internal/api/handlers"
 	"metron/internal/api/middleware"
 	"metron/internal/core"
+	"metron/internal/devices"
 	"metron/internal/drivers"
 	"metron/internal/drivers/aqara"
 	"metron/internal/storage"
@@ -16,7 +17,8 @@ import (
 type RouterConfig struct {
 	Storage           storage.Storage
 	Manager           *core.SessionManager
-	Registry          *drivers.Registry
+	DriverRegistry    *drivers.Registry
+	DeviceRegistry    *devices.Registry
 	APIKey            string
 	Logger            *slog.Logger
 	AqaraTokenStorage aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
@@ -57,7 +59,8 @@ func NewRouter(config RouterConfig) *gin.Engine {
 
 		// Devices endpoints
 		devicesHandler := handlers.NewDevicesHandler(
-			config.Registry,
+			config.DeviceRegistry,
+			config.DriverRegistry,
 			config.Logger,
 		)
 		v1.GET("/devices", devicesHandler.ListDevices)

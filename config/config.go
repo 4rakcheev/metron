@@ -17,7 +17,17 @@ type Config struct {
 	Server   ServerConfig   `json:"server"`
 	Database DatabaseConfig `json:"database"`
 	Security SecurityConfig `json:"security"`
+	Devices  []DeviceConfig `json:"devices"` // Global device registry
 	Aqara    AqaraConfig    `json:"aqara"`
+}
+
+// DeviceConfig represents a device configuration
+type DeviceConfig struct {
+	ID         string                 `json:"id"`                    // Unique device ID (e.g., "tv1", "ps5")
+	Name       string                 `json:"name"`                  // Display name (e.g., "Living Room TV")
+	Type       string                 `json:"type"`                  // Device type (e.g., "tv", "ps5") - for display/stats
+	Driver     string                 `json:"driver"`                // Driver name (e.g., "aqara") - for control
+	Parameters map[string]interface{} `json:"parameters,omitempty"`  // Driver-specific parameters (overrides defaults)
 }
 
 // ServerConfig contains HTTP server settings
@@ -40,19 +50,11 @@ type SecurityConfig struct {
 
 // AqaraConfig contains Aqara Cloud API settings
 type AqaraConfig struct {
-	AppID   string        `json:"app_id"`
-	AppKey  string        `json:"app_key"`
-	KeyID   string        `json:"key_id"`
-	BaseURL string        `json:"base_url"`
-	Devices []AqaraDevice `json:"devices"`
-	Scenes  AqaraScenes   `json:"scenes"`
-}
-
-// AqaraDevice represents a configured Aqara device
-type AqaraDevice struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	DeviceType string `json:"device_type"` // "tv", etc.
+	AppID   string      `json:"app_id"`
+	AppKey  string      `json:"app_key"`
+	KeyID   string      `json:"key_id"`
+	BaseURL string      `json:"base_url"`
+	Scenes  AqaraScenes `json:"scenes"` // Default scenes (can be overridden per device)
 }
 
 // AqaraScenes contains scene IDs for different actions

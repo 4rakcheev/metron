@@ -46,7 +46,14 @@ func main() {
 		"webhook_url", cfg.Telegram.WebhookURL,
 		"metron_url", cfg.Metron.BaseURL,
 		"allowed_users", len(cfg.Telegram.AllowedUsers),
+		"timezone", cfg.Telegram.Timezone,
 	)
+
+	// Set timezone for time formatting
+	if err := bot.SetTimezone(cfg.Telegram.Timezone); err != nil {
+		logger.Error("Failed to set timezone", "error", err, "timezone", cfg.Telegram.Timezone)
+		os.Exit(1)
+	}
 
 	// Create bot instance
 	telegramBot, err := bot.NewBot(cfg, logger)

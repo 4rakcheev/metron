@@ -23,6 +23,19 @@ type Storage interface {
 	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
 }
 
+// Device interface for accessing device information
+type Device interface {
+	GetID() string
+	GetName() string
+	GetType() string
+	GetDriver() string
+}
+
+// DeviceRegistry interface defines device management operations
+type DeviceRegistry interface {
+	Get(id string) (Device, error)
+}
+
 // DeviceDriver interface defines device control operations
 type DeviceDriver interface {
 	Name() string
@@ -38,29 +51,37 @@ type DriverRegistry interface {
 
 // SessionManager manages screen-time sessions
 type SessionManager struct {
-	storage  Storage
-	registry DriverRegistry
+	storage        Storage
+	deviceRegistry DeviceRegistry
+	driverRegistry DriverRegistry
 }
 
 // NewSessionManager creates a new session manager
-func NewSessionManager(storage Storage, registry DriverRegistry) *SessionManager {
+func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry) *SessionManager {
 	return &SessionManager{
-		storage:  storage,
-		registry: registry,
+		storage:        storage,
+		deviceRegistry: deviceRegistry,
+		driverRegistry: driverRegistry,
 	}
 }
 
 // StartSession starts a new session for one or more children
-func (m *SessionManager) StartSession(ctx context.Context, deviceType string, deviceID string, childIDs []string, durationMinutes int) (*Session, error) {
+func (m *SessionManager) StartSession(ctx context.Context, deviceID string, childIDs []string, durationMinutes int) (*Session, error) {
 	// Validate inputs
-	if deviceType == "" {
-		return nil, ErrInvalidDeviceType
+	if deviceID == "" {
+		return nil, fmt.Errorf("device ID cannot be empty")
 	}
 	if len(childIDs) == 0 {
 		return nil, ErrNoChildren
 	}
 	if durationMinutes <= 0 {
 		return nil, ErrInvalidDuration
+	}
+
+	// Look up device from device registry
+	device, err := m.deviceRegistry.Get(deviceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device %s: %w", deviceID, err)
 	}
 
 	// Validate children exist and have sufficient time
@@ -87,7 +108,7 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceType string, de
 	// Create session
 	session := &Session{
 		ID:               idgen.NewSession(),
-		DeviceType:       deviceType,
+		DeviceType:       device.GetType(), // Use device type from device registry
 		DeviceID:         deviceID,
 		ChildIDs:         childIDs,
 		StartTime:        time.Now(),
@@ -97,9 +118,9 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceType string, de
 	}
 
 	// Get device driver
-	driver, err := m.registry.Get(deviceType)
+	driver, err := m.driverRegistry.Get(device.GetDriver())
 	if err != nil {
-		return nil, fmt.Errorf("failed to get driver for %s: %w", deviceType, err)
+		return nil, fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), deviceID, err)
 	}
 
 	// Start session on device
@@ -110,6 +131,22 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceType string, de
 	// Save session
 	if err := m.storage.CreateSession(ctx, session); err != nil {
 		return nil, fmt.Errorf("failed to save session: %w", err)
+	}
+
+	// Check if immediate warning is needed (for short sessions <= 5 minutes)
+	if durationMinutes <= 5 {
+		// Trigger warning immediately for sessions that start with 5 minutes or less
+		if err := driver.ApplyWarning(ctx, session, durationMinutes); err != nil {
+			// Log but don't fail - session is already created
+			fmt.Printf("Warning: failed to send immediate warning for new session %s: %v\n", session.ID, err)
+		} else {
+			// Mark warning as sent
+			now := time.Now()
+			session.WarningSentAt = &now
+			if err := m.storage.UpdateSession(ctx, session); err != nil {
+				fmt.Printf("Warning: failed to mark warning as sent for session %s: %v\n", session.ID, err)
+			}
+		}
 	}
 
 	return session, nil
@@ -154,13 +191,28 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		}
 	}
 
+	// Calculate values before extension for logging
+	oldExpectedDuration := session.ExpectedDuration
+	oldRemainingMinutes := session.RemainingMinutes
+
 	// Extend session
 	session.RemainingMinutes += additionalMinutes
 	session.ExpectedDuration += additionalMinutes
 
+	// Reset warning state so a new warning can be sent when time crosses 5 minutes again
+	session.WarningSentAt = nil
+
+	// Log extension details
+	fmt.Printf("Session extended: session_id=%s, added=%d, duration: %d→%d, remaining: %d→%d\n",
+		session.ID, additionalMinutes, oldExpectedDuration, session.ExpectedDuration,
+		oldRemainingMinutes, session.RemainingMinutes)
+
 	if err := m.storage.UpdateSession(ctx, session); err != nil {
 		return nil, fmt.Errorf("failed to update session: %w", err)
 	}
+
+	fmt.Printf("Session extension persisted: session_id=%s, new_duration=%d\n",
+		session.ID, session.ExpectedDuration)
 
 	return session, nil
 }
@@ -177,10 +229,16 @@ func (m *SessionManager) StopSession(ctx context.Context, sessionID string) erro
 		return ErrSessionNotActive
 	}
 
-	// Get device driver
-	driver, err := m.registry.Get(session.DeviceType)
+	// Look up device to get driver name
+	device, err := m.deviceRegistry.Get(session.DeviceID)
 	if err != nil {
-		return fmt.Errorf("failed to get driver for %s: %w", session.DeviceType, err)
+		return fmt.Errorf("failed to get device %s: %w", session.DeviceID, err)
+	}
+
+	// Get device driver
+	driver, err := m.driverRegistry.Get(device.GetDriver())
+	if err != nil {
+		return fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), session.DeviceID, err)
 	}
 
 	// Stop session on device
