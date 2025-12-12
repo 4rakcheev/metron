@@ -151,15 +151,32 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 	// Update remaining minutes
 	session.RemainingMinutes = expectedRemaining
 
-	// Trigger warning if less than 5 minutes remaining
-	if expectedRemaining <= 5 && expectedRemaining > 0 {
+	// Trigger warning if less than 5 minutes remaining (only once)
+	if expectedRemaining <= 5 && expectedRemaining > 0 && session.WarningSentAt == nil {
 		driver, err := s.registry.Get(session.DeviceType)
 		if err == nil {
 			s.logger.Info("Sending time remaining warning",
 				"session_id", session.ID,
 				"minutes_remaining", expectedRemaining)
-			driver.ApplyWarning(ctx, session, expectedRemaining)
+
+			if err := driver.ApplyWarning(ctx, session, expectedRemaining); err != nil {
+				s.logger.Error("Failed to apply warning",
+					"session_id", session.ID,
+					"error", err)
+			} else {
+				// Mark warning as sent
+				now := time.Now()
+				session.WarningSentAt = &now
+				s.logger.Info("Warning sent and marked",
+					"session_id", session.ID,
+					"minutes_remaining", expectedRemaining)
+			}
 		}
+	} else if expectedRemaining <= 5 && session.WarningSentAt != nil {
+		s.logger.Debug("Warning already sent, skipping",
+			"session_id", session.ID,
+			"warning_sent_at", session.WarningSentAt,
+			"minutes_remaining", expectedRemaining)
 	}
 
 	return s.storage.UpdateSession(ctx, session)

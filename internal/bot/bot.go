@@ -138,6 +138,7 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 	b.logger.Info("Received callback",
 		"user_id", callback.From.ID,
 		"data", callback.Data,
+		"data_length", len(callback.Data),
 	)
 
 	// Answer callback to remove loading state
@@ -163,9 +164,20 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 	// Parse callback data as JSON
 	data, err := UnmarshalCallback(callback.Data)
 	if err != nil {
-		b.logger.Error("Failed to unmarshal callback data", "error", err)
+		b.logger.Error("Failed to unmarshal callback data",
+			"raw_data", callback.Data,
+			"error", err,
+		)
 		return b.sendMessage(callback.Message.Chat.ID, FormatError(err), nil)
 	}
+
+	b.logger.Info("Parsed callback data",
+		"action", data.Action,
+		"step", data.Step,
+		"child_index", data.ChildIndex,
+		"device", data.Device,
+		"duration", data.Duration,
+	)
 
 	// Route to flow handler
 	switch data.Action {

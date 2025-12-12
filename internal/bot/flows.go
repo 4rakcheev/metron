@@ -9,20 +9,32 @@ import (
 
 // handleNewSessionFlow handles the multi-step flow for creating a new session
 func (b *Bot) handleNewSessionFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	b.logger.Info("New session flow",
+		"step", data.Step,
+		"child_index", data.ChildIndex,
+		"device", data.Device,
+		"duration", data.Duration,
+	)
+
 	switch data.Step {
 	case 1:
-		// Step 1: Child selected (by index), resolve to ID and show devices
-		childID, err := b.resolveChildIndex(ctx, data.ChildIndex)
-		if err != nil {
-			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
-		}
-		return b.newSessionStep2(ctx, message, childID)
+		// Step 1: Child selected (by index), show devices
+		// Keep using index to avoid long callback_data
+		return b.newSessionStep2(ctx, message, data.ChildIndex)
 	case 2:
 		// Step 2: Device selected, show durations
-		return b.newSessionStep3(ctx, message, data.ChildID, data.Device)
+		return b.newSessionStep3(ctx, message, data.ChildIndex, data.Device)
 	case 3:
-		// Step 3: Duration selected, create session
-		return b.newSessionCreate(ctx, message, data.ChildID, data.Device, data.Duration)
+		// Step 3: Duration selected, resolve index to ID and create session
+		childID, err := b.resolveChildIndex(ctx, data.ChildIndex)
+		if err != nil {
+			b.logger.Error("Failed to resolve child index",
+				"child_index", data.ChildIndex,
+				"error", err,
+			)
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+		}
+		return b.newSessionCreate(ctx, message, childID, data.Device, data.Duration)
 	default:
 		return b.editMessage(message.Chat.ID, message.MessageID,
 			"❌ Invalid step in session creation flow.", nil)
@@ -51,7 +63,7 @@ func (b *Bot) resolveChildIndex(ctx context.Context, index int) (string, error) 
 }
 
 // newSessionStep2 shows device selection
-func (b *Bot) newSessionStep2(ctx context.Context, message *tgbotapi.Message, childID string) error {
+func (b *Bot) newSessionStep2(ctx context.Context, message *tgbotapi.Message, childIndex int) error {
 	// Get devices list
 	devices, err := b.client.ListDevices(ctx)
 	if err != nil {
@@ -64,18 +76,18 @@ func (b *Bot) newSessionStep2(ctx context.Context, message *tgbotapi.Message, ch
 	}
 
 	text := "➕ *New Session*\n\n📺 Step 2/3: Select device"
-	keyboard := BuildDevicesButtons(devices, "newsession", 2, childID)
+	keyboard := BuildDevicesButtons(devices, "newsession", 2, childIndex)
 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
 // newSessionStep3 shows duration selection
-func (b *Bot) newSessionStep3(ctx context.Context, message *tgbotapi.Message, childID, device string) error {
+func (b *Bot) newSessionStep3(ctx context.Context, message *tgbotapi.Message, childIndex int, device string) error {
 	emoji := getDeviceEmoji(device)
 	text := fmt.Sprintf("➕ *New Session*\n\n%s Device: *%s*\n\n⏱ Step 3/3: Select duration (minutes)",
 		emoji, device)
 
-	keyboard := BuildDurationButtons("newsession", 3, childID, device)
+	keyboard := BuildDurationButtons("newsession", 3, childIndex, device)
 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }

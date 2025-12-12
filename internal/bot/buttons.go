@@ -81,16 +81,16 @@ func BuildChildrenButtons(children []Child, action string, step int) tgbotapi.In
 }
 
 // BuildDevicesButtons creates buttons for selecting devices
-func BuildDevicesButtons(devices []Device, action string, step int, childID string) tgbotapi.InlineKeyboardMarkup {
+func BuildDevicesButtons(devices []Device, action string, step int, childIndex int) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	for _, device := range devices {
 		emoji := getDeviceEmoji(device.Type)
 		callback := MarshalCallback(CallbackData{
-			Action:  action,
-			Step:    step,
-			ChildID: childID,
-			Device:  device.Type,
+			Action:     action,
+			Step:       step,
+			ChildIndex: childIndex, // Use index to keep callback data small
+			Device:     device.Type,
 		})
 
 		btn := tgbotapi.NewInlineKeyboardButtonData(
@@ -118,7 +118,7 @@ func BuildDevicesButtons(devices []Device, action string, step int, childID stri
 }
 
 // BuildDurationButtons creates buttons for selecting duration
-func BuildDurationButtons(action string, step int, childID, device string) tgbotapi.InlineKeyboardMarkup {
+func BuildDurationButtons(action string, step int, childIndex int, device string) tgbotapi.InlineKeyboardMarkup {
 	durations := []int{5, 15, 30, 60, 120}
 	var rows [][]tgbotapi.InlineKeyboardButton
 
@@ -128,11 +128,11 @@ func BuildDurationButtons(action string, step int, childID, device string) tgbot
 
 	for i, duration := range durations {
 		callback := MarshalCallback(CallbackData{
-			Action:   action,
-			Step:     step,
-			ChildID:  childID,
-			Device:   device,
-			Duration: duration,
+			Action:     action,
+			Step:       step,
+			ChildIndex: childIndex, // Use index to keep callback data small
+			Device:     device,
+			Duration:   duration,
 		})
 
 		label := fmt.Sprintf("+%d", duration)
@@ -150,7 +150,7 @@ func BuildDurationButtons(action string, step int, childID, device string) tgbot
 	// Back and Cancel buttons
 	backBtn := tgbotapi.NewInlineKeyboardButtonData(
 		"◀️ Back",
-		MarshalCallback(CallbackData{Action: action, Step: step - 1, ChildID: childID}),
+		MarshalCallback(CallbackData{Action: action, Step: step - 1, ChildIndex: childIndex}),
 	)
 
 	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(

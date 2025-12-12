@@ -232,12 +232,40 @@ func (m *SessionManager) GetChildStatus(ctx context.Context, childID string) (*C
 		return nil, err
 	}
 
+	// Get active sessions to include their elapsed time
+	activeSessions, err := m.storage.ListActiveSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Calculate elapsed time from active sessions for this child
+	activeMinutes := 0
+	for _, session := range activeSessions {
+		// Check if this session includes the child
+		for _, sessionChildID := range session.ChildIDs {
+			if sessionChildID == childID {
+				// Calculate elapsed time (clamped to expected duration)
+				elapsed := int(time.Since(session.StartTime).Minutes())
+				if elapsed > session.ExpectedDuration {
+					elapsed = session.ExpectedDuration
+				}
+				activeMinutes += elapsed
+				break
+			}
+		}
+	}
+
+	// Total used time = completed sessions + active sessions
+	totalUsed := usage.MinutesUsed + activeMinutes
 	dailyLimit := child.GetDailyLimit(today)
-	remaining := dailyLimit - usage.MinutesUsed
+	remaining := dailyLimit - totalUsed
+	if remaining < 0 {
+		remaining = 0
+	}
 
 	return &ChildStatus{
 		Child:          child,
-		TodayUsed:      usage.MinutesUsed,
+		TodayUsed:      totalUsed,
 		TodayRemaining: remaining,
 		TodayLimit:     dailyLimit,
 		SessionsToday:  usage.SessionCount,

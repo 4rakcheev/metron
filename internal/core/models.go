@@ -44,6 +44,7 @@ type Session struct {
 	Status            SessionStatus
 	LastBreakAt       *time.Time
 	BreakEndsAt       *time.Time
+	WarningSentAt     *time.Time // tracks when time-remaining warning was sent
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
 }

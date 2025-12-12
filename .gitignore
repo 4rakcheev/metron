@@ -6,6 +6,8 @@
 *.dylib
 bin/
 dist/
+metron
+metron-bot
 
 # Test binary, built with `go test -c`
 *.test
