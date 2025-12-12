@@ -182,6 +182,8 @@ func (m *mockDevice) GetID() string     { return m.id }
 func (m *mockDevice) GetName() string   { return m.name }
 func (m *mockDevice) GetType() string   { return m.dtype }
 func (m *mockDevice) GetDriver() string { return m.driver }
+func (m *mockDevice) GetParameter(key string) interface{} { return nil }
+func (m *mockDevice) GetParameters() map[string]interface{} { return nil }
 
 type mockDeviceRegistry struct {
 	devices map[string]*mockDevice

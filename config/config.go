@@ -14,11 +14,12 @@ var (
 
 // Config represents the application configuration
 type Config struct {
-	Server   ServerConfig   `json:"server"`
-	Database DatabaseConfig `json:"database"`
-	Security SecurityConfig `json:"security"`
-	Devices  []DeviceConfig `json:"devices"` // Global device registry
-	Aqara    AqaraConfig    `json:"aqara"`
+	Server   ServerConfig    `json:"server"`
+	Database DatabaseConfig  `json:"database"`
+	Security SecurityConfig  `json:"security"`
+	Devices  []DeviceConfig  `json:"devices"` // Global device registry
+	Aqara    AqaraConfig     `json:"aqara"`
+	Kidslox  *KidsloxConfig  `json:"kidslox,omitempty"`
 }
 
 // DeviceConfig represents a device configuration
@@ -64,6 +65,13 @@ type AqaraScenes struct {
 	TVPowerOff string `json:"tv_power_off"`
 }
 
+// KidsloxConfig contains Kidslox API settings
+type KidsloxConfig struct {
+	BaseURL   string `json:"base_url"`   // API base URL
+	APIKey    string `json:"api_key"`    // Static API key for authentication
+	AccountID string `json:"account_id"` // Account ID for actions
+}
+
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.Server.Port <= 0 || c.Server.Port > 65535 {
@@ -78,12 +86,24 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("%w: API key is required", ErrInvalidConfig)
 	}
 
+	// Validate Aqara config (required for now for backward compatibility)
 	if c.Aqara.AppID == "" || c.Aqara.AppKey == "" || c.Aqara.KeyID == "" {
 		return fmt.Errorf("%w: Aqara credentials are required", ErrInvalidConfig)
 	}
 
 	if c.Aqara.BaseURL == "" {
 		c.Aqara.BaseURL = "https://open-cn.aqara.com" // default
+	}
+
+	// Validate Kidslox config if present
+	if c.Kidslox != nil {
+		if c.Kidslox.APIKey == "" || c.Kidslox.AccountID == "" {
+			return fmt.Errorf("%w: Kidslox API key and account ID are required when Kidslox is configured", ErrInvalidConfig)
+		}
+
+		if c.Kidslox.BaseURL == "" {
+			c.Kidslox.BaseURL = "https://admin.kdlparentalcontrol.com" // default
+		}
 	}
 
 	return nil

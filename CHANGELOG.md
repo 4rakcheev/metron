@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Sessions will now properly expire and trigger device power-off
 
 ### Added
+- **Kidslox Device Driver (iPad Support)**
+  - Full support for Kidslox parental control API
+  - Device control: lock, unlock, time extension
+  - Device-specific parameters: device_id, profile_id
+  - Session lifecycle: start (unlock + set time), extend (add time), end (lock)
+  - Comprehensive test coverage with HTTP mocks
+  - ExtendableDriver interface for drivers supporting time extensions
 - **Device/Driver Architecture Separation**
   - Global device registry with configurable devices
   - Device-specific driver parameters for customization

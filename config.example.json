@@ -28,6 +28,16 @@
       "name": "Bedroom TV",
       "type": "tv",
       "driver": "aqara"
+    },
+    {
+      "id": "ipad1",
+      "name": "Alice's iPad",
+      "type": "ipad",
+      "driver": "kidslox",
+      "parameters": {
+        "device_id": "your-kidslox-device-id",
+        "profile_id": "your-kidslox-profile-id"
+      }
     }
   ],
   "aqara": {
@@ -40,5 +50,10 @@
       "tv_warning": "default-scene-id-for-warning",
       "tv_power_off": "default-scene-id-for-power-off"
     }
+  },
+  "kidslox": {
+    "base_url": "https://admin.kdlparentalcontrol.com",
+    "api_key": "your-kidslox-api-key",
+    "account_id": "your-kidslox-account-id"
   }
 }

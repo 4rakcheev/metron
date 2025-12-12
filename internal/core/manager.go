@@ -7,6 +7,23 @@ import (
 	"time"
 )
 
+// deviceContextKey is used to store Device in context
+type deviceContextKey struct{}
+
+// WithDevice adds a device to the context
+func WithDevice(ctx context.Context, device Device) context.Context {
+	return context.WithValue(ctx, deviceContextKey{}, device)
+}
+
+// GetDeviceFromContext retrieves a device from the context
+func GetDeviceFromContext(ctx context.Context) (Device, error) {
+	device, ok := ctx.Value(deviceContextKey{}).(Device)
+	if !ok {
+		return nil, fmt.Errorf("device not found in context")
+	}
+	return device, nil
+}
+
 // Storage interface defines required storage operations
 type Storage interface {
 	CreateChild(ctx context.Context, child *Child) error
@@ -29,6 +46,8 @@ type Device interface {
 	GetName() string
 	GetType() string
 	GetDriver() string
+	GetParameter(key string) interface{}
+	GetParameters() map[string]interface{}
 }
 
 // DeviceRegistry interface defines device management operations
@@ -123,8 +142,9 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		return nil, fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), deviceID, err)
 	}
 
-	// Start session on device
-	if err := driver.StartSession(ctx, session); err != nil {
+	// Start session on device (add device to context for drivers that need device-specific parameters)
+	ctxWithDevice := WithDevice(ctx, device)
+	if err := driver.StartSession(ctxWithDevice, session); err != nil {
 		return nil, fmt.Errorf("failed to start session on device: %w", err)
 	}
 
@@ -191,6 +211,29 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		}
 	}
 
+	// Look up device to get driver name
+	device, err := m.deviceRegistry.Get(session.DeviceID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device %s: %w", session.DeviceID, err)
+	}
+
+	// Get device driver
+	driver, err := m.driverRegistry.Get(device.GetDriver())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), session.DeviceID, err)
+	}
+
+	// If driver supports extension, call it before updating session
+	if extendable, ok := driver.(interface {
+		ExtendSession(ctx context.Context, session *Session, additionalMinutes int) error
+	}); ok {
+		// Add device to context for driver to access device-specific parameters
+		ctxWithDevice := WithDevice(ctx, device)
+		if err := extendable.ExtendSession(ctxWithDevice, session, additionalMinutes); err != nil {
+			return nil, fmt.Errorf("driver failed to extend session: %w", err)
+		}
+	}
+
 	// Calculate values before extension for logging
 	oldExpectedDuration := session.ExpectedDuration
 	oldRemainingMinutes := session.RemainingMinutes
@@ -247,8 +290,9 @@ func (m *SessionManager) StopSession(ctx context.Context, sessionID string) erro
 		return fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), session.DeviceID, err)
 	}
 
-	// Stop session on device
-	if err := driver.StopSession(ctx, session); err != nil {
+	// Stop session on device (add device to context for drivers that need device-specific parameters)
+	ctxWithDevice := WithDevice(ctx, device)
+	if err := driver.StopSession(ctxWithDevice, session); err != nil {
 		return fmt.Errorf("failed to stop session on device: %w", err)
 	}
 

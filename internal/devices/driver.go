@@ -47,3 +47,10 @@ type CapableDriver interface {
 	DeviceDriver
 	Capabilities() DriverCapabilities
 }
+
+// ExtendableDriver is an optional interface that drivers can implement
+// to support session extensions (e.g., adding more time to a running session)
+type ExtendableDriver interface {
+	DeviceDriver
+	ExtendSession(ctx context.Context, session *core.Session, additionalMinutes int) error
+}

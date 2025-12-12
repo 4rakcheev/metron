@@ -17,6 +17,7 @@ import (
 	"metron/internal/devices"
 	"metron/internal/drivers"
 	"metron/internal/drivers/aqara"
+	"metron/internal/drivers/kidslox"
 	"metron/internal/scheduler"
 	"metron/internal/storage/sqlite"
 )
@@ -182,6 +183,18 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	}
 	aqaraDriver := aqara.NewDriver(aqaraConfig, db) // Pass storage for token management
 	driverRegistry.Register(aqaraDriver)
+
+	// Register Kidslox driver if configured
+	if cfg.Kidslox != nil {
+		logger.Info("Registering Kidslox driver")
+		kidsloxConfig := kidslox.Config{
+			BaseURL:   cfg.Kidslox.BaseURL,
+			APIKey:    cfg.Kidslox.APIKey,
+			AccountID: cfg.Kidslox.AccountID,
+		}
+		kidsloxDriver := kidslox.NewDriver(kidsloxConfig)
+		driverRegistry.Register(kidsloxDriver)
+	}
 
 	// Initialize device registry
 	logger.Info("Initializing device registry")
