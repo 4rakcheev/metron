@@ -142,6 +142,27 @@ jobs:
             mv /opt/metron-bot/metron-bot_new/metron-bot /opt/metron-bot/metron-bot
             sudo -n chmod +x /opt/metron-bot/metron-bot
 
+      - name: Copy child UI to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "child-ui-dist"
+          target: "/opt/metron-child"
+          overwrite: true
+
+      - name: Activate child UI
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            rm -rf /opt/metron-child/dist
+            mv /opt/metron-child/child-ui-dist /opt/metron-child/dist
+            chown -R metron:metron /opt/metron-child/dist
+
       - name: Restart services
         uses: appleboy/ssh-action@v0.1.9
         with:
