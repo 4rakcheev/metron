@@ -110,6 +110,7 @@ func (h *ChildrenHandler) GetChild(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":              child.ID,
 		"name":            child.Name,
+		"pin":             child.PIN,
 		"weekday_limit":   child.WeekdayLimit,
 		"weekend_limit":   child.WeekendLimit,
 		"break_rule":      formatBreakRule(child.BreakRule),
@@ -127,6 +128,7 @@ func (h *ChildrenHandler) GetChild(c *gin.Context) {
 func (h *ChildrenHandler) CreateChild(c *gin.Context) {
 	var req struct {
 		Name         string `json:"name" binding:"required"`
+		PIN          string `json:"pin,omitempty"` // Optional 4-digit PIN
 		WeekdayLimit int    `json:"weekday_limit" binding:"required,gt=0"`
 		WeekendLimit int    `json:"weekend_limit" binding:"required,gt=0"`
 		BreakRule    *struct {
@@ -148,6 +150,7 @@ func (h *ChildrenHandler) CreateChild(c *gin.Context) {
 	child := &core.Child{
 		ID:           idgen.NewChild(),
 		Name:         req.Name,
+		PIN:          req.PIN, // Store PIN (can be empty string)
 		WeekdayLimit: req.WeekdayLimit,
 		WeekendLimit: req.WeekendLimit,
 	}
@@ -186,6 +189,7 @@ func (h *ChildrenHandler) CreateChild(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"id":            child.ID,
 		"name":          child.Name,
+		"pin":           child.PIN, // Include PIN for parent
 		"weekday_limit": child.WeekdayLimit,
 		"weekend_limit": child.WeekendLimit,
 		"break_rule":    formatBreakRule(child.BreakRule),
@@ -225,6 +229,7 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 	// Parse update request
 	var req struct {
 		Name         *string `json:"name,omitempty"`
+		PIN          *string `json:"pin,omitempty"` // Optional PIN update
 		WeekdayLimit *int    `json:"weekday_limit,omitempty"`
 		WeekendLimit *int    `json:"weekend_limit,omitempty"`
 		BreakRule    *struct {
@@ -245,6 +250,9 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 	// Update fields if provided
 	if req.Name != nil {
 		child.Name = *req.Name
+	}
+	if req.PIN != nil {
+		child.PIN = *req.PIN
 	}
 	if req.WeekdayLimit != nil {
 		child.WeekdayLimit = *req.WeekdayLimit
@@ -285,6 +293,7 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":            child.ID,
 		"name":          child.Name,
+		"pin":           child.PIN,
 		"weekday_limit": child.WeekdayLimit,
 		"weekend_limit": child.WeekendLimit,
 		"break_rule":    formatBreakRule(child.BreakRule),

@@ -37,6 +37,19 @@ func NewRouter(config RouterConfig) *gin.Engine {
 	router.Use(middleware.Logging(config.Logger))
 	router.Use(middleware.ContentType())
 
+	// CORS middleware for child web app
+	router.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
 	// Health check (no auth)
 	healthHandler := handlers.NewHealthHandler()
 	router.GET("/health", healthHandler.GetHealth)
@@ -93,6 +106,36 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			v1.POST("/admin/aqara/refresh-token", adminHandler.UpdateAqaraRefreshToken)
 			v1.GET("/admin/aqara/token-status", adminHandler.GetAqaraTokenStatus)
 		}
+	}
+
+	// Child API routes (for child-facing web app)
+	sessionManager := middleware.NewSessionManager()
+
+	childGroup := router.Group("/child")
+	{
+		childHandler := handlers.NewChildHandler(
+			config.Storage,
+			config.Manager,
+			config.DeviceRegistry,
+			sessionManager,
+			config.Logger,
+		)
+
+		// Public routes (no auth required)
+		authGroup := childGroup.Group("/auth")
+		authGroup.GET("/children", childHandler.ListChildrenForAuth)
+		authGroup.POST("/login", childHandler.Login)
+		authGroup.POST("/logout", childHandler.Logout)
+
+		// Protected routes (require child session)
+		protected := childGroup.Group("")
+		protected.Use(middleware.ChildAuth(sessionManager))
+		protected.GET("/me", childHandler.GetMe)
+		protected.GET("/today", childHandler.GetToday)
+		protected.GET("/devices", childHandler.ListDevices)
+		protected.GET("/sessions", childHandler.ListSessions)
+		protected.POST("/sessions", childHandler.CreateSession)
+		protected.POST("/sessions/:id/stop", childHandler.StopSession)
 	}
 
 	return router

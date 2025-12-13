@@ -21,6 +21,7 @@ type SessionsHandler struct {
 
 // FullSessionManager interface for all session operations
 type FullSessionManager interface {
+	GetChildStatus(ctx context.Context, childID string) (*core.ChildStatus, error)
 	StartSession(ctx context.Context, deviceID string, childIDs []string, durationMinutes int) (*core.Session, error)
 	ExtendSession(ctx context.Context, sessionID string, additionalMinutes int) (*core.Session, error)
 	StopSession(ctx context.Context, sessionID string) error
@@ -209,8 +210,8 @@ func (h *SessionsHandler) UpdateSession(c *gin.Context) {
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid request body",
-			"code":  "INVALID_REQUEST",
+			"error":   "Invalid request body",
+			"code":    "INVALID_REQUEST",
 			"details": err.Error(),
 		})
 		return

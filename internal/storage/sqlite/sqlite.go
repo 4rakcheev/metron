@@ -55,6 +55,7 @@ func (s *SQLiteStorage) migrate() error {
 		CREATE TABLE IF NOT EXISTS children (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
+			pin TEXT NOT NULL DEFAULT '',
 			weekday_limit INTEGER NOT NULL,
 			weekend_limit INTEGER NOT NULL,
 			break_rule TEXT,
@@ -130,6 +131,15 @@ func (s *SQLiteStorage) runMigrations() error {
 		// For now, we'll ignore all errors as the column might already exist
 	}
 
+	// Add pin column to children table if it doesn't exist (for existing databases)
+	_, err = s.db.Exec(`
+		ALTER TABLE children ADD COLUMN pin TEXT NOT NULL DEFAULT '';
+	`)
+	// Ignore error if column already exists
+	if err != nil && err.Error() != "duplicate column name: pin" {
+		// Column might already exist, which is fine
+	}
+
 	return nil
 }
 
@@ -153,9 +163,9 @@ func (s *SQLiteStorage) CreateChild(ctx context.Context, child *core.Child) erro
 	}
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO children (id, name, weekday_limit, weekend_limit, break_rule, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, child.ID, child.Name, child.WeekdayLimit, child.WeekendLimit, breakRuleJSON, child.CreatedAt, child.UpdatedAt)
+		INSERT INTO children (id, name, pin, weekday_limit, weekend_limit, break_rule, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, child.ID, child.Name, child.PIN, child.WeekdayLimit, child.WeekendLimit, breakRuleJSON, child.CreatedAt, child.UpdatedAt)
 
 	return err
 }
@@ -166,9 +176,9 @@ func (s *SQLiteStorage) GetChild(ctx context.Context, id string) (*core.Child, e
 	var breakRuleJSON sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, weekday_limit, weekend_limit, break_rule, created_at, updated_at
+		SELECT id, name, pin, weekday_limit, weekend_limit, break_rule, created_at, updated_at
 		FROM children WHERE id = ?
-	`, id).Scan(&child.ID, &child.Name, &child.WeekdayLimit, &child.WeekendLimit,
+	`, id).Scan(&child.ID, &child.Name, &child.PIN, &child.WeekdayLimit, &child.WeekendLimit,
 		&breakRuleJSON, &child.CreatedAt, &child.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -192,7 +202,7 @@ func (s *SQLiteStorage) GetChild(ctx context.Context, id string) (*core.Child, e
 // ListChildren retrieves all children
 func (s *SQLiteStorage) ListChildren(ctx context.Context) ([]*core.Child, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, weekday_limit, weekend_limit, break_rule, created_at, updated_at
+		SELECT id, name, pin, weekday_limit, weekend_limit, break_rule, created_at, updated_at
 		FROM children ORDER BY name
 	`)
 	if err != nil {
@@ -205,7 +215,7 @@ func (s *SQLiteStorage) ListChildren(ctx context.Context) ([]*core.Child, error)
 		var child core.Child
 		var breakRuleJSON sql.NullString
 
-		if err := rows.Scan(&child.ID, &child.Name, &child.WeekdayLimit, &child.WeekendLimit,
+		if err := rows.Scan(&child.ID, &child.Name, &child.PIN, &child.WeekdayLimit, &child.WeekendLimit,
 			&breakRuleJSON, &child.CreatedAt, &child.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -243,9 +253,9 @@ func (s *SQLiteStorage) UpdateChild(ctx context.Context, child *core.Child) erro
 
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE children
-		SET name = ?, weekday_limit = ?, weekend_limit = ?, break_rule = ?, updated_at = ?
+		SET name = ?, pin = ?, weekday_limit = ?, weekend_limit = ?, break_rule = ?, updated_at = ?
 		WHERE id = ?
-	`, child.Name, child.WeekdayLimit, child.WeekendLimit, breakRuleJSON, child.UpdatedAt, child.ID)
+	`, child.Name, child.PIN, child.WeekdayLimit, child.WeekendLimit, breakRuleJSON, child.UpdatedAt, child.ID)
 
 	if err != nil {
 		return err

@@ -19,8 +19,9 @@ const (
 type Child struct {
 	ID           string
 	Name         string
-	WeekdayLimit int // minutes per weekday
-	WeekendLimit int // minutes per weekend day
+	PIN          string // 4-digit PIN for child authentication (hashed with bcrypt)
+	WeekdayLimit int    // minutes per weekday
+	WeekendLimit int    // minutes per weekend day
 	BreakRule    *BreakRule
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -28,24 +29,24 @@ type Child struct {
 
 // BreakRule defines mandatory break periods
 type BreakRule struct {
-	BreakAfterMinutes   int // require break after this many minutes
+	BreakAfterMinutes    int // require break after this many minutes
 	BreakDurationMinutes int // break must last this many minutes
 }
 
 // Session represents an active or completed screen-time session
 type Session struct {
-	ID                string
-	DeviceType        string // "tv", "ps5", "ipad", etc.
-	DeviceID          string // specific device identifier
-	ChildIDs          []string
-	StartTime         time.Time
-	ExpectedDuration  int // minutes
-	Status            SessionStatus
-	LastBreakAt       *time.Time
-	BreakEndsAt       *time.Time
-	WarningSentAt     *time.Time // tracks when time-remaining warning was sent
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID               string
+	DeviceType       string // "tv", "ps5", "ipad", etc.
+	DeviceID         string // specific device identifier
+	ChildIDs         []string
+	StartTime        time.Time
+	ExpectedDuration int // minutes
+	Status           SessionStatus
+	LastBreakAt      *time.Time
+	BreakEndsAt      *time.Time
+	WarningSentAt    *time.Time // tracks when time-remaining warning was sent
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // DailyUsage tracks a child's usage for a specific day
@@ -60,18 +61,18 @@ type DailyUsage struct {
 
 // Validation errors
 var (
-	ErrInvalidChildID        = errors.New("invalid child ID")
-	ErrInvalidName           = errors.New("child name cannot be empty")
-	ErrInvalidWeekdayLimit   = errors.New("weekday limit must be positive")
-	ErrInvalidWeekendLimit   = errors.New("weekend limit must be positive")
-	ErrInvalidBreakRule      = errors.New("invalid break rule configuration")
-	ErrInvalidDuration       = errors.New("duration must be positive")
-	ErrInvalidDeviceType     = errors.New("device type cannot be empty")
-	ErrNoChildren            = errors.New("session must have at least one child")
-	ErrInsufficientTime      = errors.New("child has insufficient remaining time")
-	ErrSessionNotActive      = errors.New("session is not active")
-	ErrSessionNotFound       = errors.New("session not found")
-	ErrChildNotFound         = errors.New("child not found")
+	ErrInvalidChildID      = errors.New("invalid child ID")
+	ErrInvalidName         = errors.New("child name cannot be empty")
+	ErrInvalidWeekdayLimit = errors.New("weekday limit must be positive")
+	ErrInvalidWeekendLimit = errors.New("weekend limit must be positive")
+	ErrInvalidBreakRule    = errors.New("invalid break rule configuration")
+	ErrInvalidDuration     = errors.New("duration must be positive")
+	ErrInvalidDeviceType   = errors.New("device type cannot be empty")
+	ErrNoChildren          = errors.New("session must have at least one child")
+	ErrInsufficientTime    = errors.New("child has insufficient remaining time")
+	ErrSessionNotActive    = errors.New("session is not active")
+	ErrSessionNotFound     = errors.New("session not found")
+	ErrChildNotFound       = errors.New("child not found")
 )
 
 // Validate validates a Child
