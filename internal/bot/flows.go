@@ -17,6 +17,9 @@ func (b *Bot) handleNewSessionFlow(ctx context.Context, message *tgbotapi.Messag
 	)
 
 	switch data.Step {
+	case 0:
+		// Step 0: Back to child selection (from device selection)
+		return b.newSessionStep1(ctx, message)
 	case 1:
 		// Step 1: Child selected (by index), show devices
 		// Keep using index to avoid long callback_data
@@ -60,6 +63,25 @@ func (b *Bot) resolveChildIndex(ctx context.Context, index int) (string, error) 
 	}
 
 	return children[index].ID, nil
+}
+
+// newSessionStep1 shows child selection
+func (b *Bot) newSessionStep1(ctx context.Context, message *tgbotapi.Message) error {
+	// Get children list
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+	}
+
+	if len(children) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ No children configured. Add children first using the API.", nil)
+	}
+
+	text := "➕ *New Session*\n\n👶 Step 1/3: Select child(ren)"
+	keyboard := BuildChildrenButtons(children, "newsession", 1)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
 // newSessionStep2 shows device selection
@@ -141,6 +163,9 @@ func (b *Bot) newSessionCreate(ctx context.Context, message *tgbotapi.Message, c
 // handleExtendFlow handles the multi-step flow for extending a session
 func (b *Bot) handleExtendFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
 	switch data.Step {
+	case 0:
+		// Step 0: Back to session selection (from duration selection)
+		return b.extendStep1(ctx, message)
 	case 1:
 		// Step 1: Session selected (by index), show durations
 		// Keep the session index for the next step
@@ -171,6 +196,38 @@ func (b *Bot) resolveSessionIndex(ctx context.Context, index int) (string, error
 	}
 
 	return sessions[index].ID, nil
+}
+
+// extendStep1 shows session selection
+func (b *Bot) extendStep1(ctx context.Context, message *tgbotapi.Message) error {
+	// Get active sessions
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+	}
+
+	if len(sessions) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ No active sessions to extend.", BuildQuickActionsButtons())
+	}
+
+	// Get children for mapping
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+	}
+
+	childrenMap := make(map[string]Child)
+	for _, child := range children {
+		childrenMap[child.ID] = child
+	}
+
+	text := "⏱ *Extend Session*\n\n" + FormatActiveSessions(sessions, childrenMap)
+	text += "Select a session to extend:"
+
+	keyboard := BuildSessionsButtons(sessions, "extend")
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
 // extendStep2 shows duration selection for extension

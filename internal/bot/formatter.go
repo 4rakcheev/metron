@@ -175,19 +175,26 @@ func FormatActiveSessions(sessions []Session, childrenMap map[string]Child) stri
 		displayName := getDeviceDisplayName(sess.DeviceType)
 		endTime, remaining := calculateSessionEnd(sess)
 
-		// Get child names
+		// Parse start time
+		startTime, err := time.Parse(time.RFC3339, sess.StartTime)
+		if err != nil {
+			startTime = time.Now()
+		}
+
+		// Get child names with emoji
 		var childNames []string
 		for _, childID := range sess.ChildIDs {
 			if child, ok := childrenMap[childID]; ok {
-				childNames = append(childNames, child.Name)
+				emoji := getChildEmoji(child.Name)
+				childNames = append(childNames, emoji+" "+child.Name)
 			}
 		}
 
 		sb.WriteString(fmt.Sprintf("%d. %s *%s*\n", i+1, deviceEmoji, displayName))
 		sb.WriteString(fmt.Sprintf("   Children: %s\n", strings.Join(childNames, ", ")))
-		sb.WriteString(fmt.Sprintf("   Ends %s (+%d min left)\n",
+		sb.WriteString(fmt.Sprintf("   Started: %s\n", formatTime(startTime, "15:04")))
+		sb.WriteString(fmt.Sprintf("   Ends %s (+%d min left)\n\n",
 			formatTime(endTime, "15:04"), remaining))
-		sb.WriteString(fmt.Sprintf("   ID: `%s`\n\n", sess.ID))
 	}
 
 	return sb.String()
