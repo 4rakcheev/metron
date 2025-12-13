@@ -39,8 +39,15 @@ func NewRouter(config RouterConfig) *gin.Engine {
 
 	// CORS middleware for child web app
 	router.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		origin := c.Request.Header.Get("Origin")
+		if origin != "" {
+			// Allow the requesting origin (supports credentials)
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			// Fallback for non-browser requests
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
 		if c.Request.Method == "OPTIONS" {
