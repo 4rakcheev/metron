@@ -32,6 +32,21 @@ jobs:
         run: |
           go build -o build/metron-bot ./cmd/metron-bot/main.go
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install child UI dependencies
+        working-directory: web/children-control
+        run: npm ci
+
+      - name: Build child UI
+        working-directory: web/children-control
+        env:
+         VITE_API_BASE: ${{ secrets.CHILD_UI_API_BASE }}
+        run: npm run build
+
       - name: Upload Metron binary artifact
         uses: actions/upload-artifact@v4
         with:
@@ -43,6 +58,12 @@ jobs:
         with:
           name: metron-bot-binary
           path: build/metron-bot
+
+      - name: Upload child UI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: metron-child-ui
+          path: web/children-control/dist
 
   deploy:
     runs-on: ubuntu-latest
@@ -60,6 +81,12 @@ jobs:
         with:
           name: metron-bot-binary
           path: .
+
+      - name: Download child UI
+        uses: actions/download-artifact@v4
+        with:
+          name: metron-child-ui
+          path: child-ui-dist
 
       - name: Copy Metron binary to server
         uses: appleboy/scp-action@v0.1.7
