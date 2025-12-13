@@ -304,7 +304,7 @@ func formatSessionResponse(session *core.Session) gin.H {
 		"child_ids":         session.ChildIDs,
 		"start_time":        session.StartTime.Format("2006-01-02T15:04:05Z07:00"),
 		"expected_duration": session.ExpectedDuration,
-		"remaining_minutes": session.RemainingMinutes,
+		"remaining_minutes": session.CalculateRemainingMinutes(),
 		"status":            string(session.Status),
 		"created_at":        session.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		"updated_at":        session.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),

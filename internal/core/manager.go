@@ -111,7 +111,6 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		ChildIDs:         childIDs,
 		StartTime:        time.Now(),
 		ExpectedDuration: durationMinutes,
-		RemainingMinutes: durationMinutes,
 		Status:           SessionStatusActive,
 	}
 
@@ -212,25 +211,16 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 
 	// Calculate values before extension for logging
 	oldExpectedDuration := session.ExpectedDuration
-	oldRemainingMinutes := session.RemainingMinutes
 
 	// Extend session
 	session.ExpectedDuration += additionalMinutes
-
-	// Recalculate remaining minutes based on new expected duration
-	endTime := session.StartTime.Add(time.Duration(session.ExpectedDuration) * time.Minute)
-	session.RemainingMinutes = int(time.Until(endTime).Minutes())
-	if session.RemainingMinutes < 0 {
-		session.RemainingMinutes = 0
-	}
 
 	// Reset warning state so a new warning can be sent when time crosses 5 minutes again
 	session.WarningSentAt = nil
 
 	// Log extension details
-	fmt.Printf("Session extended: session_id=%s, added=%d, duration: %d→%d, remaining: %d→%d\n",
-		session.ID, additionalMinutes, oldExpectedDuration, session.ExpectedDuration,
-		oldRemainingMinutes, session.RemainingMinutes)
+	fmt.Printf("Session extended: session_id=%s, added=%d, duration: %d→%d\n",
+		session.ID, additionalMinutes, oldExpectedDuration, session.ExpectedDuration)
 
 	if err := m.storage.UpdateSession(ctx, session); err != nil {
 		return nil, fmt.Errorf("failed to update session: %w", err)
@@ -273,7 +263,6 @@ func (m *SessionManager) StopSession(ctx context.Context, sessionID string) erro
 
 	// Update session status
 	session.Status = SessionStatusCompleted
-	session.RemainingMinutes = 0
 
 	if err := m.storage.UpdateSession(ctx, session); err != nil {
 		return fmt.Errorf("failed to update session: %w", err)

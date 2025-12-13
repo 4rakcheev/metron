@@ -40,7 +40,6 @@ type Session struct {
 	ChildIDs          []string
 	StartTime         time.Time
 	ExpectedDuration  int // minutes
-	RemainingMinutes  int
 	Status            SessionStatus
 	LastBreakAt       *time.Time
 	BreakEndsAt       *time.Time
@@ -146,4 +145,21 @@ func (s *Session) NeedsBreak(breakRule *BreakRule) bool {
 
 	minutesSince := int(time.Since(timeSince).Minutes())
 	return minutesSince >= breakRule.BreakAfterMinutes
+}
+
+// CalculateRemainingMinutes calculates remaining time dynamically
+// This is the authoritative calculation based on StartTime + ExpectedDuration
+func (s *Session) CalculateRemainingMinutes() int {
+	if s.Status != SessionStatusActive {
+		return 0
+	}
+
+	endTime := s.StartTime.Add(time.Duration(s.ExpectedDuration) * time.Minute)
+	remaining := int(time.Until(endTime).Minutes())
+
+	if remaining < 0 {
+		return 0
+	}
+
+	return remaining
 }

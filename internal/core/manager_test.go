@@ -265,7 +265,9 @@ func TestSessionManager_StartSession(t *testing.T) {
 	assert.Equal(t, "tv", session.DeviceType)
 	assert.Equal(t, "tv1", session.DeviceID)
 	assert.Equal(t, 30, session.ExpectedDuration)
-	assert.Equal(t, 30, session.RemainingMinutes)
+	// RemainingMinutes is now calculated dynamically, not stored
+	assert.GreaterOrEqual(t, session.CalculateRemainingMinutes(), 29)
+	assert.LessOrEqual(t, session.CalculateRemainingMinutes(), 30)
 	assert.Equal(t, SessionStatusActive, session.Status)
 	assert.True(t, driver.startCalled)
 }
@@ -382,8 +384,8 @@ func TestSessionManager_ExtendSession(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 30, extended.ExpectedDuration)
 	// RemainingMinutes should be close to 30, but may be slightly less due to elapsed time
-	assert.GreaterOrEqual(t, extended.RemainingMinutes, 29)
-	assert.LessOrEqual(t, extended.RemainingMinutes, 30)
+	assert.GreaterOrEqual(t, extended.CalculateRemainingMinutes(), 29)
+	assert.LessOrEqual(t, extended.CalculateRemainingMinutes(), 30)
 }
 
 func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {
@@ -465,7 +467,8 @@ func TestSessionManager_StopSession(t *testing.T) {
 	stopped, err := manager.GetSession(context.Background(), session.ID)
 	require.NoError(t, err)
 	assert.Equal(t, SessionStatusCompleted, stopped.Status)
-	assert.Equal(t, 0, stopped.RemainingMinutes)
+	// Completed sessions should return 0 remaining minutes
+	assert.Equal(t, 0, stopped.CalculateRemainingMinutes())
 
 	// Verify daily usage was updated
 	today := time.Now()
@@ -494,7 +497,6 @@ func TestSessionManager_StopSession_NotActive(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now(),
 		ExpectedDuration: 30,
-		RemainingMinutes: 0,
 		Status:           SessionStatusCompleted,
 	}
 	storage.CreateSession(context.Background(), session)

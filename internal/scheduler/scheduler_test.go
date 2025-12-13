@@ -177,7 +177,6 @@ func TestScheduler_ProcessSession_Expired(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now().Add(-31 * time.Minute),
 		ExpectedDuration: 30,
-		RemainingMinutes: 30,
 		Status:           core.SessionStatusActive,
 	}
 	storage.addSession(session)
@@ -192,7 +191,7 @@ func TestScheduler_ProcessSession_Expired(t *testing.T) {
 	// Verify session status updated
 	updated, _ := storage.GetSession(context.Background(), "session1")
 	assert.Equal(t, core.SessionStatusExpired, updated.Status)
-	assert.Equal(t, 0, updated.RemainingMinutes)
+	assert.Equal(t, 0, updated.CalculateRemainingMinutes())
 
 	// Verify daily usage was updated
 	today := time.Now()
@@ -229,7 +228,6 @@ func TestScheduler_ProcessSession_Warning(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now().Add(-26 * time.Minute),
 		ExpectedDuration: 30,
-		RemainingMinutes: 30,
 		Status:           core.SessionStatusActive,
 	}
 	storage.addSession(session)
@@ -244,7 +242,7 @@ func TestScheduler_ProcessSession_Warning(t *testing.T) {
 	// Verify session is still active
 	updated, _ := storage.GetSession(context.Background(), "session1")
 	assert.Equal(t, core.SessionStatusActive, updated.Status)
-	assert.LessOrEqual(t, updated.RemainingMinutes, 5)
+	assert.LessOrEqual(t, updated.CalculateRemainingMinutes(), 5)
 }
 
 func TestScheduler_ProcessSession_NoWarning(t *testing.T) {
@@ -276,7 +274,6 @@ func TestScheduler_ProcessSession_NoWarning(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now().Add(-15 * time.Minute),
 		ExpectedDuration: 30,
-		RemainingMinutes: 30,
 		Status:           core.SessionStatusActive,
 	}
 	storage.addSession(session)
@@ -291,7 +288,7 @@ func TestScheduler_ProcessSession_NoWarning(t *testing.T) {
 	// Verify session is still active
 	updated, _ := storage.GetSession(context.Background(), "session1")
 	assert.Equal(t, core.SessionStatusActive, updated.Status)
-	assert.GreaterOrEqual(t, updated.RemainingMinutes, 14)
+	assert.GreaterOrEqual(t, updated.CalculateRemainingMinutes(), 14)
 }
 
 func TestScheduler_ProcessSession_BreakRule(t *testing.T) {
@@ -327,7 +324,6 @@ func TestScheduler_ProcessSession_BreakRule(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now().Add(-31 * time.Minute),
 		ExpectedDuration: 60,
-		RemainingMinutes: 60,
 		Status:           core.SessionStatusActive,
 	}
 	storage.addSession(session)
@@ -376,7 +372,6 @@ func TestScheduler_ProcessSession_InBreak(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now().Add(-20 * time.Minute),
 		ExpectedDuration: 60,
-		RemainingMinutes: 40,
 		Status:           core.SessionStatusPaused,
 		BreakEndsAt:      &breakEnds,
 	}
@@ -426,7 +421,6 @@ func TestScheduler_ProcessSession_BreakEnded(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now().Add(-20 * time.Minute),
 		ExpectedDuration: 60,
-		RemainingMinutes: 40,
 		Status:           core.SessionStatusPaused,
 		BreakEndsAt:      &breakEnds,
 	}
@@ -470,7 +464,6 @@ func TestScheduler_Tick(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now().Add(-31 * time.Minute),
 		ExpectedDuration: 30,
-		RemainingMinutes: 30,
 		Status:           core.SessionStatusActive,
 	}
 	session2 := &core.Session{
@@ -480,7 +473,6 @@ func TestScheduler_Tick(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        time.Now().Add(-15 * time.Minute),
 		ExpectedDuration: 30,
-		RemainingMinutes: 30,
 		Status:           core.SessionStatusActive,
 	}
 	storage.addSession(session1)

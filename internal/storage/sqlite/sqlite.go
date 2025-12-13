@@ -59,7 +59,6 @@ func (s *SQLiteStorage) migrate() error {
 			device_id TEXT NOT NULL,
 			start_time DATETIME NOT NULL,
 			expected_duration INTEGER NOT NULL,
-			remaining_minutes INTEGER NOT NULL,
 			status TEXT NOT NULL,
 			last_break_at DATETIME,
 			break_ends_at DATETIME,
@@ -301,10 +300,10 @@ func (s *SQLiteStorage) CreateSession(ctx context.Context, session *core.Session
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO sessions (id, device_type, device_id, start_time, expected_duration,
-			remaining_minutes, status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, session.ID, session.DeviceType, session.DeviceID, session.StartTime, session.ExpectedDuration,
-		session.RemainingMinutes, session.Status, lastBreakAt, breakEndsAt, warningSentAt, session.CreatedAt, session.UpdatedAt)
+		session.Status, lastBreakAt, breakEndsAt, warningSentAt, session.CreatedAt, session.UpdatedAt)
 
 	if err != nil {
 		return err
@@ -330,10 +329,10 @@ func (s *SQLiteStorage) GetSession(ctx context.Context, id string) (*core.Sessio
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, device_type, device_id, start_time, expected_duration,
-			remaining_minutes, status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
+			status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
 		FROM sessions WHERE id = ?
 	`, id).Scan(&session.ID, &session.DeviceType, &session.DeviceID, &session.StartTime,
-		&session.ExpectedDuration, &session.RemainingMinutes, &session.Status,
+		&session.ExpectedDuration, &session.Status,
 		&lastBreakAt, &breakEndsAt, &warningSentAt, &session.CreatedAt, &session.UpdatedAt)
 
 	if err == sql.ErrNoRows {
@@ -382,7 +381,7 @@ func (s *SQLiteStorage) ListActiveSessions(ctx context.Context) ([]*core.Session
 func (s *SQLiteStorage) ListSessionsByChild(ctx context.Context, childID string) ([]*core.Session, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id, s.device_type, s.device_id, s.start_time, s.expected_duration,
-			s.remaining_minutes, s.status, s.last_break_at, s.break_ends_at, s.warning_sent_at, s.created_at, s.updated_at
+			s.status, s.last_break_at, s.break_ends_at, s.warning_sent_at, s.created_at, s.updated_at
 		FROM sessions s
 		JOIN session_children sc ON s.id = sc.session_id
 		WHERE sc.child_id = ?
@@ -413,10 +412,10 @@ func (s *SQLiteStorage) UpdateSession(ctx context.Context, session *core.Session
 
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE sessions
-		SET device_type = ?, device_id = ?, remaining_minutes = ?, status = ?,
+		SET device_type = ?, device_id = ?, expected_duration = ?, status = ?,
 			last_break_at = ?, break_ends_at = ?, warning_sent_at = ?, updated_at = ?
 		WHERE id = ?
-	`, session.DeviceType, session.DeviceID, session.RemainingMinutes, session.Status,
+	`, session.DeviceType, session.DeviceID, session.ExpectedDuration, session.Status,
 		lastBreakAt, breakEndsAt, warningSentAt, session.UpdatedAt, session.ID)
 
 	if err != nil {
@@ -524,7 +523,7 @@ func (s *SQLiteStorage) Close() error {
 func (s *SQLiteStorage) listSessionsByCondition(ctx context.Context, condition string, args ...interface{}) ([]*core.Session, error) {
 	query := `
 		SELECT id, device_type, device_id, start_time, expected_duration,
-			remaining_minutes, status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
+			status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
 		FROM sessions WHERE ` + condition + ` ORDER BY start_time DESC
 	`
 
@@ -545,7 +544,7 @@ func (s *SQLiteStorage) scanSessions(ctx context.Context, rows *sql.Rows) ([]*co
 		var lastBreakAt, breakEndsAt, warningSentAt sql.NullTime
 
 		if err := rows.Scan(&session.ID, &session.DeviceType, &session.DeviceID, &session.StartTime,
-			&session.ExpectedDuration, &session.RemainingMinutes, &session.Status,
+			&session.ExpectedDuration, &session.Status,
 			&lastBreakAt, &breakEndsAt, &warningSentAt, &session.CreatedAt, &session.UpdatedAt); err != nil {
 			return nil, err
 		}

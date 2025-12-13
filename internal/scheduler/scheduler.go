@@ -117,7 +117,7 @@ func (s *Scheduler) tick() {
 			"session_id", session.ID,
 			"start_time", session.StartTime,
 			"expected_duration", session.ExpectedDuration,
-			"remaining_minutes", session.RemainingMinutes)
+			"remaining_minutes", session.CalculateRemainingMinutes())
 
 		if err := s.processSession(ctx, session); err != nil {
 			s.logger.Error("Failed to process session", "session_id", session.ID, "error", err)
@@ -174,7 +174,7 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 		}
 	}
 
-	// Decrement remaining time
+	// Calculate remaining time for logic (but don't store it)
 	minutesElapsed := int(time.Since(session.StartTime).Minutes())
 	expectedRemaining := session.ExpectedDuration - minutesElapsed
 
@@ -183,9 +183,6 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 		s.logger.Info("Session time expired, stopping", "session_id", session.ID)
 		return s.endSession(ctx, session)
 	}
-
-	// Update remaining minutes
-	session.RemainingMinutes = expectedRemaining
 
 	// Trigger warning if less than 5 minutes remaining (only once)
 	if expectedRemaining <= 5 && expectedRemaining > 0 && session.WarningSentAt == nil {
@@ -200,12 +197,14 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 					"session_id", session.ID,
 					"error", err)
 			} else {
-				// Mark warning as sent
+				// Mark warning as sent and persist
 				now := time.Now()
 				session.WarningSentAt = &now
 				s.logger.Info("Warning sent and marked",
 					"session_id", session.ID,
 					"minutes_remaining", expectedRemaining)
+				// Update session to persist WarningSentAt
+				return s.storage.UpdateSession(ctx, session)
 			}
 		}
 	} else if expectedRemaining <= 5 && session.WarningSentAt != nil {
@@ -215,7 +214,8 @@ func (s *Scheduler) processSession(ctx context.Context, session *core.Session) e
 			"minutes_remaining", expectedRemaining)
 	}
 
-	return s.storage.UpdateSession(ctx, session)
+	// No state changes, no need to update database
+	return nil
 }
 
 // endSession ends a session and updates usage
@@ -234,7 +234,6 @@ func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error
 
 	// Update session status
 	session.Status = core.SessionStatusExpired
-	session.RemainingMinutes = 0
 
 	if err := s.storage.UpdateSession(ctx, session); err != nil {
 		return err

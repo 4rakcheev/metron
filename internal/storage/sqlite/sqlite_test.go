@@ -137,7 +137,6 @@ func TestSQLiteStorage_Sessions(t *testing.T) {
 		ChildIDs:         []string{"child1", "child2"},
 		StartTime:        now,
 		ExpectedDuration: 30,
-		RemainingMinutes: 30,
 		Status:           core.SessionStatusActive,
 	}
 
@@ -151,7 +150,6 @@ func TestSQLiteStorage_Sessions(t *testing.T) {
 	assert.Equal(t, session.DeviceType, retrieved.DeviceType)
 	assert.Equal(t, session.DeviceID, retrieved.DeviceID)
 	assert.Equal(t, session.ExpectedDuration, retrieved.ExpectedDuration)
-	assert.Equal(t, session.RemainingMinutes, retrieved.RemainingMinutes)
 	assert.Equal(t, session.Status, retrieved.Status)
 	assert.Len(t, retrieved.ChildIDs, 2)
 	assert.Contains(t, retrieved.ChildIDs, "child1")
@@ -175,7 +173,6 @@ func TestSQLiteStorage_Sessions(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        now.Add(-1 * time.Hour),
 		ExpectedDuration: 30,
-		RemainingMinutes: 0,
 		Status:           core.SessionStatusCompleted,
 	}
 	err = storage.CreateSession(ctx, session2)
@@ -196,7 +193,6 @@ func TestSQLiteStorage_Sessions(t *testing.T) {
 	assert.Len(t, child2Sessions, 1)
 
 	// Test UpdateSession
-	retrieved.RemainingMinutes = 20
 	retrieved.Status = core.SessionStatusPaused
 	breakTime := time.Now()
 	retrieved.LastBreakAt = &breakTime
@@ -205,7 +201,6 @@ func TestSQLiteStorage_Sessions(t *testing.T) {
 
 	updated, err := storage.GetSession(ctx, "session1")
 	require.NoError(t, err)
-	assert.Equal(t, 20, updated.RemainingMinutes)
 	assert.Equal(t, core.SessionStatusPaused, updated.Status)
 	require.NotNil(t, updated.LastBreakAt)
 
@@ -217,7 +212,6 @@ func TestSQLiteStorage_Sessions(t *testing.T) {
 		ChildIDs:         []string{"child1"},
 		StartTime:        now,
 		ExpectedDuration: 30,
-		RemainingMinutes: 30,
 		Status:           core.SessionStatusActive,
 	}
 	err = storage.UpdateSession(ctx, nonExistent)
@@ -316,7 +310,6 @@ func TestSQLiteStorage_ForeignKeyConstraints(t *testing.T) {
 		ChildIDs:         []string{"child1", "child2"},
 		StartTime:        time.Now(),
 		ExpectedDuration: 30,
-		RemainingMinutes: 30,
 		Status:           core.SessionStatusActive,
 	}
 	err = storage.CreateSession(ctx, session)
