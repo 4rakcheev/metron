@@ -20,6 +20,7 @@ type Storage interface {
 	CreateSession(ctx context.Context, session *core.Session) error
 	GetSession(ctx context.Context, id string) (*core.Session, error)
 	ListActiveSessions(ctx context.Context) ([]*core.Session, error)
+	ListAllSessions(ctx context.Context) ([]*core.Session, error)
 	ListSessionsByChild(ctx context.Context, childID string) ([]*core.Session, error)
 	UpdateSession(ctx context.Context, session *core.Session) error
 	DeleteSession(ctx context.Context, id string) error

@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"metron/internal/idgen"
 	"time"
 )
@@ -52,41 +53,71 @@ type SessionManager struct {
 	storage        Storage
 	deviceRegistry DeviceRegistry
 	driverRegistry DriverRegistry
+	timezone       *time.Location
+	logger         *slog.Logger
 }
 
 // NewSessionManager creates a new session manager
-func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry) *SessionManager {
+func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, timezone *time.Location, logger *slog.Logger) *SessionManager {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	if timezone == nil {
+		timezone = time.UTC
+	}
 	return &SessionManager{
 		storage:        storage,
 		deviceRegistry: deviceRegistry,
 		driverRegistry: driverRegistry,
+		timezone:       timezone,
+		logger:         logger,
 	}
 }
 
 // StartSession starts a new session for one or more children
 func (m *SessionManager) StartSession(ctx context.Context, deviceID string, childIDs []string, durationMinutes int) (*Session, error) {
+	m.logger.Info("Starting new session",
+		"device_id", deviceID,
+		"child_ids", childIDs,
+		"duration_minutes", durationMinutes)
+
 	// Validate inputs
 	if deviceID == "" {
+		m.logger.Error("Session start failed: empty device ID")
 		return nil, fmt.Errorf("device ID cannot be empty")
 	}
 	if len(childIDs) == 0 {
+		m.logger.Error("Session start failed: no children specified")
 		return nil, ErrNoChildren
 	}
 	if durationMinutes <= 0 {
+		m.logger.Error("Session start failed: invalid duration",
+			"duration_minutes", durationMinutes)
 		return nil, ErrInvalidDuration
 	}
 
 	// Look up device from device registry
 	device, err := m.deviceRegistry.Get(deviceID)
 	if err != nil {
+		m.logger.Error("Failed to get device from registry",
+			"device_id", deviceID,
+			"error", err)
 		return nil, fmt.Errorf("failed to get device %s: %w", deviceID, err)
 	}
 
+	m.logger.Debug("Device found",
+		"device_id", deviceID,
+		"device_type", device.GetType(),
+		"driver", device.GetDriver())
+
 	// Validate children exist and have sufficient time
-	today := time.Now()
+	today := time.Now().In(m.timezone)
 	for _, childID := range childIDs {
 		child, err := m.storage.GetChild(ctx, childID)
 		if err != nil {
+			m.logger.Error("Failed to get child",
+				"child_id", childID,
+				"error", err)
 			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
 		}
 
@@ -94,11 +125,27 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		dailyLimit := child.GetDailyLimit(today)
 		usage, err := m.storage.GetDailyUsage(ctx, childID, today)
 		if err != nil {
+			m.logger.Error("Failed to get daily usage",
+				"child_id", childID,
+				"error", err)
 			return nil, fmt.Errorf("failed to get daily usage for child %s: %w", childID, err)
 		}
 
 		remainingMinutes := dailyLimit - usage.MinutesUsed
+		m.logger.Debug("Checking child time availability",
+			"child_id", childID,
+			"child_name", child.Name,
+			"daily_limit", dailyLimit,
+			"used", usage.MinutesUsed,
+			"remaining", remainingMinutes,
+			"requested", durationMinutes)
+
 		if remainingMinutes < durationMinutes {
+			m.logger.Warn("Insufficient time for child",
+				"child_id", childID,
+				"child_name", child.Name,
+				"remaining", remainingMinutes,
+				"requested", durationMinutes)
 			return nil, fmt.Errorf("%w: child %s has only %d minutes remaining", ErrInsufficientTime, child.Name, remainingMinutes)
 		}
 	}
@@ -117,65 +164,120 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 	// Get device driver
 	driver, err := m.driverRegistry.Get(device.GetDriver())
 	if err != nil {
+		m.logger.Error("Failed to get driver from registry",
+			"driver_name", device.GetDriver(),
+			"device_id", deviceID,
+			"error", err)
 		return nil, fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), deviceID, err)
 	}
 
+	m.logger.Debug("Starting session on device via driver",
+		"session_id", session.ID,
+		"driver", driver.Name())
+
 	// Start session on device
 	if err := driver.StartSession(ctx, session); err != nil {
+		m.logger.Error("Driver failed to start session",
+			"session_id", session.ID,
+			"driver", driver.Name(),
+			"error", err)
 		return nil, fmt.Errorf("failed to start session on device: %w", err)
 	}
 
 	// Save session
 	if err := m.storage.CreateSession(ctx, session); err != nil {
+		m.logger.Error("Failed to save session to storage",
+			"session_id", session.ID,
+			"error", err)
 		return nil, fmt.Errorf("failed to save session: %w", err)
 	}
 
 	// Check if immediate warning is needed (for short sessions <= 5 minutes)
 	if durationMinutes <= 5 {
+		m.logger.Debug("Session duration is short, sending immediate warning",
+			"session_id", session.ID,
+			"duration_minutes", durationMinutes)
+
 		// Trigger warning immediately for sessions that start with 5 minutes or less
 		if err := driver.ApplyWarning(ctx, session, durationMinutes); err != nil {
 			// Log but don't fail - session is already created
-			fmt.Printf("Warning: failed to send immediate warning for new session %s: %v\n", session.ID, err)
+			m.logger.Warn("Failed to send immediate warning for short session",
+				"session_id", session.ID,
+				"error", err)
 		} else {
 			// Mark warning as sent
 			now := time.Now()
 			session.WarningSentAt = &now
 			if err := m.storage.UpdateSession(ctx, session); err != nil {
-				fmt.Printf("Warning: failed to mark warning as sent for session %s: %v\n", session.ID, err)
+				m.logger.Warn("Failed to mark warning as sent",
+					"session_id", session.ID,
+					"error", err)
 			}
 		}
 	}
+
+	m.logger.Info("Session started successfully",
+		"session_id", session.ID,
+		"device_id", deviceID,
+		"child_ids", childIDs,
+		"duration_minutes", durationMinutes)
 
 	return session, nil
 }
 
 // ExtendSession extends an active session
 func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, additionalMinutes int) (*Session, error) {
+	m.logger.Info("Extending session",
+		"session_id", sessionID,
+		"additional_minutes", additionalMinutes)
+
 	if additionalMinutes <= 0 {
+		m.logger.Error("Invalid extension duration",
+			"session_id", sessionID,
+			"additional_minutes", additionalMinutes)
 		return nil, ErrInvalidDuration
 	}
 
 	// Get session
 	session, err := m.storage.GetSession(ctx, sessionID)
 	if err != nil {
+		m.logger.Error("Failed to get session",
+			"session_id", sessionID,
+			"error", err)
 		return nil, err
 	}
 
 	if !session.IsActive() {
+		m.logger.Warn("Cannot extend inactive session",
+			"session_id", sessionID,
+			"status", session.Status)
 		return nil, ErrSessionNotActive
 	}
 
+	m.logger.Debug("Session validation passed",
+		"session_id", sessionID,
+		"current_duration", session.ExpectedDuration,
+		"elapsed", int(time.Since(session.StartTime).Minutes()))
+
 	// Validate children have sufficient time
-	today := time.Now()
+	today := time.Now().In(m.timezone)
 	for _, childID := range session.ChildIDs {
 		child, err := m.storage.GetChild(ctx, childID)
 		if err != nil {
+			m.logger.Error("Failed to get child for extension validation",
+				"session_id", sessionID,
+				"child_id", childID,
+				"error", err)
 			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
 		}
 
 		dailyLimit := child.GetDailyLimit(today)
 		usage, err := m.storage.GetDailyUsage(ctx, childID, today)
 		if err != nil {
+			m.logger.Error("Failed to get daily usage for extension validation",
+				"session_id", sessionID,
+				"child_id", childID,
+				"error", err)
 			return nil, fmt.Errorf("failed to get daily usage for child %s: %w", childID, err)
 		}
 
@@ -183,7 +285,23 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		elapsed := int(time.Since(session.StartTime).Minutes())
 		remainingToday := dailyLimit - usage.MinutesUsed - elapsed
 
+		m.logger.Debug("Checking child time availability for extension",
+			"session_id", sessionID,
+			"child_id", childID,
+			"child_name", child.Name,
+			"daily_limit", dailyLimit,
+			"used", usage.MinutesUsed,
+			"elapsed_in_session", elapsed,
+			"remaining_today", remainingToday,
+			"requested", additionalMinutes)
+
 		if remainingToday < additionalMinutes {
+			m.logger.Warn("Insufficient time for extension",
+				"session_id", sessionID,
+				"child_id", childID,
+				"child_name", child.Name,
+				"remaining", remainingToday,
+				"requested", additionalMinutes)
 			return nil, fmt.Errorf("%w: child %s would exceed daily limit", ErrInsufficientTime, child.Name)
 		}
 	}
@@ -191,12 +309,21 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 	// Look up device to get driver name
 	device, err := m.deviceRegistry.Get(session.DeviceID)
 	if err != nil {
+		m.logger.Error("Failed to get device for extension",
+			"session_id", sessionID,
+			"device_id", session.DeviceID,
+			"error", err)
 		return nil, fmt.Errorf("failed to get device %s: %w", session.DeviceID, err)
 	}
 
 	// Get device driver
 	driver, err := m.driverRegistry.Get(device.GetDriver())
 	if err != nil {
+		m.logger.Error("Failed to get driver for extension",
+			"session_id", sessionID,
+			"driver_name", device.GetDriver(),
+			"device_id", session.DeviceID,
+			"error", err)
 		return nil, fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), session.DeviceID, err)
 	}
 
@@ -204,7 +331,15 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 	if extendable, ok := driver.(interface {
 		ExtendSession(ctx context.Context, session *Session, additionalMinutes int) error
 	}); ok {
+		m.logger.Debug("Calling driver ExtendSession method",
+			"session_id", sessionID,
+			"driver", driver.Name())
+
 		if err := extendable.ExtendSession(ctx, session, additionalMinutes); err != nil {
+			m.logger.Error("Driver failed to extend session",
+				"session_id", sessionID,
+				"driver", driver.Name(),
+				"error", err)
 			return nil, fmt.Errorf("driver failed to extend session: %w", err)
 		}
 	}
@@ -218,46 +353,88 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 	// Reset warning state so a new warning can be sent when time crosses 5 minutes again
 	session.WarningSentAt = nil
 
-	// Log extension details
-	fmt.Printf("Session extended: session_id=%s, added=%d, duration: %d→%d\n",
-		session.ID, additionalMinutes, oldExpectedDuration, session.ExpectedDuration)
+	m.logger.Debug("Session duration updated in memory",
+		"session_id", sessionID,
+		"old_duration", oldExpectedDuration,
+		"new_duration", session.ExpectedDuration,
+		"additional_minutes", additionalMinutes)
 
 	if err := m.storage.UpdateSession(ctx, session); err != nil {
+		m.logger.Error("Failed to persist session extension",
+			"session_id", sessionID,
+			"error", err)
 		return nil, fmt.Errorf("failed to update session: %w", err)
 	}
 
-	fmt.Printf("Session extension persisted: session_id=%s, new_duration=%d\n",
-		session.ID, session.ExpectedDuration)
+	m.logger.Info("Session extended successfully",
+		"session_id", sessionID,
+		"old_duration", oldExpectedDuration,
+		"new_duration", session.ExpectedDuration,
+		"additional_minutes", additionalMinutes)
 
 	return session, nil
 }
 
 // StopSession stops an active session
 func (m *SessionManager) StopSession(ctx context.Context, sessionID string) error {
+	m.logger.Info("Stopping session",
+		"session_id", sessionID)
+
 	// Get session
 	session, err := m.storage.GetSession(ctx, sessionID)
 	if err != nil {
+		m.logger.Error("Failed to get session for stop",
+			"session_id", sessionID,
+			"error", err)
 		return err
 	}
 
 	if !session.IsActive() {
+		m.logger.Warn("Cannot stop inactive session",
+			"session_id", sessionID,
+			"status", session.Status)
 		return ErrSessionNotActive
 	}
+
+	elapsed := int(time.Since(session.StartTime).Minutes())
+	m.logger.Debug("Session details",
+		"session_id", sessionID,
+		"device_id", session.DeviceID,
+		"child_ids", session.ChildIDs,
+		"expected_duration", session.ExpectedDuration,
+		"elapsed_minutes", elapsed)
 
 	// Look up device to get driver name
 	device, err := m.deviceRegistry.Get(session.DeviceID)
 	if err != nil {
+		m.logger.Error("Failed to get device for stop",
+			"session_id", sessionID,
+			"device_id", session.DeviceID,
+			"error", err)
 		return fmt.Errorf("failed to get device %s: %w", session.DeviceID, err)
 	}
 
 	// Get device driver
 	driver, err := m.driverRegistry.Get(device.GetDriver())
 	if err != nil {
+		m.logger.Error("Failed to get driver for stop",
+			"session_id", sessionID,
+			"driver_name", device.GetDriver(),
+			"device_id", session.DeviceID,
+			"error", err)
 		return fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), session.DeviceID, err)
 	}
 
+	m.logger.Debug("Stopping session on device via driver",
+		"session_id", sessionID,
+		"driver", driver.Name())
+
 	// Stop session on device
 	if err := driver.StopSession(ctx, session); err != nil {
+		m.logger.Error("Driver failed to stop session",
+			"session_id", sessionID,
+			"driver", driver.Name(),
+			"error", err)
 		return fmt.Errorf("failed to stop session on device: %w", err)
 	}
 
@@ -265,18 +442,34 @@ func (m *SessionManager) StopSession(ctx context.Context, sessionID string) erro
 	session.Status = SessionStatusCompleted
 
 	if err := m.storage.UpdateSession(ctx, session); err != nil {
+		m.logger.Error("Failed to update session status",
+			"session_id", sessionID,
+			"error", err)
 		return fmt.Errorf("failed to update session: %w", err)
 	}
 
 	// Update daily usage for all children
-	elapsed := int(time.Since(session.StartTime).Minutes())
-	today := time.Now()
+	today := time.Now().In(m.timezone)
 
 	for _, childID := range session.ChildIDs {
+		m.logger.Debug("Updating daily usage for child",
+			"session_id", sessionID,
+			"child_id", childID,
+			"elapsed_minutes", elapsed)
+
 		if err := m.storage.IncrementDailyUsage(ctx, childID, today, elapsed); err != nil {
+			m.logger.Error("Failed to update daily usage",
+				"session_id", sessionID,
+				"child_id", childID,
+				"error", err)
 			return fmt.Errorf("failed to update daily usage for child %s: %w", childID, err)
 		}
 	}
+
+	m.logger.Info("Session stopped successfully",
+		"session_id", sessionID,
+		"elapsed_minutes", elapsed,
+		"child_ids", session.ChildIDs)
 
 	return nil
 }
@@ -298,7 +491,7 @@ func (m *SessionManager) GetChildStatus(ctx context.Context, childID string) (*C
 		return nil, err
 	}
 
-	today := time.Now()
+	today := time.Now().In(m.timezone)
 	usage, err := m.storage.GetDailyUsage(ctx, childID, today)
 	if err != nil {
 		return nil, err

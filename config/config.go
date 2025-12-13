@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 )
 
 var (
@@ -17,7 +18,8 @@ type Config struct {
 	Server   ServerConfig    `json:"server"`
 	Database DatabaseConfig  `json:"database"`
 	Security SecurityConfig  `json:"security"`
-	Devices  []DeviceConfig  `json:"devices"` // Global device registry
+	Timezone string          `json:"timezone"` // IANA timezone string (e.g., "Europe/Riga")
+	Devices  []DeviceConfig  `json:"devices"`  // Global device registry
 	Aqara    AqaraConfig     `json:"aqara"`
 	Kidslox  *KidsloxConfig  `json:"kidslox,omitempty"`
 }
@@ -89,6 +91,17 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("%w: API key is required", ErrInvalidConfig)
 	}
 
+	// Validate timezone
+	if c.Timezone == "" {
+		c.Timezone = "UTC" // Default to UTC if not specified
+	}
+
+	// Validate timezone string can be loaded
+	_, err := time.LoadLocation(c.Timezone)
+	if err != nil {
+		return fmt.Errorf("%w: invalid timezone '%s': %v", ErrInvalidConfig, c.Timezone, err)
+	}
+
 	// Validate Aqara config (required for now for backward compatibility)
 	if c.Aqara.AppID == "" || c.Aqara.AppKey == "" || c.Aqara.KeyID == "" {
 		return fmt.Errorf("%w: Aqara credentials are required", ErrInvalidConfig)
@@ -149,6 +162,7 @@ func LoadFromEnv() (*Config, error) {
 			APIKey:        getEnv("METRON_API_KEY", ""),
 			EnableIPCheck: getEnvBool("METRON_ENABLE_IP_CHECK", false),
 		},
+		Timezone: getEnv("METRON_TIMEZONE", "UTC"),
 		Aqara: AqaraConfig{
 			AppID:   getEnv("METRON_AQARA_APP_ID", ""),
 			AppKey:  getEnv("METRON_AQARA_APP_KEY", ""),

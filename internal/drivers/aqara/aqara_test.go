@@ -52,7 +52,7 @@ func newMockStorage() *mockTokenStorage {
 }
 
 func TestDriver_Name(t *testing.T) {
-	driver := NewDriver(Config{}, newMockStorage())
+	driver := NewDriver(Config{}, newMockStorage(), nil)
 	assert.Equal(t, "aqara", driver.Name())
 }
 
@@ -84,7 +84,7 @@ func TestDriver_Capabilities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			driver := NewDriver(tt.config, newMockStorage())
+			driver := NewDriver(tt.config, newMockStorage(), nil)
 			caps := driver.Capabilities()
 			assert.Equal(t, tt.wantWarn, caps.SupportsWarnings)
 			assert.Equal(t, tt.wantLive, caps.SupportsLiveState)
@@ -139,7 +139,7 @@ func TestDriver_StartSession(t *testing.T) {
 		KeyID:       "test-key-id",
 		BaseURL:     server.URL,
 		PINSceneID:  "pin-scene-123",
-	}, newMockStorage())
+	}, newMockStorage(), nil)
 
 	// Test StartSession
 	session := &core.Session{
@@ -158,7 +158,7 @@ func TestDriver_StartSession_NoPINScene(t *testing.T) {
 		AppKey:  "test-app-key",
 		KeyID:   "test-key-id",
 		BaseURL: "http://localhost",
-	}, newMockStorage())
+	}, newMockStorage(), nil)
 
 	session := &core.Session{
 		ID:         "session-1",
@@ -208,7 +208,7 @@ func TestDriver_StopSession(t *testing.T) {
 		KeyID:       "test-key-id",
 		BaseURL:     server.URL,
 		OffSceneID:  "off-scene-456",
-	}, newMockStorage())
+	}, newMockStorage(), nil)
 
 	// Test StopSession
 	session := &core.Session{
@@ -258,7 +258,7 @@ func TestDriver_ApplyWarning(t *testing.T) {
 		KeyID:       "test-key-id",
 		BaseURL:     server.URL,
 		WarnSceneID: "warn-scene-789",
-	}, newMockStorage())
+	}, newMockStorage(), nil)
 
 	// Test ApplyWarning
 	session := &core.Session{
@@ -278,7 +278,7 @@ func TestDriver_ApplyWarning_NoScene(t *testing.T) {
 		AppKey:  "test-app-key",
 		KeyID:   "test-key-id",
 		BaseURL: "http://localhost",
-	}, newMockStorage())
+	}, newMockStorage(), nil)
 
 	// Test ApplyWarning - should succeed but do nothing
 	session := &core.Session{
@@ -309,7 +309,7 @@ func TestDriver_APIError(t *testing.T) {
 		KeyID:       "test-key-id",
 		BaseURL:     server.URL,
 		PINSceneID:  "invalid-scene",
-	}, newMockStorage())
+	}, newMockStorage(), nil)
 
 	// Test StartSession with API error
 	session := &core.Session{
@@ -338,7 +338,7 @@ func TestDriver_HTTPError(t *testing.T) {
 		KeyID:       "test-key-id",
 		BaseURL:     server.URL,
 		PINSceneID:  "pin-scene-123",
-	}, newMockStorage())
+	}, newMockStorage(), nil)
 
 	// Test StartSession with HTTP error
 	session := &core.Session{
@@ -353,7 +353,7 @@ func TestDriver_HTTPError(t *testing.T) {
 }
 
 func TestDriver_GetLiveState(t *testing.T) {
-	driver := NewDriver(Config{}, newMockStorage())
+	driver := NewDriver(Config{}, newMockStorage(), nil)
 
 	// GetLiveState is not implemented in MVP
 	state, err := driver.GetLiveState(context.Background(), "device-1")
@@ -374,7 +374,7 @@ func TestGenerateSignature(t *testing.T) {
 		AppID:       "test-app-id",
 		AppKey:      "test-app-key",
 		KeyID:       "test-key-id",
-	}, newMockStorage())
+	}, newMockStorage(), nil)
 
 	timestamp := int64(1638360000000)
 	nonce := "123456789"

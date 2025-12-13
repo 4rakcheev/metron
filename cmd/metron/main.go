@@ -153,9 +153,16 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Load timezone location
+	timezone, err := time.LoadLocation(cfg.Timezone)
+	if err != nil {
+		return fmt.Errorf("failed to load timezone '%s': %w", cfg.Timezone, err)
+	}
+	logger.Info("Application timezone configured", "timezone", cfg.Timezone)
+
 	// Initialize database
 	logger.Info("Initializing database", "path", cfg.Database.Path)
-	db, err := sqlite.New(cfg.Database.Path)
+	db, err := sqlite.New(cfg.Database.Path, timezone)
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
@@ -185,7 +192,8 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		WarnSceneID: cfg.Aqara.Scenes.TVWarning,
 		OffSceneID:  cfg.Aqara.Scenes.TVPowerOff,
 	}
-	aqaraDriver := aqara.NewDriver(aqaraConfig, db) // Pass storage for token management
+	aqaraLogger := slog.Default().With("component", "driver.aqara")
+	aqaraDriver := aqara.NewDriver(aqaraConfig, db, aqaraLogger)
 	driverRegistry.Register(aqaraDriver)
 
 	// Register Kidslox driver if configured
@@ -198,7 +206,8 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 			DeviceID:  cfg.Kidslox.DeviceID,
 			ProfileID: cfg.Kidslox.ProfileID,
 		}
-		kidsloxDriver := kidslox.NewDriver(kidsloxConfig, deviceRegistry)
+		kidsloxLogger := slog.Default().With("component", "driver.kidslox")
+		kidsloxDriver := kidslox.NewDriver(kidsloxConfig, deviceRegistry, kidsloxLogger)
 		driverRegistry.Register(kidsloxDriver)
 	}
 
@@ -226,17 +235,18 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 			"driver", device.Driver)
 	}
 
-	// Initialize session manager
-	logger.Info("Initializing session manager")
-	sessionManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry})
-
 	// Create component-specific loggers
+	managerLogger := slog.Default().With("component", "manager")
 	schedulerLogger := slog.Default().With("component", "scheduler")
 	apiLogger := slog.Default().With("component", "api")
 
+	// Initialize session manager
+	logger.Info("Initializing session manager")
+	sessionManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, timezone, managerLogger)
+
 	// Start scheduler
 	logger.Info("Starting session scheduler", "interval", "1m")
-	sched := scheduler.NewScheduler(db, &schedulerDeviceRegistry{deviceRegistry}, &schedulerDriverRegistry{driverRegistry}, 1*time.Minute, schedulerLogger)
+	sched := scheduler.NewScheduler(db, &schedulerDeviceRegistry{deviceRegistry}, &schedulerDriverRegistry{driverRegistry}, 1*time.Minute, timezone, schedulerLogger)
 	go sched.Start()
 
 	// Initialize REST API with Gin

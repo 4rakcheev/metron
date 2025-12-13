@@ -31,13 +31,13 @@ func createTestRegistry(deviceID string, params map[string]interface{}) *devices
 
 func TestDriver_Name(t *testing.T) {
 	registry := devices.NewRegistry()
-	driver := NewDriver(Config{}, registry)
+	driver := NewDriver(Config{}, registry, nil)
 	assert.Equal(t, "kidslox", driver.Name())
 }
 
 func TestDriver_Capabilities(t *testing.T) {
 	registry := devices.NewRegistry()
-	driver := NewDriver(Config{}, registry)
+	driver := NewDriver(Config{}, registry, nil)
 	caps := driver.Capabilities()
 
 	assert.False(t, caps.SupportsWarnings, "Kidslox doesn't support warnings")
@@ -89,7 +89,7 @@ func TestDriver_StartSession(t *testing.T) {
 		APIKey:    "test-api-key",
 		AccountID: "test-account-123",
 	}
-	driver := NewDriver(config, registry)
+	driver := NewDriver(config, registry, nil)
 
 	// Create test session
 	session := &core.Session{
@@ -122,7 +122,7 @@ func TestDriver_StartSession_MissingDeviceID(t *testing.T) {
 		"profile_id": "test-profile",
 	})
 
-	driver := NewDriver(Config{}, registry)
+	driver := NewDriver(Config{}, registry, nil)
 	session := &core.Session{
 		DeviceID: "ipad1",
 	}
@@ -138,7 +138,7 @@ func TestDriver_StartSession_MissingProfileID(t *testing.T) {
 		"device_id": "test-device",
 	})
 
-	driver := NewDriver(Config{}, registry)
+	driver := NewDriver(Config{}, registry, nil)
 	session := &core.Session{
 		DeviceID: "ipad1",
 	}
@@ -181,7 +181,7 @@ func TestDriver_StopSession(t *testing.T) {
 		APIKey:    "test-api-key",
 		AccountID: "test-account-123",
 	}
-	driver := NewDriver(config, registry)
+	driver := NewDriver(config, registry, nil)
 
 	// Create test session
 	session := &core.Session{
@@ -235,7 +235,7 @@ func TestDriver_ExtendSession(t *testing.T) {
 		APIKey:    "test-api-key",
 		AccountID: "test-account-123",
 	}
-	driver := NewDriver(config, registry)
+	driver := NewDriver(config, registry, nil)
 
 	// Create test session
 	session := &core.Session{
@@ -257,7 +257,7 @@ func TestDriver_ExtendSession(t *testing.T) {
 
 func TestDriver_ApplyWarning(t *testing.T) {
 	registry := devices.NewRegistry()
-	driver := NewDriver(Config{}, registry)
+	driver := NewDriver(Config{}, registry, nil)
 	session := &core.Session{}
 
 	// Warning should be a no-op
@@ -267,7 +267,7 @@ func TestDriver_ApplyWarning(t *testing.T) {
 
 func TestDriver_GetLiveState(t *testing.T) {
 	registry := devices.NewRegistry()
-	driver := NewDriver(Config{}, registry)
+	driver := NewDriver(Config{}, registry, nil)
 
 	// Live state not supported
 	state, err := driver.GetLiveState(context.Background(), "device1")
@@ -294,7 +294,7 @@ func TestDriver_APIError(t *testing.T) {
 		APIKey:    "test-api-key",
 		AccountID: "test-account-123",
 	}
-	driver := NewDriver(config, registry)
+	driver := NewDriver(config, registry, nil)
 
 	session := &core.Session{
 		ID:               "session1",
@@ -310,7 +310,7 @@ func TestDriver_APIError(t *testing.T) {
 
 func TestDriver_InterfaceImplementation(t *testing.T) {
 	registry := devices.NewRegistry()
-	driver := NewDriver(Config{}, registry)
+	driver := NewDriver(Config{}, registry, nil)
 
 	// Verify implements DeviceDriver
 	var _ devices.DeviceDriver = driver

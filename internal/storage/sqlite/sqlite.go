@@ -14,11 +14,17 @@ import (
 
 // SQLiteStorage implements storage.Storage using SQLite
 type SQLiteStorage struct {
-	db *sql.DB
+	db       *sql.DB
+	timezone *time.Location
 }
 
 // New creates a new SQLite storage instance
-func New(dbPath string) (*SQLiteStorage, error) {
+func New(dbPath string, timezone *time.Location) (*SQLiteStorage, error) {
+	if timezone == nil {
+		timezone = time.UTC // Fallback to UTC
+	}
+
+	// SQLite will store times as UTC strings, we'll convert in app layer
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -30,7 +36,10 @@ func New(dbPath string) (*SQLiteStorage, error) {
 		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
 	}
 
-	storage := &SQLiteStorage{db: db}
+	storage := &SQLiteStorage{
+		db:       db,
+		timezone: timezone,
+	}
 
 	if err := storage.migrate(); err != nil {
 		db.Close()
@@ -377,6 +386,11 @@ func (s *SQLiteStorage) ListActiveSessions(ctx context.Context) ([]*core.Session
 	return s.listSessionsByCondition(ctx, "status = ?", core.SessionStatusActive)
 }
 
+// ListAllSessions retrieves all sessions regardless of status
+func (s *SQLiteStorage) ListAllSessions(ctx context.Context) ([]*core.Session, error) {
+	return s.listSessionsByCondition(ctx, "1=1")
+}
+
 // ListSessionsByChild retrieves all sessions for a specific child
 func (s *SQLiteStorage) ListSessionsByChild(ctx context.Context, childID string) ([]*core.Session, error) {
 	rows, err := s.db.QueryContext(ctx, `
@@ -453,7 +467,7 @@ func (s *SQLiteStorage) DeleteSession(ctx context.Context, id string) error {
 
 // GetDailyUsage retrieves daily usage for a child on a specific date
 func (s *SQLiteStorage) GetDailyUsage(ctx context.Context, childID string, date time.Time) (*core.DailyUsage, error) {
-	normalizedDate := normalizeDate(date)
+	normalizedDate := s.normalizeDate(date)
 
 	var usage core.DailyUsage
 	err := s.db.QueryRowContext(ctx, `
@@ -482,7 +496,7 @@ func (s *SQLiteStorage) GetDailyUsage(ctx context.Context, childID string, date 
 
 // UpdateDailyUsage updates daily usage
 func (s *SQLiteStorage) UpdateDailyUsage(ctx context.Context, usage *core.DailyUsage) error {
-	usage.Date = normalizeDate(usage.Date)
+	usage.Date = s.normalizeDate(usage.Date)
 	usage.UpdatedAt = time.Now()
 
 	_, err := s.db.ExecContext(ctx, `
@@ -499,7 +513,7 @@ func (s *SQLiteStorage) UpdateDailyUsage(ctx context.Context, usage *core.DailyU
 
 // IncrementDailyUsage increments the daily usage for a child
 func (s *SQLiteStorage) IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error {
-	normalizedDate := normalizeDate(date)
+	normalizedDate := s.normalizeDate(date)
 	now := time.Now()
 
 	_, err := s.db.ExecContext(ctx, `
@@ -583,8 +597,12 @@ func (s *SQLiteStorage) scanSessions(ctx context.Context, rows *sql.Rows) ([]*co
 	return sessions, rows.Err()
 }
 
-func normalizeDate(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+func (s *SQLiteStorage) normalizeDate(t time.Time) time.Time {
+	// Convert to configured timezone and normalize to midnight
+	// This ensures dates match the user's local calendar day
+	inTZ := t.In(s.timezone)
+	year, month, day := inTZ.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, s.timezone)
 }
 
 // GetAqaraTokens retrieves the stored Aqara tokens

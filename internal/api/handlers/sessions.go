@@ -76,10 +76,10 @@ func (h *SessionsHandler) ListSessions(c *gin.Context) {
 			return
 		}
 	} else {
-		// For now, default to active sessions
-		sessions, err = h.manager.ListActiveSessions(c.Request.Context())
+		// No filters specified - return all sessions
+		sessions, err = h.storage.ListAllSessions(c.Request.Context())
 		if err != nil {
-			h.logger.Error("Failed to list sessions",
+			h.logger.Error("Failed to list all sessions",
 				"component", "api",
 				"error", err,
 			)

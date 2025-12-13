@@ -235,7 +235,7 @@ func TestSessionManager_StartSession(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
 	// Create test child
 	child := &Child{
@@ -276,14 +276,14 @@ func TestSessionManager_StartSession_InsufficientTime(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
-	// Create test child
+	// Create test child with same limits for both weekday and weekend
 	child := &Child{
 		ID:           "child1",
 		Name:         "Alice",
 		WeekdayLimit: 60,
-		WeekendLimit: 120,
+		WeekendLimit: 60, // Set to same as weekday to make test consistent
 	}
 	storage.CreateChild(context.Background(), child)
 
@@ -307,7 +307,7 @@ func TestSessionManager_StartSession_InvalidInputs(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
 	// Setup valid device
 	driver := &mockDriver{name: "aqara"}
@@ -358,7 +358,7 @@ func TestSessionManager_ExtendSession(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
 	// Create test child
 	child := &Child{
@@ -392,14 +392,14 @@ func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
-	// Create test child with limited time
+	// Create test child with limited time (same for weekday and weekend)
 	child := &Child{
 		ID:           "child1",
 		Name:         "Alice",
 		WeekdayLimit: 60,
-		WeekendLimit: 120,
+		WeekendLimit: 60, // Set to same as weekday to make test consistent
 	}
 	storage.CreateChild(context.Background(), child)
 
@@ -433,7 +433,7 @@ func TestSessionManager_StopSession(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
 	// Create test child
 	child := &Child{
@@ -481,7 +481,7 @@ func TestSessionManager_StopSession_NotActive(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
 	// Create mock driver and device
 	driver := &mockDriver{name: "aqara"}
@@ -510,7 +510,7 @@ func TestSessionManager_GetChildStatus(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
 	// Create test child
 	child := &Child{
@@ -545,7 +545,7 @@ func TestSessionManager_MultipleChildren(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
 
 	// Create two children
 	child1 := &Child{

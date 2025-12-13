@@ -38,7 +38,7 @@ func main() {
 	}
 
 	// Create temporary in-memory database for token storage
-	db, err := sqlite.New(":memory:")
+	db, err := sqlite.New(":memory:", nil)
 	if err != nil {
 		log.Fatalf("Failed to create in-memory database: %v", err)
 	}
@@ -63,7 +63,7 @@ func main() {
 		PINSceneID:  cfg.Aqara.Scenes.TVPINEntry,
 		WarnSceneID: cfg.Aqara.Scenes.TVWarning,
 		OffSceneID:  cfg.Aqara.Scenes.TVPowerOff,
-	}, db)
+	}, db, nil)
 
 	// Create dummy session for testing
 	session := &core.Session{

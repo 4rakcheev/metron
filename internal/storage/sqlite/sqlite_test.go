@@ -15,7 +15,7 @@ func setupTestDB(t *testing.T) *SQLiteStorage {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
 
-	storage, err := New(dbPath)
+	storage, err := New(dbPath, nil)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

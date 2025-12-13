@@ -43,20 +43,25 @@ type Scheduler struct {
 	deviceRegistry DeviceRegistry
 	driverRegistry DriverRegistry
 	interval       time.Duration
+	timezone       *time.Location
 	stopChan       chan struct{}
 	logger         *slog.Logger
 }
 
 // NewScheduler creates a new scheduler
-func NewScheduler(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, interval time.Duration, logger *slog.Logger) *Scheduler {
+func NewScheduler(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, interval time.Duration, timezone *time.Location, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	if timezone == nil {
+		timezone = time.UTC
 	}
 	return &Scheduler{
 		storage:        storage,
 		deviceRegistry: deviceRegistry,
 		driverRegistry: driverRegistry,
 		interval:       interval,
+		timezone:       timezone,
 		stopChan:       make(chan struct{}),
 		logger:         logger,
 	}
@@ -241,7 +246,7 @@ func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error
 
 	// Update daily usage for all children
 	elapsed := int(time.Since(session.StartTime).Minutes())
-	today := time.Now()
+	today := time.Now().In(s.timezone)
 
 	for _, childID := range session.ChildIDs {
 		if err := s.storage.IncrementDailyUsage(ctx, childID, today, elapsed); err != nil {

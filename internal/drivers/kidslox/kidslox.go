@@ -10,6 +10,7 @@ import (
 	"metron/internal/devices"
 	"net/http"
 	"time"
+	"log/slog"
 
 	"github.com/google/uuid"
 )
@@ -34,16 +35,21 @@ type Driver struct {
 	config         Config
 	deviceRegistry *devices.Registry
 	httpClient     *http.Client
+	logger         *slog.Logger
 }
 
 // NewDriver creates a new Kidslox driver
-func NewDriver(config Config, deviceRegistry *devices.Registry) *Driver {
+func NewDriver(config Config, deviceRegistry *devices.Registry, logger *slog.Logger) *Driver {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Driver{
 		config:         config,
 		deviceRegistry: deviceRegistry,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		logger: logger,
 	}
 }
 
@@ -95,61 +101,134 @@ func (d *Driver) getDeviceConfig(session *core.Session) (deviceID, profileID str
 
 // StartSession initiates a session by unlocking the device and setting initial time
 func (d *Driver) StartSession(ctx context.Context, session *core.Session) error {
+	d.logger.Info("Starting Kidslox session",
+		"session_id", session.ID,
+		"device_id", session.DeviceID,
+		"duration_minutes", session.ExpectedDuration)
+
 	// Get merged config (driver defaults + device overrides)
 	deviceID, profileID, err := d.getDeviceConfig(session)
 	if err != nil {
+		d.logger.Error("Failed to get Kidslox device config",
+			"session_id", session.ID,
+			"error", err)
 		return err
 	}
 
+	d.logger.Debug("Using Kidslox device configuration",
+		"session_id", session.ID,
+		"kidslox_device_id", deviceID,
+		"kidslox_profile_id", profileID)
+
 	// Step 1: Unlock device (assign child profile)
+	d.logger.Debug("Unlocking Kidslox device",
+		"session_id", session.ID,
+		"kidslox_device_id", deviceID)
+
 	if err := d.unlockDevice(ctx, deviceID, profileID); err != nil {
+		d.logger.Error("Failed to unlock Kidslox device",
+			"session_id", session.ID,
+			"kidslox_device_id", deviceID,
+			"error", err)
 		return fmt.Errorf("failed to unlock device: %w", err)
 	}
 
 	// Step 2: Set initial time restriction
 	durationSeconds := session.ExpectedDuration * 60
+	d.logger.Debug("Setting Kidslox time restriction",
+		"session_id", session.ID,
+		"kidslox_profile_id", profileID,
+		"duration_seconds", durationSeconds)
+
 	if err := d.extendTime(ctx, profileID, durationSeconds); err != nil {
+		d.logger.Error("Failed to set Kidslox initial time",
+			"session_id", session.ID,
+			"error", err)
 		return fmt.Errorf("failed to set initial time: %w", err)
 	}
+
+	d.logger.Info("Kidslox session started successfully",
+		"session_id", session.ID,
+		"kidslox_device_id", deviceID)
 
 	return nil
 }
 
 // StopSession ends a session by locking the device
 func (d *Driver) StopSession(ctx context.Context, session *core.Session) error {
+	d.logger.Info("Stopping Kidslox session",
+		"session_id", session.ID,
+		"device_id", session.DeviceID,
+		"elapsed_minutes", int(time.Since(session.StartTime).Minutes()))
+
 	// Get merged config (driver defaults + device overrides)
 	deviceID, _, err := d.getDeviceConfig(session)
 	if err != nil {
+		d.logger.Error("Failed to get Kidslox device config",
+			"session_id", session.ID,
+			"error", err)
 		return err
 	}
 
+	d.logger.Debug("Locking Kidslox device",
+		"session_id", session.ID,
+		"kidslox_device_id", deviceID)
+
 	// Lock device (assign lock profile)
 	if err := d.lockDevice(ctx, deviceID); err != nil {
+		d.logger.Error("Failed to lock Kidslox device",
+			"session_id", session.ID,
+			"error", err)
 		return fmt.Errorf("failed to lock device: %w", err)
 	}
+
+	d.logger.Info("Kidslox session stopped successfully",
+		"session_id", session.ID)
 
 	return nil
 }
 
 // ApplyWarning is not supported by Kidslox
 func (d *Driver) ApplyWarning(ctx context.Context, session *core.Session, minutesRemaining int) error {
+	d.logger.Debug("Kidslox warning requested but not supported",
+		"session_id", session.ID,
+		"minutes_remaining", minutesRemaining)
 	// Kidslox doesn't support warnings - this is a no-op
 	return nil
 }
 
 // ExtendSession extends an active session by adding more time
 func (d *Driver) ExtendSession(ctx context.Context, session *core.Session, additionalMinutes int) error {
+	d.logger.Info("Extending Kidslox session",
+		"session_id", session.ID,
+		"additional_minutes", additionalMinutes)
+
 	// Get merged config (driver defaults + device overrides)
 	_, profileID, err := d.getDeviceConfig(session)
 	if err != nil {
+		d.logger.Error("Failed to get Kidslox device config for extension",
+			"session_id", session.ID,
+			"error", err)
 		return err
 	}
 
 	// Extend time restriction
 	additionalSeconds := additionalMinutes * 60
+	d.logger.Debug("Extending Kidslox time restriction",
+		"session_id", session.ID,
+		"kidslox_profile_id", profileID,
+		"additional_seconds", additionalSeconds)
+
 	if err := d.extendTime(ctx, profileID, additionalSeconds); err != nil {
+		d.logger.Error("Failed to extend Kidslox time",
+			"session_id", session.ID,
+			"error", err)
 		return fmt.Errorf("failed to extend time: %w", err)
 	}
+
+	d.logger.Info("Kidslox session extended successfully",
+		"session_id", session.ID,
+		"additional_minutes", additionalMinutes)
 
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"metron/internal/core"
 	"metron/internal/devices"
 	"net/http"
@@ -42,16 +43,21 @@ type Driver struct {
 	accessToken  string        // In-memory cached access token
 	tokenExpiry  time.Time     // When the access token expires
 	tokenMutex   sync.RWMutex  // Protects access token cache
+	logger       *slog.Logger
 }
 
 // NewDriver creates a new Aqara driver
-func NewDriver(config Config, storage AqaraTokenStorage) *Driver {
+func NewDriver(config Config, storage AqaraTokenStorage, logger *slog.Logger) *Driver {
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Driver{
 		config:  config,
 		storage: storage,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		logger: logger,
 	}
 }
 
@@ -62,27 +68,91 @@ func (d *Driver) Name() string {
 
 // StartSession initiates a session by triggering the PIN entry scene
 func (d *Driver) StartSession(ctx context.Context, session *core.Session) error {
+	d.logger.Info("Starting Aqara session",
+		"session_id", session.ID,
+		"device_id", session.DeviceID,
+		"device_type", session.DeviceType,
+		"duration_minutes", session.ExpectedDuration)
+
 	if d.config.PINSceneID == "" {
+		d.logger.Error("PIN scene ID not configured", "session_id", session.ID)
 		return fmt.Errorf("PIN scene ID not configured")
 	}
-	return d.triggerScene(ctx, d.config.PINSceneID)
+
+	d.logger.Debug("Triggering PIN entry scene",
+		"session_id", session.ID,
+		"scene_id", d.config.PINSceneID)
+
+	if err := d.triggerScene(ctx, d.config.PINSceneID); err != nil {
+		d.logger.Error("Failed to trigger PIN scene",
+			"session_id", session.ID,
+			"scene_id", d.config.PINSceneID,
+			"error", err)
+		return err
+	}
+
+	d.logger.Info("Aqara session started successfully",
+		"session_id", session.ID,
+		"device_id", session.DeviceID)
+	return nil
 }
 
 // StopSession ends a session by triggering the power-off scene
 func (d *Driver) StopSession(ctx context.Context, session *core.Session) error {
+	d.logger.Info("Stopping Aqara session",
+		"session_id", session.ID,
+		"device_id", session.DeviceID,
+		"elapsed_minutes", int(time.Since(session.StartTime).Minutes()))
+
 	if d.config.OffSceneID == "" {
+		d.logger.Error("Power-off scene ID not configured", "session_id", session.ID)
 		return fmt.Errorf("power-off scene ID not configured")
 	}
-	return d.triggerScene(ctx, d.config.OffSceneID)
+
+	d.logger.Debug("Triggering power-off scene",
+		"session_id", session.ID,
+		"scene_id", d.config.OffSceneID)
+
+	if err := d.triggerScene(ctx, d.config.OffSceneID); err != nil {
+		d.logger.Error("Failed to trigger power-off scene",
+			"session_id", session.ID,
+			"scene_id", d.config.OffSceneID,
+			"error", err)
+		return err
+	}
+
+	d.logger.Info("Aqara session stopped successfully",
+		"session_id", session.ID)
+	return nil
 }
 
 // ApplyWarning sends a warning by triggering the warning scene
 func (d *Driver) ApplyWarning(ctx context.Context, session *core.Session, minutesRemaining int) error {
+	d.logger.Info("Applying Aqara warning",
+		"session_id", session.ID,
+		"device_id", session.DeviceID,
+		"minutes_remaining", minutesRemaining)
+
 	if d.config.WarnSceneID == "" {
-		// Warning is optional
+		d.logger.Debug("Warning scene not configured, skipping warning",
+			"session_id", session.ID)
 		return nil
 	}
-	return d.triggerScene(ctx, d.config.WarnSceneID)
+
+	d.logger.Debug("Triggering warning scene",
+		"session_id", session.ID,
+		"scene_id", d.config.WarnSceneID)
+
+	if err := d.triggerScene(ctx, d.config.WarnSceneID); err != nil {
+		d.logger.Error("Failed to trigger warning scene",
+			"session_id", session.ID,
+			"error", err)
+		return err
+	}
+
+	d.logger.Info("Aqara warning applied successfully",
+		"session_id", session.ID)
+	return nil
 }
 
 // GetLiveState retrieves the current state of a device (not supported in MVP)
