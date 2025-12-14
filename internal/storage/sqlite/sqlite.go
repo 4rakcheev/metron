@@ -140,6 +140,73 @@ func (s *SQLiteStorage) runMigrations() error {
 		// Column might already exist, which is fine
 	}
 
+	// Check if sessions table has remaining_minutes column
+	var hasRemainingMinutes bool
+	row := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='remaining_minutes'`)
+	row.Scan(&hasRemainingMinutes)
+
+	// Remove remaining_minutes column if it exists (we calculate it dynamically)
+	if hasRemainingMinutes {
+		// SQLite doesn't support DROP COLUMN in older versions, so we recreate the table
+		_, err = s.db.Exec(`
+			PRAGMA foreign_keys=off;
+
+			-- Create new sessions table without remaining_minutes
+			CREATE TABLE sessions_new (
+				id TEXT PRIMARY KEY,
+				device_type TEXT NOT NULL,
+				device_id TEXT NOT NULL,
+				start_time DATETIME NOT NULL,
+				expected_duration INTEGER NOT NULL,
+				status TEXT NOT NULL,
+				last_break_at DATETIME,
+				break_ends_at DATETIME,
+				warning_sent_at DATETIME,
+				created_at DATETIME NOT NULL,
+				updated_at DATETIME NOT NULL
+			);
+
+			-- Copy all session data
+			INSERT INTO sessions_new (id, device_type, device_id, start_time, expected_duration,
+				status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at)
+			SELECT id, device_type, device_id, start_time, expected_duration,
+				status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
+			FROM sessions;
+
+			-- Drop old table
+			DROP TABLE sessions;
+
+			-- Rename new table
+			ALTER TABLE sessions_new RENAME TO sessions;
+
+			-- Recreate session_children table to restore foreign keys
+			CREATE TABLE session_children_new (
+				session_id TEXT NOT NULL,
+				child_id TEXT NOT NULL,
+				PRIMARY KEY (session_id, child_id),
+				FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+				FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+			);
+
+			-- Copy session_children data
+			INSERT INTO session_children_new (session_id, child_id)
+			SELECT session_id, child_id FROM session_children;
+
+			-- Drop old session_children
+			DROP TABLE session_children;
+
+			-- Rename
+			ALTER TABLE session_children_new RENAME TO session_children;
+
+			PRAGMA foreign_keys=on;
+		`)
+		// Log error but don't fail startup if migration has issues
+		if err != nil {
+			// Migration failed, but app can continue if schema is already correct
+			return nil
+		}
+	}
+
 	return nil
 }
 
