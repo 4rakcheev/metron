@@ -64,15 +64,15 @@ export function TimeDisplay({ remainingMinutes, totalMinutes }: TimeDisplayProps
 
         {/* Time display in center */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={`text-6xl font-black ${getColor()} tracking-tight`}>
+          <div className={`text-4xl font-black ${getColor()} tracking-tight`}>
             {timeFormatted.formatted}
           </div>
-          <div className="text-gray-500 text-xl font-medium mt-1">left</div>
+          <div className="text-gray-600 text-lg font-semibold mt-1">left</div>
         </div>
       </div>
 
-      <div className="text-center text-gray-700">
-        <div className="text-lg font-medium">Out of {formatMinutes(totalMinutes)} today</div>
+      <div className="text-center">
+        <div className="text-base font-semibold text-gray-800">Out of {formatMinutes(totalMinutes)} today</div>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 // Global Application Context for State Management
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { api } from '../api/client';
 import type { Child, TodayStats, Device, Session } from '../api/types';
 
@@ -28,7 +28,7 @@ const AppContext = createContext<AppContextValue | undefined>(undefined);
 
 const REFRESH_INTERVAL = 30000; // 30 seconds
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
+export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>({
     child: null,
     stats: null,

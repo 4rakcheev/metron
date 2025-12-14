@@ -22,7 +22,7 @@ const durationOptions: DurationOption[] = [
 export function DurationPicker({ onSelect, maxMinutes, disabled }: DurationPickerProps) {
   return (
     <div className="w-full">
-      <div className="text-center text-gray-700 font-semibold mb-4 text-lg">
+      <div className="text-center text-gray-800 font-bold mb-4 text-lg">
         How long do you want to play?
       </div>
 
@@ -36,12 +36,12 @@ export function DurationPicker({ onSelect, maxMinutes, disabled }: DurationPicke
               onClick={() => onSelect(option.minutes)}
               disabled={disabled || !isAvailable}
               className={`
-                h-24 rounded-2xl shadow-lg font-bold text-white text-xl
+                h-24 rounded-2xl shadow-lg font-bold text-xl
                 transform transition-all
                 ${
                   isAvailable
-                    ? `bg-gradient-to-br ${option.gradient} hover:scale-105 active:scale-95`
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    ? `bg-gradient-to-br ${option.gradient} text-white hover:scale-105 active:scale-95`
+                    : 'bg-gray-200 text-gray-700 cursor-not-allowed border-2 border-gray-300'
                 }
                 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
               `}

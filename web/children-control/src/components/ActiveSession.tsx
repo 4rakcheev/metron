@@ -62,8 +62,8 @@ export function ActiveSession({ session, device, onStop, onExtend, loading }: Ac
 
         {/* Time remaining - BIG AND VISIBLE */}
         <div className="bg-white/25 backdrop-blur-sm rounded-3xl p-6 text-center border-2 border-white/30">
-          <div className="text-6xl font-black tracking-tight mb-2">{formatMinutes(localRemaining)}</div>
-          <div className="text-lg font-semibold opacity-90">remaining</div>
+          <div className="text-5xl font-black tracking-tight mb-2">{formatMinutes(localRemaining)}</div>
+          <div className="text-base font-semibold opacity-95">remaining</div>
         </div>
 
         {/* Action buttons */}
