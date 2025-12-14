@@ -47,7 +47,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading }: Ac
   };
 
   return (
-    <div className="card bg-gradient-to-br from-purple-500 to-pink-500 text-white p-6 shadow-xl">
+    <div className="bg-gradient-to-br from-purple-500 to-pink-500 text-white p-6 rounded-3xl shadow-2xl">
       <div className="flex flex-col gap-5">
         {/* Header */}
         <div className="flex items-center justify-between">
