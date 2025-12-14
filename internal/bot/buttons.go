@@ -9,7 +9,8 @@ import (
 
 // CallbackData represents the data embedded in callback buttons
 type CallbackData struct {
-	Action       string `json:"a"`             // Action type
+	Action       string `json:"a"`             // Action type (newsession, manage, etc)
+	SubAction    string `json:"sa,omitempty"`  // Sub-action (extend, stop, add_kid)
 	Step         int    `json:"s,omitempty"`   // Current step in flow
 	ChildID      string `json:"c,omitempty"`   // Child ID (resolved from index)
 	ChildIndex   int    `json:"ci,omitempty"`  // Child index in list (for compact callback)
@@ -163,7 +164,8 @@ func BuildDurationButtons(action string, step int, childIndex int, device string
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
-// BuildSessionsButtons creates buttons for selecting an active session
+// BuildSessionsButtons creates buttons for selecting an active session (legacy)
+// Deprecated: Use BuildSessionManagementButtons for better UX
 func BuildSessionsButtons(sessions []Session, action string) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
@@ -191,6 +193,135 @@ func BuildSessionsButtons(sessions []Session, action string) tgbotapi.InlineKeyb
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
+// BuildSessionManagementButtons creates buttons for managing active sessions
+// Each session gets 3 action buttons: Extend, Stop, Add Kid
+func BuildSessionManagementButtons(sessions []Session, childrenMap map[string]Child) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	for i, session := range sessions {
+		deviceEmoji := getDeviceEmoji(session.DeviceType)
+		displayName := getDeviceDisplayName(session.DeviceType)
+
+		// Get child names for this session
+		var childNames []string
+		for _, childID := range session.ChildIDs {
+			if child, ok := childrenMap[childID]; ok {
+				childEmoji := getChildEmoji(child.Name)
+				childNames = append(childNames, childEmoji+" "+child.Name)
+			}
+		}
+
+		// Header row with session info (not clickable)
+		_, remaining := calculateSessionEnd(session)
+		sessionLabel := fmt.Sprintf("%d. %s %s", i+1, deviceEmoji, displayName)
+		if len(childNames) > 0 {
+			sessionLabel += fmt.Sprintf(" · %d min", remaining)
+		}
+
+		// Action buttons row: [Extend] [Stop] [Add Kid]
+		extendBtn := tgbotapi.NewInlineKeyboardButtonData(
+			"⏱ Extend",
+			MarshalCallback(CallbackData{
+				Action:       "manage",
+				SubAction:    "extend",
+				Step:         1,
+				SessionIndex: i,
+			}),
+		)
+
+		stopBtn := tgbotapi.NewInlineKeyboardButtonData(
+			"🛑 Stop",
+			MarshalCallback(CallbackData{
+				Action:       "manage",
+				SubAction:    "stop",
+				Step:         1,
+				SessionIndex: i,
+			}),
+		)
+
+		addKidBtn := tgbotapi.NewInlineKeyboardButtonData(
+			"👶 Add Kid",
+			MarshalCallback(CallbackData{
+				Action:       "manage",
+				SubAction:    "add_kid",
+				Step:         1,
+				SessionIndex: i,
+			}),
+		)
+
+		// Add session label as a single-button row (for visual grouping)
+		labelBtn := tgbotapi.NewInlineKeyboardButtonData(
+			sessionLabel,
+			MarshalCallback(CallbackData{Action: "noop"}), // No-op callback
+		)
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{labelBtn})
+
+		// Add action buttons
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{extendBtn, stopBtn, addKidBtn})
+	}
+
+	// Cancel button
+	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"❌ Cancel",
+		MarshalCallback(CallbackData{Action: "cancel"}),
+	)
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{cancelBtn})
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// BuildAddKidButtons creates buttons for selecting which child to add to a session
+func BuildAddKidButtons(sessionIndex int, availableChildren []Child, alreadyShared bool) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	// Show available children to add
+	for i, child := range availableChildren {
+		emoji := getChildEmoji(child.Name)
+		callback := MarshalCallback(CallbackData{
+			Action:       "manage",
+			SubAction:    "add_kid",
+			Step:         2,
+			SessionIndex: sessionIndex,
+			ChildIndex:   i,
+		})
+
+		btn := tgbotapi.NewInlineKeyboardButtonData(
+			fmt.Sprintf("%s %s", emoji, child.Name),
+			callback,
+		)
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{btn})
+	}
+
+	// "Mark as Shared" button if not already shared
+	if !alreadyShared && len(availableChildren) > 0 {
+		callback := MarshalCallback(CallbackData{
+			Action:       "manage",
+			SubAction:    "add_kid",
+			Step:         2,
+			SessionIndex: sessionIndex,
+			ChildIndex:   -1, // Special marker for "all available children"
+		})
+
+		btn := tgbotapi.NewInlineKeyboardButtonData("👨‍👩‍👧 Mark as Shared (All)", callback)
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{btn})
+	}
+
+	// Back and Cancel buttons
+	backBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"◀️ Back",
+		MarshalCallback(CallbackData{Action: "manage", Step: 0}),
+	)
+
+	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"❌ Cancel",
+		MarshalCallback(CallbackData{Action: "cancel"}),
+	)
+
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{backBtn, cancelBtn})
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
 // BuildExtendDurationButtons creates buttons for selecting extension duration
 func BuildExtendDurationButtons(sessionIndex int) tgbotapi.InlineKeyboardMarkup {
 	durations := []int{5, 15, 30, 60, 120}
@@ -202,9 +333,10 @@ func BuildExtendDurationButtons(sessionIndex int) tgbotapi.InlineKeyboardMarkup 
 
 	for i, duration := range durations {
 		callback := MarshalCallback(CallbackData{
-			Action:       "extend",
+			Action:       "manage",
+			SubAction:    "extend",
 			Step:         2,
-			SessionIndex: sessionIndex, // Use index instead of full UUID
+			SessionIndex: sessionIndex,
 			Duration:     duration,
 		})
 
@@ -223,7 +355,7 @@ func BuildExtendDurationButtons(sessionIndex int) tgbotapi.InlineKeyboardMarkup 
 	// Back and Cancel buttons
 	backBtn := tgbotapi.NewInlineKeyboardButtonData(
 		"◀️ Back",
-		MarshalCallback(CallbackData{Action: "extend", Step: 0}),
+		MarshalCallback(CallbackData{Action: "manage", Step: 0}),
 	)
 
 	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(

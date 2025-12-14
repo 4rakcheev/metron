@@ -185,12 +185,17 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 	switch data.Action {
 	case "cancel":
 		return b.handleCancel(ctx, callback.Message)
+	case "noop":
+		// No-op action for non-clickable buttons (just answer the callback)
+		return nil
 	case "newsession":
 		return b.handleNewSessionFlow(ctx, callback.Message, data)
 	case "extend":
 		return b.handleExtendFlow(ctx, callback.Message, data)
 	case "stop":
 		return b.handleStopFlow(ctx, callback.Message, data)
+	case "manage":
+		return b.handleManageFlow(ctx, callback.Message, data)
 	default:
 		return b.sendMessage(callback.Message.Chat.ID,
 			"Unknown action.", nil)

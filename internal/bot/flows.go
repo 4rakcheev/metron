@@ -266,6 +266,237 @@ func (b *Bot) handleStopFlow(ctx context.Context, message *tgbotapi.Message, dat
 	}
 }
 
+// handleManageFlow handles the unified session management flow
+func (b *Bot) handleManageFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	b.logger.Info("Manage session flow",
+		"sub_action", data.SubAction,
+		"step", data.Step,
+		"session_index", data.SessionIndex,
+	)
+
+	switch data.Step {
+	case 0:
+		// Step 0: Back to session list
+		return b.manageStep0(ctx, message)
+	case 1:
+		// Step 1: Action selected for a session
+		switch data.SubAction {
+		case "extend":
+			// Show duration selection
+			return b.manageExtendStep1(ctx, message, data.SessionIndex)
+		case "stop":
+			// Stop immediately
+			sessionID, err := b.resolveSessionIndex(ctx, data.SessionIndex)
+			if err != nil {
+				return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+			}
+			return b.stopSession(ctx, message, sessionID)
+		case "add_kid":
+			// Show available children to add
+			return b.manageAddKidStep1(ctx, message, data.SessionIndex)
+		default:
+			return b.editMessage(message.Chat.ID, message.MessageID,
+				"❌ Unknown action.", BuildQuickActionsButtons())
+		}
+	case 2:
+		// Step 2: Second-level action
+		switch data.SubAction {
+		case "extend":
+			// Duration selected, extend session
+			sessionID, err := b.resolveSessionIndex(ctx, data.SessionIndex)
+			if err != nil {
+				return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+			}
+			return b.extendSession(ctx, message, sessionID, data.Duration)
+		case "add_kid":
+			// Child selected, add to session
+			return b.manageAddKidStep2(ctx, message, data.SessionIndex, data.ChildIndex)
+		default:
+			return b.editMessage(message.Chat.ID, message.MessageID,
+				"❌ Unknown action.", BuildQuickActionsButtons())
+		}
+	default:
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ Invalid step in manage flow.", BuildQuickActionsButtons())
+	}
+}
+
+// manageStep0 shows the session management list
+func (b *Bot) manageStep0(ctx context.Context, message *tgbotapi.Message) error {
+	// Get active sessions
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	if len(sessions) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ No active sessions.", BuildQuickActionsButtons())
+	}
+
+	// Get children for mapping
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	childrenMap := make(map[string]Child)
+	for _, child := range children {
+		childrenMap[child.ID] = child
+	}
+
+	text := "⏱ *Manage Sessions*\n\nSelect an action for each session:\n" +
+		"• ⏱ Extend - Add more minutes\n" +
+		"• 🛑 Stop - End session early\n" +
+		"• 👶 Add Kid - Share with another child\n"
+
+	keyboard := BuildSessionManagementButtons(sessions, childrenMap)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// manageExtendStep1 shows duration selection for extending
+func (b *Bot) manageExtendStep1(ctx context.Context, message *tgbotapi.Message, sessionIndex int) error {
+	text := "⏱ *Extend Session*\n\nSelect additional minutes:"
+	keyboard := BuildExtendDurationButtons(sessionIndex)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// manageAddKidStep1 shows child selection for adding to session
+func (b *Bot) manageAddKidStep1(ctx context.Context, message *tgbotapi.Message, sessionIndex int) error {
+	// Get all children
+	allChildren, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	// Get the session to see which children are already in it
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	if sessionIndex < 0 || sessionIndex >= len(sessions) {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ Invalid session.", BuildQuickActionsButtons())
+	}
+
+	session := sessions[sessionIndex]
+
+	// Filter out children already in session
+	var availableChildren []Child
+	for _, child := range allChildren {
+		alreadyIn := false
+		for _, childID := range session.ChildIDs {
+			if child.ID == childID {
+				alreadyIn = true
+				break
+			}
+		}
+		if !alreadyIn {
+			availableChildren = append(availableChildren, child)
+		}
+	}
+
+	if len(availableChildren) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ All children are already in this session.", BuildQuickActionsButtons())
+	}
+
+	alreadyShared := len(session.ChildIDs) == len(allChildren)
+
+	text := "👶 *Add Child to Session*\n\nSelect a child to add:"
+	keyboard := BuildAddKidButtons(sessionIndex, availableChildren, alreadyShared)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// manageAddKidStep2 adds the selected child to the session
+func (b *Bot) manageAddKidStep2(ctx context.Context, message *tgbotapi.Message, sessionIndex int, childIndex int) error {
+	// Get session
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	if sessionIndex < 0 || sessionIndex >= len(sessions) {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ Invalid session.", BuildQuickActionsButtons())
+	}
+
+	session := sessions[sessionIndex]
+
+	// Get all children
+	allChildren, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	// Determine which children to add
+	var childIDsToAdd []string
+
+	if childIndex == -1 {
+		// "Mark as Shared" - add all available children
+		for _, child := range allChildren {
+			alreadyIn := false
+			for _, childID := range session.ChildIDs {
+				if child.ID == childID {
+					alreadyIn = true
+					break
+				}
+			}
+			if !alreadyIn {
+				childIDsToAdd = append(childIDsToAdd, child.ID)
+			}
+		}
+	} else {
+		// Add specific child
+		// Get available children (those not in session)
+		var availableChildren []Child
+		for _, child := range allChildren {
+			alreadyIn := false
+			for _, childID := range session.ChildIDs {
+				if child.ID == childID {
+					alreadyIn = true
+					break
+				}
+			}
+			if !alreadyIn {
+				availableChildren = append(availableChildren, child)
+			}
+		}
+
+		if childIndex < 0 || childIndex >= len(availableChildren) {
+			return b.editMessage(message.Chat.ID, message.MessageID,
+				"❌ Invalid child selection.", BuildQuickActionsButtons())
+		}
+
+		childIDsToAdd = []string{availableChildren[childIndex].ID}
+	}
+
+	if len(childIDsToAdd) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ No children to add.", BuildQuickActionsButtons())
+	}
+
+	// Call API to add children
+	updatedSession, err := b.client.AddChildrenToSession(ctx, session.ID, childIDsToAdd)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	// Get children for formatting
+	childrenMap := make(map[string]Child)
+	for _, child := range allChildren {
+		childrenMap[child.ID] = child
+	}
+
+	text := FormatChildrenAddedToSession(updatedSession, childIDsToAdd, childrenMap)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
+}
+
 // stopSession stops an active session and returns remaining time to children
 func (b *Bot) stopSession(ctx context.Context, message *tgbotapi.Message, sessionID string) error {
 	// Get session details before stopping (to calculate returned time)

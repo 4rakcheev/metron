@@ -25,6 +25,7 @@ type FullSessionManager interface {
 	StartSession(ctx context.Context, deviceID string, childIDs []string, durationMinutes int) (*core.Session, error)
 	ExtendSession(ctx context.Context, sessionID string, additionalMinutes int) (*core.Session, error)
 	StopSession(ctx context.Context, sessionID string) error
+	AddChildrenToSession(ctx context.Context, sessionID string, childIDs []string) (*core.Session, error)
 	GetSession(ctx context.Context, sessionID string) (*core.Session, error)
 	ListActiveSessions(ctx context.Context) ([]*core.Session, error)
 }
@@ -204,8 +205,9 @@ func (h *SessionsHandler) UpdateSession(c *gin.Context) {
 	sessionID := c.Param("id")
 
 	var req struct {
-		Action            string `json:"action"` // "extend" or "stop"
-		AdditionalMinutes int    `json:"additional_minutes,omitempty"`
+		Action            string   `json:"action"` // "extend", "stop", or "add_children"
+		AdditionalMinutes int      `json:"additional_minutes,omitempty"`
+		ChildIDs          []string `json:"child_ids,omitempty"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -287,9 +289,52 @@ func (h *SessionsHandler) UpdateSession(c *gin.Context) {
 
 		c.JSON(http.StatusNoContent, nil)
 
+	case "add_children":
+		if len(req.ChildIDs) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "child_ids must not be empty",
+				"code":  "INVALID_CHILD_IDS",
+			})
+			return
+		}
+
+		session, err := h.manager.AddChildrenToSession(c.Request.Context(), sessionID, req.ChildIDs)
+		if err != nil {
+			h.logger.Error("Failed to add children to session",
+				"component", "api",
+				"session_id", sessionID,
+				"child_ids", req.ChildIDs,
+				"error", err,
+			)
+
+			if err == core.ErrSessionNotFound {
+				c.JSON(http.StatusNotFound, gin.H{
+					"error": "Session not found",
+					"code":  "SESSION_NOT_FOUND",
+				})
+				return
+			}
+
+			if err == core.ErrSessionNotActive {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"error": "Session is not active",
+					"code":  "SESSION_NOT_ACTIVE",
+				})
+				return
+			}
+
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+				"code":  "ADD_CHILDREN_FAILED",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, formatSessionResponse(session))
+
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid action. Must be 'extend' or 'stop'",
+			"error": "Invalid action. Must be 'extend', 'stop', or 'add_children'",
 			"code":  "INVALID_ACTION",
 		})
 	}

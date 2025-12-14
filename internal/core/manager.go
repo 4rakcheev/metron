@@ -484,6 +484,138 @@ func (m *SessionManager) StopSession(ctx context.Context, sessionID string) erro
 	return nil
 }
 
+// AddChildrenToSession adds one or more children to an active session
+func (m *SessionManager) AddChildrenToSession(ctx context.Context, sessionID string, childIDs []string) (*Session, error) {
+	m.logger.Info("Adding children to session",
+		"session_id", sessionID,
+		"child_ids", childIDs)
+
+	// Get session
+	session, err := m.storage.GetSession(ctx, sessionID)
+	if err != nil {
+		m.logger.Error("Failed to get session",
+			"session_id", sessionID,
+			"error", err)
+		return nil, err
+	}
+
+	if !session.IsActive() {
+		m.logger.Warn("Cannot add children to inactive session",
+			"session_id", sessionID,
+			"status", session.Status)
+		return nil, ErrSessionNotActive
+	}
+
+	// Calculate elapsed time since session start
+	elapsed := int(time.Since(session.StartTime).Minutes())
+	if elapsed < 0 {
+		elapsed = 0
+	}
+
+	today := time.Now().In(m.timezone)
+	newChildIDs := []string{}
+
+	for _, childID := range childIDs {
+		// Check if child already in session
+		alreadyInSession := false
+		for _, existingID := range session.ChildIDs {
+			if existingID == childID {
+				alreadyInSession = true
+				break
+			}
+		}
+
+		if alreadyInSession {
+			m.logger.Debug("Child already in session, skipping",
+				"session_id", sessionID,
+				"child_id", childID)
+			continue
+		}
+
+		// Get child to check remaining time
+		child, err := m.storage.GetChild(ctx, childID)
+		if err != nil {
+			m.logger.Error("Failed to get child",
+				"session_id", sessionID,
+				"child_id", childID,
+				"error", err)
+			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
+		}
+
+		// Get daily usage
+		usage, err := m.storage.GetDailyUsage(ctx, childID, today)
+		if err != nil {
+			m.logger.Error("Failed to get daily usage",
+				"session_id", sessionID,
+				"child_id", childID,
+				"error", err)
+			return nil, fmt.Errorf("failed to get daily usage for child %s: %w", childID, err)
+		}
+
+		// Calculate remaining time
+		dailyLimit := child.GetDailyLimit(today)
+		remaining := dailyLimit - usage.MinutesUsed
+
+		m.logger.Debug("Child time availability",
+			"session_id", sessionID,
+			"child_id", childID,
+			"child_name", child.Name,
+			"daily_limit", dailyLimit,
+			"used", usage.MinutesUsed,
+			"remaining", remaining,
+			"elapsed", elapsed)
+
+		// Check if child has enough time for elapsed minutes
+		if remaining < elapsed {
+			m.logger.Warn("Child has insufficient time for elapsed session time",
+				"session_id", sessionID,
+				"child_id", childID,
+				"child_name", child.Name,
+				"remaining", remaining,
+				"elapsed", elapsed)
+			return nil, fmt.Errorf("child %s has insufficient time (has %d min, needs %d min for elapsed time)",
+				child.Name, remaining, elapsed)
+		}
+
+		// Update daily usage for elapsed time
+		if elapsed > 0 {
+			if err := m.storage.IncrementDailyUsage(ctx, childID, today, elapsed); err != nil {
+				m.logger.Error("Failed to update daily usage",
+					"session_id", sessionID,
+					"child_id", childID,
+					"error", err)
+				return nil, fmt.Errorf("failed to update daily usage for child %s: %w", childID, err)
+			}
+		}
+
+		newChildIDs = append(newChildIDs, childID)
+	}
+
+	if len(newChildIDs) == 0 {
+		m.logger.Info("No new children to add to session",
+			"session_id", sessionID)
+		return session, nil
+	}
+
+	// Add new children to session
+	session.ChildIDs = append(session.ChildIDs, newChildIDs...)
+
+	// Update session
+	if err := m.storage.UpdateSession(ctx, session); err != nil {
+		m.logger.Error("Failed to update session",
+			"session_id", sessionID,
+			"error", err)
+		return nil, fmt.Errorf("failed to update session: %w", err)
+	}
+
+	m.logger.Info("Children added to session successfully",
+		"session_id", sessionID,
+		"new_child_ids", newChildIDs,
+		"all_child_ids", session.ChildIDs)
+
+	return session, nil
+}
+
 // GetSession retrieves a session by ID
 func (m *SessionManager) GetSession(ctx context.Context, sessionID string) (*Session, error) {
 	return m.storage.GetSession(ctx, sessionID)

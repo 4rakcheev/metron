@@ -244,6 +244,48 @@ func FormatSessionExtended(session *Session, additionalMinutes int) string {
 	return sb.String()
 }
 
+// FormatChildrenAddedToSession formats a success message for adding children to a session
+func FormatChildrenAddedToSession(session *Session, addedChildIDs []string, childrenMap map[string]Child) string {
+	var sb strings.Builder
+
+	deviceEmoji := getDeviceEmoji(session.DeviceType)
+	displayName := getDeviceDisplayName(session.DeviceType)
+	_, remaining := calculateSessionEnd(*session)
+
+	sb.WriteString("✅ *Children Added to Session*\n\n")
+	sb.WriteString(fmt.Sprintf("%s Device: *%s*\n", deviceEmoji, displayName))
+
+	// Show added children
+	var addedNames []string
+	for _, childID := range addedChildIDs {
+		if child, ok := childrenMap[childID]; ok {
+			emoji := getChildEmoji(child.Name)
+			addedNames = append(addedNames, emoji+" "+child.Name)
+		}
+	}
+
+	if len(addedNames) > 0 {
+		sb.WriteString(fmt.Sprintf("➕ Added: %s\n", strings.Join(addedNames, ", ")))
+	}
+
+	// Show all children now in session
+	var allNames []string
+	for _, childID := range session.ChildIDs {
+		if child, ok := childrenMap[childID]; ok {
+			emoji := getChildEmoji(child.Name)
+			allNames = append(allNames, emoji+" "+child.Name)
+		}
+	}
+
+	if len(allNames) > 0 {
+		sb.WriteString(fmt.Sprintf("👶 All Children: %s\n", strings.Join(allNames, ", ")))
+	}
+
+	sb.WriteString(fmt.Sprintf("⏱ Remaining: %d minutes\n", remaining))
+
+	return sb.String()
+}
+
 // FormatSessionStopped formats a success message for stopping a session early
 func FormatSessionStopped(session *Session, childrenMap map[string]Child) string {
 	var sb strings.Builder

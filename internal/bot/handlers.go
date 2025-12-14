@@ -97,7 +97,7 @@ func (b *Bot) handleNewSession(ctx context.Context, message *tgbotapi.Message) e
 	return b.sendMessage(message.Chat.ID, text, keyboard)
 }
 
-// handleExtend handles the /extend command (step 0)
+// handleExtend handles the /extend command - now shows session management UI
 func (b *Bot) handleExtend(ctx context.Context, message *tgbotapi.Message) error {
 	// Get active sessions
 	sessions, err := b.client.ListSessions(ctx, true, "")
@@ -107,7 +107,7 @@ func (b *Bot) handleExtend(ctx context.Context, message *tgbotapi.Message) error
 
 	if len(sessions) == 0 {
 		return b.sendMessage(message.Chat.ID,
-			"❌ No active sessions to extend.", BuildQuickActionsButtons())
+			"❌ No active sessions.", BuildQuickActionsButtons())
 	}
 
 	// Get children for mapping
@@ -121,10 +121,12 @@ func (b *Bot) handleExtend(ctx context.Context, message *tgbotapi.Message) error
 		childrenMap[child.ID] = child
 	}
 
-	text := "⏱ *Extend Session*\n\n" + FormatActiveSessions(sessions, childrenMap)
-	text += "Select a session to extend:"
+	text := "⏱ *Manage Sessions*\n\nSelect an action for each session:\n" +
+		"• ⏱ Extend - Add more minutes\n" +
+		"• 🛑 Stop - End session early\n" +
+		"• 👶 Add Kid - Share with another child\n"
 
-	keyboard := BuildSessionsButtons(sessions, "extend")
+	keyboard := BuildSessionManagementButtons(sessions, childrenMap)
 
 	return b.sendMessage(message.Chat.ID, text, keyboard)
 }

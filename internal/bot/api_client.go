@@ -189,6 +189,23 @@ func (a *MetronAPI) StopSession(ctx context.Context, sessionID string) error {
 	return a.doRequest(ctx, "PATCH", "/v1/sessions/"+sessionID, req, nil)
 }
 
+// AddChildrenToSession adds one or more children to an active session
+func (a *MetronAPI) AddChildrenToSession(ctx context.Context, sessionID string, childIDs []string) (*Session, error) {
+	req := struct {
+		Action   string   `json:"action"`
+		ChildIDs []string `json:"child_ids"`
+	}{
+		Action:   "add_children",
+		ChildIDs: childIDs,
+	}
+
+	var session Session
+	if err := a.doRequest(ctx, "PATCH", "/v1/sessions/"+sessionID, req, &session); err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
 // doRequest performs an HTTP request to the Metron API
 func (a *MetronAPI) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	url := a.baseURL + path
