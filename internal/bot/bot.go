@@ -123,6 +123,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *tgbotapi.Message) erro
 		return b.handleNewSession(ctx, message)
 	case "extend":
 		return b.handleExtend(ctx, message)
+	case "stop":
+		return b.handleStop(ctx, message)
 	case "children":
 		return b.handleChildren(ctx, message)
 	case "devices":
@@ -187,6 +189,8 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		return b.handleNewSessionFlow(ctx, callback.Message, data)
 	case "extend":
 		return b.handleExtendFlow(ctx, callback.Message, data)
+	case "stop":
+		return b.handleStopFlow(ctx, callback.Message, data)
 	default:
 		return b.sendMessage(callback.Message.Chat.ID,
 			"Unknown action.", nil)

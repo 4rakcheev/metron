@@ -249,3 +249,61 @@ func (b *Bot) extendSession(ctx context.Context, message *tgbotapi.Message, sess
 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
 }
+
+// handleStopFlow handles the flow for stopping an active session early
+func (b *Bot) handleStopFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	switch data.Step {
+	case 1:
+		// Step 1: Session selected (by index), stop it immediately
+		sessionID, err := b.resolveSessionIndex(ctx, data.SessionIndex)
+		if err != nil {
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+		}
+		return b.stopSession(ctx, message, sessionID)
+	default:
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ Invalid step in stop flow.", nil)
+	}
+}
+
+// stopSession stops an active session and returns remaining time to children
+func (b *Bot) stopSession(ctx context.Context, message *tgbotapi.Message, sessionID string) error {
+	// Get session details before stopping (to calculate returned time)
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	var stoppedSession *Session
+	for i := range sessions {
+		if sessions[i].ID == sessionID {
+			stoppedSession = &sessions[i]
+			break
+		}
+	}
+
+	if stoppedSession == nil {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ Session not found or already stopped.", BuildQuickActionsButtons())
+	}
+
+	// Stop the session
+	if err := b.client.StopSession(ctx, sessionID); err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	// Get children for formatting
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	childrenMap := make(map[string]Child)
+	for _, child := range children {
+		childrenMap[child.ID] = child
+	}
+
+	text := FormatSessionStopped(stoppedSession, childrenMap)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
+}

@@ -19,6 +19,7 @@ type Storage interface {
 	GetSession(ctx context.Context, id string) (*Session, error)
 	ListActiveSessions(ctx context.Context) ([]*Session, error)
 	UpdateSession(ctx context.Context, session *Session) error
+	DeleteSession(ctx context.Context, id string) error
 
 	GetDailyUsage(ctx context.Context, childID string, date time.Time) (*DailyUsage, error)
 	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
@@ -171,25 +172,34 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		return nil, fmt.Errorf("failed to get driver %s for device %s: %w", device.GetDriver(), deviceID, err)
 	}
 
-	m.logger.Debug("Starting session on device via driver",
+	m.logger.Debug("Saving session to storage before unlocking device",
 		"session_id", session.ID,
 		"driver", driver.Name())
 
-	// Start session on device
-	if err := driver.StartSession(ctx, session); err != nil {
-		m.logger.Error("Driver failed to start session",
-			"session_id", session.ID,
-			"driver", driver.Name(),
-			"error", err)
-		return nil, fmt.Errorf("failed to start session on device: %w", err)
-	}
-
-	// Save session
+	// CRITICAL: Save session to database FIRST before unlocking device
+	// This ensures device stays locked if database save fails
 	if err := m.storage.CreateSession(ctx, session); err != nil {
 		m.logger.Error("Failed to save session to storage",
 			"session_id", session.ID,
 			"error", err)
 		return nil, fmt.Errorf("failed to save session: %w", err)
+	}
+
+	// Start session on device (unlock it) ONLY after successful database save
+	if err := driver.StartSession(ctx, session); err != nil {
+		m.logger.Error("Driver failed to start session",
+			"session_id", session.ID,
+			"driver", driver.Name(),
+			"error", err)
+
+		// CRITICAL: Delete the saved session since device unlock failed
+		if delErr := m.storage.DeleteSession(ctx, session.ID); delErr != nil {
+			m.logger.Error("Failed to cleanup session after driver failure",
+				"session_id", session.ID,
+				"error", delErr)
+		}
+
+		return nil, fmt.Errorf("failed to start session on device: %w", err)
 	}
 
 	// Check if immediate warning is needed (for short sessions <= 5 minutes)

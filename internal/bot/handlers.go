@@ -17,6 +17,7 @@ I help you manage your children's screen time across all devices.
 📊 /today - View today's screen time summary
 ➕ /newsession - Start a new screen time session
 ⏱ /extend - Extend an active session
+🛑 /stop - Stop an active session early
 👶 /children - List all children
 📺 /devices - List available devices
 
@@ -124,6 +125,38 @@ func (b *Bot) handleExtend(ctx context.Context, message *tgbotapi.Message) error
 	text += "Select a session to extend:"
 
 	keyboard := BuildSessionsButtons(sessions, "extend")
+
+	return b.sendMessage(message.Chat.ID, text, keyboard)
+}
+
+// handleStop handles the /stop command - allows stopping active sessions early
+func (b *Bot) handleStop(ctx context.Context, message *tgbotapi.Message) error {
+	// Get active sessions
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	if len(sessions) == 0 {
+		return b.sendMessage(message.Chat.ID,
+			"❌ No active sessions to stop.", BuildQuickActionsButtons())
+	}
+
+	// Get children for mapping
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	childrenMap := make(map[string]Child)
+	for _, child := range children {
+		childrenMap[child.ID] = child
+	}
+
+	text := "🛑 *Stop Session*\n\n" + FormatActiveSessions(sessions, childrenMap)
+	text += "Select a session to stop:"
+
+	keyboard := BuildSessionsButtons(sessions, "stop")
 
 	return b.sendMessage(message.Chat.ID, text, keyboard)
 }

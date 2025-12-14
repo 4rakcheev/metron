@@ -244,6 +244,39 @@ func FormatSessionExtended(session *Session, additionalMinutes int) string {
 	return sb.String()
 }
 
+// FormatSessionStopped formats a success message for stopping a session early
+func FormatSessionStopped(session *Session, childrenMap map[string]Child) string {
+	var sb strings.Builder
+
+	deviceEmoji := getDeviceEmoji(session.DeviceType)
+	displayName := getDeviceDisplayName(session.DeviceType)
+	_, remaining := calculateSessionEnd(*session)
+
+	sb.WriteString("🛑 *Session Stopped*\n\n")
+	sb.WriteString(fmt.Sprintf("%s Device: *%s*\n", deviceEmoji, displayName))
+
+	// Get child names
+	var childNames []string
+	for _, childID := range session.ChildIDs {
+		if child, ok := childrenMap[childID]; ok {
+			emoji := getChildEmoji(child.Name)
+			childNames = append(childNames, emoji+" "+child.Name)
+		}
+	}
+
+	if len(childNames) > 0 {
+		sb.WriteString(fmt.Sprintf("👶 Children: %s\n", strings.Join(childNames, ", ")))
+	}
+
+	if remaining > 0 {
+		sb.WriteString(fmt.Sprintf("↩️ Returned %d minutes to available time\n", remaining))
+	}
+
+	sb.WriteString("\n✅ Device has been locked.")
+
+	return sb.String()
+}
+
 // FormatError formats an error message
 func FormatError(err error) string {
 	return fmt.Sprintf("❌ *Error*\n\n%s", err.Error())

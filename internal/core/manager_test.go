@@ -107,6 +107,14 @@ func (m *mockStorage) UpdateSession(ctx context.Context, session *Session) error
 	return nil
 }
 
+func (m *mockStorage) DeleteSession(ctx context.Context, id string) error {
+	if _, ok := m.sessions[id]; !ok {
+		return ErrSessionNotFound
+	}
+	delete(m.sessions, id)
+	return nil
+}
+
 func (m *mockStorage) GetDailyUsage(ctx context.Context, childID string, date time.Time) (*DailyUsage, error) {
 	key := childID + date.Format("2006-01-02")
 	usage, ok := m.dailyUsage[key]
