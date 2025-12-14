@@ -66,6 +66,10 @@ func (m *mockStorage) IncrementDailyUsage(ctx context.Context, childID string, d
 	return nil
 }
 
+func (m *mockStorage) IncrementSessionCount(ctx context.Context, childID string, date time.Time) error {
+	return nil
+}
+
 func (m *mockStorage) addSession(session *core.Session) {
 	m.sessions[session.ID] = session
 }

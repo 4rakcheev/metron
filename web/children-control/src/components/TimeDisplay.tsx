@@ -1,5 +1,7 @@
 // Time Display Component with Circular Progress
 
+import { formatMinutes, formatMinutesDetailed } from '../utils/timeFormat';
+
 interface TimeDisplayProps {
   remainingMinutes: number;
   totalMinutes: number;
@@ -7,9 +9,11 @@ interface TimeDisplayProps {
 
 export function TimeDisplay({ remainingMinutes, totalMinutes }: TimeDisplayProps) {
   const percentage = totalMinutes > 0 ? (remainingMinutes / totalMinutes) * 100 : 0;
-  const radius = 80;
+  const radius = 90;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
+
+  const timeFormatted = formatMinutesDetailed(remainingMinutes);
 
   // Color based on remaining time
   const getColor = (): string => {
@@ -24,26 +28,32 @@ export function TimeDisplay({ remainingMinutes, totalMinutes }: TimeDisplayProps
     return '#ef4444'; // red-500
   };
 
+  const getBgGradient = (): string => {
+    if (percentage > 50) return 'from-green-50 to-emerald-50';
+    if (percentage > 20) return 'from-yellow-50 to-amber-50';
+    return 'from-red-50 to-orange-50';
+  };
+
   return (
-    <div className="flex flex-col items-center gap-4 p-8">
-      <div className="relative w-48 h-48">
+    <div className={`flex flex-col items-center gap-6 p-8 bg-gradient-to-br ${getBgGradient()} rounded-3xl shadow-lg`}>
+      <div className="relative w-56 h-56">
         {/* Background circle */}
-        <svg className="transform -rotate-90 w-48 h-48">
+        <svg className="transform -rotate-90 w-56 h-56">
           <circle
-            cx="96"
-            cy="96"
+            cx="112"
+            cy="112"
             r={radius}
             stroke="#e5e7eb"
-            strokeWidth="12"
+            strokeWidth="16"
             fill="none"
           />
           {/* Progress circle */}
           <circle
-            cx="96"
-            cy="96"
+            cx="112"
+            cy="112"
             r={radius}
             stroke={getStrokeColor()}
-            strokeWidth="12"
+            strokeWidth="16"
             fill="none"
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
@@ -54,15 +64,15 @@ export function TimeDisplay({ remainingMinutes, totalMinutes }: TimeDisplayProps
 
         {/* Time display in center */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={`text-5xl font-bold ${getColor()}`}>
-            {remainingMinutes}
+          <div className={`text-6xl font-black ${getColor()} tracking-tight`}>
+            {timeFormatted.formatted}
           </div>
-          <div className="text-gray-500 text-lg">minutes</div>
+          <div className="text-gray-500 text-xl font-medium mt-1">left</div>
         </div>
       </div>
 
-      <div className="text-center text-gray-600">
-        <div className="text-sm">Out of {totalMinutes} minutes today</div>
+      <div className="text-center text-gray-700">
+        <div className="text-lg font-medium">Out of {formatMinutes(totalMinutes)} today</div>
       </div>
     </div>
   );

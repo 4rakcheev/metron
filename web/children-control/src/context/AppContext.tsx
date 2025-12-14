@@ -20,6 +20,7 @@ interface AppContextValue extends AppState {
   refresh: () => Promise<void>;
   createSession: (deviceId: string, minutes: number) => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
+  extendSession: (sessionId: string, additionalMinutes: number) => Promise<void>;
   clearError: () => void;
 }
 
@@ -166,6 +167,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadData]);
 
+  // Extend session function
+  const extendSession = useCallback(async (sessionId: string, additionalMinutes: number) => {
+    try {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      await api.extendSession(sessionId, additionalMinutes);
+
+      // Reload data to get updated sessions and stats
+      await loadData();
+    } catch (err) {
+      console.error('Failed to extend session:', err);
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Failed to extend session',
+      }));
+      throw err;
+    }
+  }, [loadData]);
+
   // Clear error function
   const clearError = useCallback(() => {
     setState(prev => ({ ...prev, error: null }));
@@ -191,6 +211,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     refresh: loadData,
     createSession,
     stopSession,
+    extendSession,
     clearError,
   };
 

@@ -135,6 +135,13 @@ class MetronAPI {
       method: 'POST',
     });
   }
+
+  async extendSession(sessionId: string, additionalMinutes: number): Promise<Session> {
+    return this.request<Session>(`/child/sessions/${sessionId}/extend`, {
+      method: 'POST',
+      body: JSON.stringify({ additional_minutes: additionalMinutes }),
+    });
+  }
 }
 
 // Export singleton instance

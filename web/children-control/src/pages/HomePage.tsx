@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
+import { formatMinutes } from '../utils/timeFormat';
 import { TimeDisplay } from '../components/TimeDisplay';
 import { ActiveSession } from '../components/ActiveSession';
 import { DeviceButton } from '../components/DeviceButton';
@@ -19,6 +20,7 @@ export function HomePage() {
     logout,
     createSession,
     stopSession,
+    extendSession,
   } = useApp();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -64,6 +66,20 @@ export function HomePage() {
       await stopSession(activeSession.id);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to stop session');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle session extend
+  const handleExtendSession = async (minutes: number) => {
+    if (!activeSession) return;
+
+    try {
+      setActionLoading(true);
+      await extendSession(activeSession.id, minutes);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to extend session');
     } finally {
       setActionLoading(false);
     }
@@ -118,7 +134,8 @@ export function HomePage() {
               session={activeSession}
               device={devices.find(d => d.id === activeSession.device_id)}
               onStop={handleStopSession}
-              stopping={actionLoading}
+              onExtend={handleExtendSession}
+              loading={actionLoading}
             />
           </div>
         )}
@@ -176,25 +193,25 @@ export function HomePage() {
         )}
 
         {/* Stats Summary */}
-        <div className="card bg-gray-50">
+        <div className="card bg-gradient-to-br from-gray-50 to-slate-50">
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
-              <div className="text-2xl font-bold text-purple-600">
-                {stats.used_minutes}
+              <div className="text-3xl font-black text-purple-600">
+                {formatMinutes(stats.used_minutes)}
               </div>
-              <div className="text-sm text-gray-600">Used</div>
+              <div className="text-sm text-gray-600 font-medium">Used</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-green-600">
-                {stats.remaining_minutes}
+              <div className="text-3xl font-black text-green-600">
+                {formatMinutes(stats.remaining_minutes)}
               </div>
-              <div className="text-sm text-gray-600">Remaining</div>
+              <div className="text-sm text-gray-600 font-medium">Remaining</div>
             </div>
             <div>
-              <div className="text-2xl font-bold text-blue-600">
+              <div className="text-3xl font-black text-blue-600">
                 {stats.sessions_count}
               </div>
-              <div className="text-sm text-gray-600">Sessions</div>
+              <div className="text-sm text-gray-600 font-medium">Sessions</div>
             </div>
           </div>
         </div>

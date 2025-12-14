@@ -143,6 +143,7 @@ func NewRouter(config RouterConfig) *gin.Engine {
 		protected.GET("/sessions", childHandler.ListSessions)
 		protected.POST("/sessions", childHandler.CreateSession)
 		protected.POST("/sessions/:id/stop", childHandler.StopSession)
+		protected.POST("/sessions/:id/extend", childHandler.ExtendSession)
 	}
 
 	return router

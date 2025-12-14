@@ -23,6 +23,7 @@ type Storage interface {
 
 	GetDailyUsage(ctx context.Context, childID string, date time.Time) (*DailyUsage, error)
 	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
+	IncrementSessionCount(ctx context.Context, childID string, date time.Time) error
 }
 
 // Device interface for accessing device information
@@ -112,7 +113,8 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		"driver", device.GetDriver())
 
 	// Validate children exist and have sufficient time
-	today := time.Now().In(m.timezone)
+	now := time.Now()
+	today := now.In(m.timezone)
 	for _, childID := range childIDs {
 		child, err := m.storage.GetChild(ctx, childID)
 		if err != nil {
@@ -223,6 +225,17 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 					"session_id", session.ID,
 					"error", err)
 			}
+		}
+	}
+
+	// Increment session count for all children in this session
+	for _, childID := range childIDs {
+		if err := m.storage.IncrementSessionCount(ctx, childID, today); err != nil {
+			// Log but don't fail - session is already created
+			m.logger.Warn("Failed to increment session count",
+				"session_id", session.ID,
+				"child_id", childID,
+				"error", err)
 		}
 	}
 
@@ -586,6 +599,15 @@ func (m *SessionManager) AddChildrenToSession(ctx context.Context, sessionID str
 					"error", err)
 				return nil, fmt.Errorf("failed to update daily usage for child %s: %w", childID, err)
 			}
+		}
+
+		// Increment session count for this child
+		if err := m.storage.IncrementSessionCount(ctx, childID, today); err != nil {
+			// Log but don't fail
+			m.logger.Warn("Failed to increment session count",
+				"session_id", sessionID,
+				"child_id", childID,
+				"error", err)
 		}
 
 		newChildIDs = append(newChildIDs, childID)

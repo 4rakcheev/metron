@@ -427,3 +427,96 @@ func (h *ChildHandler) StopSession(c *gin.Context) {
 
 	c.Status(http.StatusNoContent)
 }
+
+// ExtendSession extends a session (validates ownership)
+// POST /child/sessions/:id/extend (PROTECTED)
+func (h *ChildHandler) ExtendSession(c *gin.Context) {
+	childID, _ := middleware.GetChildID(c)
+	sessionID := c.Param("id")
+
+	// Parse request body
+	var req struct {
+		AdditionalMinutes int `json:"additional_minutes" binding:"required,min=1"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request. additional_minutes must be a positive integer",
+			"code":  "INVALID_REQUEST",
+		})
+		return
+	}
+
+	// Get session to validate ownership
+	session, err := h.manager.GetSession(c.Request.Context(), sessionID)
+	if err != nil {
+		if err == core.ErrSessionNotFound {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Session not found",
+				"code":  "SESSION_NOT_FOUND",
+			})
+			return
+		}
+		h.logger.Error("Failed to get session",
+			"session_id", sessionID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve session",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	// Validate child is part of this session
+	isOwner := false
+	for _, sid := range session.ChildIDs {
+		if sid == childID {
+			isOwner = true
+			break
+		}
+	}
+
+	if !isOwner {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "You don't have permission to extend this session",
+			"code":  "FORBIDDEN",
+		})
+		return
+	}
+
+	// Extend the session
+	extendedSession, err := h.manager.ExtendSession(c.Request.Context(), sessionID, req.AdditionalMinutes)
+	if err != nil {
+		h.logger.Error("Failed to extend session",
+			"child_id", childID,
+			"session_id", sessionID,
+			"additional_minutes", req.AdditionalMinutes,
+			"error", err,
+		)
+
+		if err == core.ErrInsufficientTime {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+				"code":  "INSUFFICIENT_TIME",
+			})
+			return
+		}
+
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+			"code":  "SESSION_EXTEND_FAILED",
+		})
+		return
+	}
+
+	// Return extended session
+	c.JSON(http.StatusOK, gin.H{
+		"id":                extendedSession.ID,
+		"device_type":       extendedSession.DeviceType,
+		"device_id":         extendedSession.DeviceID,
+		"start_time":        extendedSession.StartTime.Format("2006-01-02T15:04:05Z07:00"),
+		"remaining_minutes": extendedSession.CalculateRemainingMinutes(),
+		"status":            string(extendedSession.Status),
+	})
+}

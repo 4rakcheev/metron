@@ -145,6 +145,22 @@ func (m *mockStorage) IncrementDailyUsage(ctx context.Context, childID string, d
 	return nil
 }
 
+func (m *mockStorage) IncrementSessionCount(ctx context.Context, childID string, date time.Time) error {
+	key := childID + date.Format("2006-01-02")
+	usage, ok := m.dailyUsage[key]
+	if !ok {
+		usage = &DailyUsage{
+			ChildID:      childID,
+			Date:         date,
+			MinutesUsed:  0,
+			SessionCount: 0,
+		}
+	}
+	usage.SessionCount++
+	m.dailyUsage[key] = usage
+	return nil
+}
+
 type mockDriver struct {
 	name         string
 	startCalled  bool

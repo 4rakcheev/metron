@@ -604,6 +604,22 @@ func (s *SQLiteStorage) IncrementDailyUsage(ctx context.Context, childID string,
 	return err
 }
 
+// IncrementSessionCount increments the session count for a child on a given date
+func (s *SQLiteStorage) IncrementSessionCount(ctx context.Context, childID string, date time.Time) error {
+	normalizedDate := s.normalizeDate(date)
+	now := time.Now()
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO daily_usage (child_id, date, minutes_used, session_count, created_at, updated_at)
+		VALUES (?, ?, 0, 1, ?, ?)
+		ON CONFLICT(child_id, date) DO UPDATE SET
+			session_count = session_count + 1,
+			updated_at = ?
+	`, childID, normalizedDate, now, now, now)
+
+	return err
+}
+
 // Close closes the database connection
 func (s *SQLiteStorage) Close() error {
 	return s.db.Close()
