@@ -23,6 +23,7 @@ type Storage interface {
 
 	GetDailyUsage(ctx context.Context, childID string, date time.Time) (*DailyUsage, error)
 	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
+	GrantRewardMinutes(ctx context.Context, childID string, date time.Time, minutes int) error
 	IncrementSessionCount(ctx context.Context, childID string, date time.Time) error
 }
 
@@ -648,6 +649,45 @@ func (m *SessionManager) ListActiveSessions(ctx context.Context) ([]*Session, er
 	return m.storage.ListActiveSessions(ctx)
 }
 
+// GrantRewardMinutes grants bonus minutes to a child for today
+func (m *SessionManager) GrantRewardMinutes(ctx context.Context, childID string, minutes int) error {
+	m.logger.Info("Granting reward minutes",
+		"child_id", childID,
+		"minutes", minutes)
+
+	if minutes <= 0 {
+		m.logger.Error("Invalid reward minutes",
+			"child_id", childID,
+			"minutes", minutes)
+		return fmt.Errorf("reward minutes must be positive")
+	}
+
+	// Verify child exists
+	_, err := m.storage.GetChild(ctx, childID)
+	if err != nil {
+		m.logger.Error("Failed to get child for reward grant",
+			"child_id", childID,
+			"error", err)
+		return err
+	}
+
+	// Grant reward for today
+	today := time.Now().In(m.timezone)
+	if err := m.storage.GrantRewardMinutes(ctx, childID, today, minutes); err != nil {
+		m.logger.Error("Failed to grant reward minutes",
+			"child_id", childID,
+			"minutes", minutes,
+			"error", err)
+		return fmt.Errorf("failed to grant reward minutes: %w", err)
+	}
+
+	m.logger.Info("Reward minutes granted successfully",
+		"child_id", childID,
+		"minutes", minutes)
+
+	return nil
+}
+
 // GetChildStatus retrieves the current status for a child
 func (m *SessionManager) GetChildStatus(ctx context.Context, childID string) (*ChildStatus, error) {
 	child, err := m.storage.GetChild(ctx, childID)
@@ -687,25 +727,29 @@ func (m *SessionManager) GetChildStatus(ctx context.Context, childID string) (*C
 	// Total used time = completed sessions + active sessions
 	totalUsed := usage.MinutesUsed + activeMinutes
 	dailyLimit := child.GetDailyLimit(today)
-	remaining := dailyLimit - totalUsed
+	// Include granted rewards in available time
+	totalAvailable := dailyLimit + usage.RewardMinutesGranted
+	remaining := totalAvailable - totalUsed
 	if remaining < 0 {
 		remaining = 0
 	}
 
 	return &ChildStatus{
-		Child:          child,
-		TodayUsed:      totalUsed,
-		TodayRemaining: remaining,
-		TodayLimit:     dailyLimit,
-		SessionsToday:  usage.SessionCount,
+		Child:              child,
+		TodayUsed:          totalUsed,
+		TodayRewardGranted: usage.RewardMinutesGranted,
+		TodayRemaining:     remaining,
+		TodayLimit:         dailyLimit,
+		SessionsToday:      usage.SessionCount,
 	}, nil
 }
 
 // ChildStatus represents a child's current status
 type ChildStatus struct {
-	Child          *Child
-	TodayUsed      int
-	TodayRemaining int
-	TodayLimit     int
-	SessionsToday  int
+	Child               *Child
+	TodayUsed           int // regular minutes consumed today
+	TodayRewardGranted  int // bonus minutes granted for today
+	TodayRemaining      int // calculated as: limit + rewardGranted - used
+	TodayLimit          int
+	SessionsToday       int
 }

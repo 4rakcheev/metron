@@ -29,6 +29,7 @@ type Storage interface {
 	GetDailyUsage(ctx context.Context, childID string, date time.Time) (*core.DailyUsage, error)
 	UpdateDailyUsage(ctx context.Context, usage *core.DailyUsage) error
 	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
+	GrantRewardMinutes(ctx context.Context, childID string, date time.Time, minutes int) error
 	IncrementSessionCount(ctx context.Context, childID string, date time.Time) error
 
 	// Lifecycle

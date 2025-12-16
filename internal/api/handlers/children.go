@@ -21,6 +21,7 @@ type ChildrenHandler struct {
 // SessionManager interface for child status operations
 type SessionManager interface {
 	GetChildStatus(ctx context.Context, childID string) (*core.ChildStatus, error)
+	GrantRewardMinutes(ctx context.Context, childID string, minutes int) error
 }
 
 // NewChildrenHandler creates a new children handler
@@ -108,18 +109,19 @@ func (h *ChildrenHandler) GetChild(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":              child.ID,
-		"name":            child.Name,
-		"pin":             child.PIN,
-		"weekday_limit":   child.WeekdayLimit,
-		"weekend_limit":   child.WeekendLimit,
-		"break_rule":      formatBreakRule(child.BreakRule),
-		"created_at":      child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		"updated_at":      child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		"today_used":      status.TodayUsed,
-		"today_remaining": status.TodayRemaining,
-		"today_limit":     status.TodayLimit,
-		"sessions_today":  status.SessionsToday,
+		"id":                   child.ID,
+		"name":                 child.Name,
+		"pin":                  child.PIN,
+		"weekday_limit":        child.WeekdayLimit,
+		"weekend_limit":        child.WeekendLimit,
+		"break_rule":           formatBreakRule(child.BreakRule),
+		"created_at":           child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"updated_at":           child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"today_used":           status.TodayUsed,
+		"today_reward_granted": status.TodayRewardGranted,
+		"today_remaining":      status.TodayRemaining,
+		"today_limit":          status.TodayLimit,
+		"sessions_today":       status.SessionsToday,
 	})
 }
 
@@ -299,6 +301,81 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 		"break_rule":    formatBreakRule(child.BreakRule),
 		"created_at":    child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		"updated_at":    child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+	})
+}
+
+// GrantReward grants reward minutes to a child
+// POST /children/:id/rewards
+func (h *ChildrenHandler) GrantReward(c *gin.Context) {
+	childID := c.Param("id")
+
+	var req struct {
+		Minutes int `json:"minutes" binding:"required,gt=0"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"code":    "INVALID_REQUEST",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Validate minutes is one of the allowed values
+	validMinutes := map[int]bool{15: true, 30: true, 60: true}
+	if !validMinutes[req.Minutes] {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Minutes must be one of: 15, 30, or 60",
+			"code":  "INVALID_MINUTES",
+		})
+		return
+	}
+
+	// Grant reward minutes
+	if err := h.manager.GrantRewardMinutes(c.Request.Context(), childID, req.Minutes); err != nil {
+		if err == core.ErrChildNotFound {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Child not found",
+				"code":  "CHILD_NOT_FOUND",
+			})
+			return
+		}
+
+		h.logger.Error("Failed to grant reward minutes",
+			"component", "api",
+			"child_id", childID,
+			"minutes", req.Minutes,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to grant reward minutes",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	// Get updated child status
+	status, err := h.manager.GetChildStatus(c.Request.Context(), childID)
+	if err != nil {
+		h.logger.Error("Failed to get child status after reward grant",
+			"component", "api",
+			"child_id", childID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve updated child status",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":              "Reward granted successfully",
+		"minutes_granted":      req.Minutes,
+		"today_reward_granted": status.TodayRewardGranted,
+		"today_remaining":      status.TodayRemaining,
+		"today_limit":          status.TodayLimit,
 	})
 }
 

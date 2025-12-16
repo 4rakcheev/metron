@@ -140,6 +140,15 @@ func (s *SQLiteStorage) runMigrations() error {
 		// Column might already exist, which is fine
 	}
 
+	// Add reward_minutes_granted column to daily_usage table if it doesn't exist
+	_, err = s.db.Exec(`
+		ALTER TABLE daily_usage ADD COLUMN reward_minutes_granted INTEGER NOT NULL DEFAULT 0;
+	`)
+	// Ignore error if column already exists
+	if err != nil && err.Error() != "duplicate column name: reward_minutes_granted" {
+		// Column might already exist, which is fine
+	}
+
 	// Check if sessions table has remaining_minutes column
 	var hasRemainingMinutes bool
 	row := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name='remaining_minutes'`)
@@ -548,20 +557,21 @@ func (s *SQLiteStorage) GetDailyUsage(ctx context.Context, childID string, date 
 
 	var usage core.DailyUsage
 	err := s.db.QueryRowContext(ctx, `
-		SELECT child_id, date, minutes_used, session_count, created_at, updated_at
+		SELECT child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at
 		FROM daily_usage WHERE child_id = ? AND date = ?
 	`, childID, normalizedDate).Scan(&usage.ChildID, &usage.Date, &usage.MinutesUsed,
-		&usage.SessionCount, &usage.CreatedAt, &usage.UpdatedAt)
+		&usage.RewardMinutesGranted, &usage.SessionCount, &usage.CreatedAt, &usage.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		// Return zero usage if not found
 		return &core.DailyUsage{
-			ChildID:      childID,
-			Date:         normalizedDate,
-			MinutesUsed:  0,
-			SessionCount: 0,
-			CreatedAt:    time.Now(),
-			UpdatedAt:    time.Now(),
+			ChildID:               childID,
+			Date:                  normalizedDate,
+			MinutesUsed:           0,
+			RewardMinutesGranted:  0,
+			SessionCount:          0,
+			CreatedAt:             time.Now(),
+			UpdatedAt:             time.Now(),
 		}, nil
 	}
 	if err != nil {
@@ -577,13 +587,14 @@ func (s *SQLiteStorage) UpdateDailyUsage(ctx context.Context, usage *core.DailyU
 	usage.UpdatedAt = time.Now()
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO daily_usage (child_id, date, minutes_used, session_count, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO daily_usage (child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(child_id, date) DO UPDATE SET
 			minutes_used = excluded.minutes_used,
+			reward_minutes_granted = excluded.reward_minutes_granted,
 			session_count = excluded.session_count,
 			updated_at = excluded.updated_at
-	`, usage.ChildID, usage.Date, usage.MinutesUsed, usage.SessionCount, usage.CreatedAt, usage.UpdatedAt)
+	`, usage.ChildID, usage.Date, usage.MinutesUsed, usage.RewardMinutesGranted, usage.SessionCount, usage.CreatedAt, usage.UpdatedAt)
 
 	return err
 }
@@ -594,8 +605,8 @@ func (s *SQLiteStorage) IncrementDailyUsage(ctx context.Context, childID string,
 	now := time.Now()
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO daily_usage (child_id, date, minutes_used, session_count, created_at, updated_at)
-		VALUES (?, ?, ?, 0, ?, ?)
+		INSERT INTO daily_usage (child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at)
+		VALUES (?, ?, ?, 0, 0, ?, ?)
 		ON CONFLICT(child_id, date) DO UPDATE SET
 			minutes_used = minutes_used + ?,
 			updated_at = ?
@@ -610,12 +621,28 @@ func (s *SQLiteStorage) IncrementSessionCount(ctx context.Context, childID strin
 	now := time.Now()
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO daily_usage (child_id, date, minutes_used, session_count, created_at, updated_at)
-		VALUES (?, ?, 0, 1, ?, ?)
+		INSERT INTO daily_usage (child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at)
+		VALUES (?, ?, 0, 0, 1, ?, ?)
 		ON CONFLICT(child_id, date) DO UPDATE SET
 			session_count = session_count + 1,
 			updated_at = ?
 	`, childID, normalizedDate, now, now, now)
+
+	return err
+}
+
+// GrantRewardMinutes grants reward minutes to a child for a specific day
+func (s *SQLiteStorage) GrantRewardMinutes(ctx context.Context, childID string, date time.Time, minutes int) error {
+	normalizedDate := s.normalizeDate(date)
+	now := time.Now()
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO daily_usage (child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at)
+		VALUES (?, ?, 0, ?, 0, ?, ?)
+		ON CONFLICT(child_id, date) DO UPDATE SET
+			reward_minutes_granted = reward_minutes_granted + ?,
+			updated_at = ?
+	`, childID, normalizedDate, minutes, now, now, minutes, now)
 
 	return err
 }

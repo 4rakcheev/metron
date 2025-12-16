@@ -51,12 +51,13 @@ type Session struct {
 
 // DailyUsage tracks a child's usage for a specific day
 type DailyUsage struct {
-	ChildID      string
-	Date         time.Time // normalized to start of day
-	MinutesUsed  int
-	SessionCount int
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ChildID               string
+	Date                  time.Time // normalized to start of day
+	MinutesUsed           int       // regular minutes consumed
+	RewardMinutesGranted  int       // bonus minutes granted for today
+	SessionCount          int
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 // Validation errors

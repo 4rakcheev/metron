@@ -120,10 +120,11 @@ func (m *mockStorage) GetDailyUsage(ctx context.Context, childID string, date ti
 	usage, ok := m.dailyUsage[key]
 	if !ok {
 		return &DailyUsage{
-			ChildID:      childID,
-			Date:         date,
-			MinutesUsed:  0,
-			SessionCount: 0,
+			ChildID:              childID,
+			Date:                 date,
+			MinutesUsed:          0,
+			RewardMinutesGranted: 0,
+			SessionCount:         0,
 		}, nil
 	}
 	return usage, nil
@@ -134,10 +135,11 @@ func (m *mockStorage) IncrementDailyUsage(ctx context.Context, childID string, d
 	usage, ok := m.dailyUsage[key]
 	if !ok {
 		usage = &DailyUsage{
-			ChildID:      childID,
-			Date:         date,
-			MinutesUsed:  0,
-			SessionCount: 0,
+			ChildID:              childID,
+			Date:                 date,
+			MinutesUsed:          0,
+			RewardMinutesGranted: 0,
+			SessionCount:         0,
 		}
 	}
 	usage.MinutesUsed += minutes
@@ -150,14 +152,71 @@ func (m *mockStorage) IncrementSessionCount(ctx context.Context, childID string,
 	usage, ok := m.dailyUsage[key]
 	if !ok {
 		usage = &DailyUsage{
-			ChildID:      childID,
-			Date:         date,
-			MinutesUsed:  0,
-			SessionCount: 0,
+			ChildID:              childID,
+			Date:                 date,
+			MinutesUsed:          0,
+			RewardMinutesGranted: 0,
+			SessionCount:         0,
 		}
 	}
 	usage.SessionCount++
 	m.dailyUsage[key] = usage
+	return nil
+}
+
+func (m *mockStorage) DeleteChild(ctx context.Context, id string) error {
+	if _, ok := m.children[id]; !ok {
+		return ErrChildNotFound
+	}
+	delete(m.children, id)
+	return nil
+}
+
+func (m *mockStorage) UpdateDailyUsage(ctx context.Context, usage *DailyUsage) error {
+	key := usage.ChildID + usage.Date.Format("2006-01-02")
+	m.dailyUsage[key] = usage
+	return nil
+}
+
+func (m *mockStorage) GrantRewardMinutes(ctx context.Context, childID string, date time.Time, minutes int) error {
+	key := childID + date.Format("2006-01-02")
+	usage, ok := m.dailyUsage[key]
+	if !ok {
+		usage = &DailyUsage{
+			ChildID:              childID,
+			Date:                 date,
+			MinutesUsed:          0,
+			RewardMinutesGranted: 0,
+			SessionCount:         0,
+		}
+	}
+	usage.RewardMinutesGranted += minutes
+	m.dailyUsage[key] = usage
+	return nil
+}
+
+func (m *mockStorage) ListAllSessions(ctx context.Context) ([]*Session, error) {
+	sessions := make([]*Session, 0, len(m.sessions))
+	for _, session := range m.sessions {
+		sessions = append(sessions, session)
+	}
+	return sessions, nil
+}
+
+func (m *mockStorage) ListSessionsByChild(ctx context.Context, childID string) ([]*Session, error) {
+	sessions := make([]*Session, 0)
+	for _, session := range m.sessions {
+		for _, cid := range session.ChildIDs {
+			if cid == childID {
+				sessions = append(sessions, session)
+				break
+			}
+		}
+	}
+	return sessions, nil
+}
+
+func (m *mockStorage) Close() error {
 	return nil
 }
 
