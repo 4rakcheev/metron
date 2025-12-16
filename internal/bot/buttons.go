@@ -260,6 +260,13 @@ func BuildSessionManagementButtons(sessions []Session, childrenMap map[string]Ch
 		rows = append(rows, []tgbotapi.InlineKeyboardButton{extendBtn, stopBtn, addKidBtn})
 	}
 
+	// Grant Reward button
+	rewardBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"🎁 Grant Reward",
+		MarshalCallback(CallbackData{Action: "reward", Step: 0}),
+	)
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{rewardBtn})
+
 	// Cancel button
 	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(
 		"❌ Cancel",

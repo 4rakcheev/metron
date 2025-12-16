@@ -100,21 +100,26 @@ func (b *Bot) handleNewSession(ctx context.Context, message *tgbotapi.Message) e
 
 // handleExtend handles the /extend command - now shows session management UI
 func (b *Bot) handleExtend(ctx context.Context, message *tgbotapi.Message) error {
+	// Get children for use in both cases
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
+	}
+
 	// Get active sessions
 	sessions, err := b.client.ListSessions(ctx, true, "")
 	if err != nil {
 		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
+	// If no active sessions, offer to grant rewards instead
 	if len(sessions) == 0 {
-		return b.sendMessage(message.Chat.ID,
-			"❌ No active sessions.", BuildQuickActionsButtons())
-	}
+		text := "⏱ *Extend / Grant Rewards*\n\n" +
+			"❌ No active sessions to extend.\n\n" +
+			"💡 You can grant reward minutes to give children extra time for today:"
 
-	// Get children for mapping
-	children, err := b.client.ListChildren(ctx)
-	if err != nil {
-		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
+		keyboard := BuildChildrenButtons(children, "reward", 1)
+		return b.sendMessage(message.Chat.ID, text, keyboard)
 	}
 
 	childrenMap := make(map[string]Child)
@@ -125,7 +130,8 @@ func (b *Bot) handleExtend(ctx context.Context, message *tgbotapi.Message) error
 	text := "⏱ *Manage Sessions*\n\nSelect an action for each session:\n" +
 		"• ⏱ Extend - Add more minutes\n" +
 		"• 🛑 Stop - End session early\n" +
-		"• 👶 Add Kid - Share with another child\n"
+		"• 👶 Add Kid - Share with another child\n\n" +
+		"Or grant reward minutes for later:"
 
 	keyboard := BuildSessionManagementButtons(sessions, childrenMap)
 
