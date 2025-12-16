@@ -497,6 +497,82 @@ func (b *Bot) manageAddKidStep2(ctx context.Context, message *tgbotapi.Message, 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
 }
 
+// handleRewardFlow handles the multi-step flow for granting rewards
+func (b *Bot) handleRewardFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	switch data.Step {
+	case 0:
+		// Step 0: Back to child selection
+		return b.rewardStep1(ctx, message)
+	case 1:
+		// Step 1: Child selected (by index), show reward durations
+		return b.rewardStep2(ctx, message, data.ChildIndex)
+	case 2:
+		// Step 2: Duration selected, grant reward
+		childID, err := b.resolveChildIndex(ctx, data.ChildIndex)
+		if err != nil {
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+		}
+		return b.grantReward(ctx, message, childID, data.Duration)
+	default:
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ Invalid step in reward flow.", nil)
+	}
+}
+
+// rewardStep1 shows child selection
+func (b *Bot) rewardStep1(ctx context.Context, message *tgbotapi.Message) error {
+	// Get children list
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+	}
+
+	if len(children) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ No children configured. Add children first using the API.", nil)
+	}
+
+	text := "🎁 *Grant Reward*\n\n👶 Step 1/2: Select child"
+	keyboard := BuildChildrenButtons(children, "reward", 1)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// rewardStep2 shows reward duration selection
+func (b *Bot) rewardStep2(ctx context.Context, message *tgbotapi.Message, childIndex int) error {
+	text := "🎁 *Grant Reward*\n\n⏱ Step 2/2: Select bonus minutes"
+	keyboard := BuildRewardDurationButtons(childIndex)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// grantReward grants the reward to the child
+func (b *Bot) grantReward(ctx context.Context, message *tgbotapi.Message, childID string, minutes int) error {
+	// Get child info for formatting
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	var childName string
+	for _, child := range children {
+		if child.ID == childID {
+			childName = child.Name
+			break
+		}
+	}
+
+	// Grant reward
+	response, err := b.client.GrantReward(ctx, childID, minutes)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	text := FormatRewardGranted(childName, response)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
+}
+
 // stopSession stops an active session and returns remaining time to children
 func (b *Bot) stopSession(ctx context.Context, message *tgbotapi.Message, sessionID string) error {
 	// Get session details before stopping (to calculate returned time)

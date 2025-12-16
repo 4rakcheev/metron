@@ -319,6 +319,22 @@ func FormatSessionStopped(session *Session, childrenMap map[string]Child) string
 	return sb.String()
 }
 
+// FormatRewardGranted formats a success message for granting a reward
+func FormatRewardGranted(childName string, response *GrantRewardResponse) string {
+	var sb strings.Builder
+
+	emoji := getChildEmoji(childName)
+
+	sb.WriteString("✅ *Reward Granted!*\n\n")
+	sb.WriteString(fmt.Sprintf("%s *%s*\n\n", emoji, childName))
+	sb.WriteString(fmt.Sprintf("🎁 Bonus added: +%d minutes\n", response.MinutesGranted))
+	sb.WriteString(fmt.Sprintf("📊 Total rewards today: %d minutes\n", response.TodayRewardGranted))
+	sb.WriteString(fmt.Sprintf("⏱ Remaining time: %d minutes\n", response.TodayRemaining))
+	sb.WriteString(fmt.Sprintf("📏 Daily limit: %d minutes\n", response.TodayLimit))
+
+	return sb.String()
+}
+
 // FormatError formats an error message
 func FormatError(err error) string {
 	return fmt.Sprintf("❌ *Error*\n\n%s", err.Error())

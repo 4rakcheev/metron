@@ -391,3 +391,42 @@ func BuildQuickActionsButtons() tgbotapi.InlineKeyboardMarkup {
 		),
 	)
 }
+
+// BuildRewardDurationButtons creates buttons for selecting reward duration
+func BuildRewardDurationButtons(childIndex int) tgbotapi.InlineKeyboardMarkup {
+	durations := []int{15, 30, 60}
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	// Create one row with all three reward options
+	row := []tgbotapi.InlineKeyboardButton{}
+
+	for _, duration := range durations {
+		callback := MarshalCallback(CallbackData{
+			Action:     "reward",
+			Step:       2,
+			ChildIndex: childIndex,
+			Duration:   duration,
+		})
+
+		label := fmt.Sprintf("+%d min", duration)
+		btn := tgbotapi.NewInlineKeyboardButtonData(label, callback)
+		row = append(row, btn)
+	}
+
+	rows = append(rows, row)
+
+	// Back and Cancel buttons
+	backBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"◀️ Back",
+		MarshalCallback(CallbackData{Action: "reward", Step: 0}),
+	)
+
+	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"❌ Cancel",
+		MarshalCallback(CallbackData{Action: "cancel"}),
+	)
+
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{backBtn, cancelBtn})
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}

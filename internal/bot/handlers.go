@@ -18,6 +18,7 @@ I help you manage your children's screen time across all devices.
 ➕ /newsession - Start a new screen time session
 ⏱ /extend - Extend an active session
 🛑 /stop - Stop an active session early
+🎁 /reward - Grant bonus time to a child
 👶 /children - List all children
 📺 /devices - List available devices
 
@@ -159,6 +160,25 @@ func (b *Bot) handleStop(ctx context.Context, message *tgbotapi.Message) error {
 	text += "Select a session to stop:"
 
 	keyboard := BuildSessionsButtons(sessions, "stop")
+
+	return b.sendMessage(message.Chat.ID, text, keyboard)
+}
+
+// handleReward handles the /reward command - allows granting reward minutes to children
+func (b *Bot) handleReward(ctx context.Context, message *tgbotapi.Message) error {
+	// Get children list
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	if len(children) == 0 {
+		return b.sendMessage(message.Chat.ID,
+			"❌ No children configured. Please add children first.", BuildQuickActionsButtons())
+	}
+
+	text := "🎁 *Grant Reward*\n\n👶 Step 1/2: Select child"
+	keyboard := BuildChildrenButtons(children, "reward", 1)
 
 	return b.sendMessage(message.Chat.ID, text, keyboard)
 }

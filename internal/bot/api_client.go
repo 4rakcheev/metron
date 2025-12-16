@@ -206,6 +206,30 @@ func (a *MetronAPI) AddChildrenToSession(ctx context.Context, sessionID string, 
 	return &session, nil
 }
 
+// GrantRewardResponse represents the response from granting a reward
+type GrantRewardResponse struct {
+	Message            string `json:"message"`
+	MinutesGranted     int    `json:"minutes_granted"`
+	TodayRewardGranted int    `json:"today_reward_granted"`
+	TodayRemaining     int    `json:"today_remaining"`
+	TodayLimit         int    `json:"today_limit"`
+}
+
+// GrantReward grants reward minutes to a child
+func (a *MetronAPI) GrantReward(ctx context.Context, childID string, minutes int) (*GrantRewardResponse, error) {
+	req := struct {
+		Minutes int `json:"minutes"`
+	}{
+		Minutes: minutes,
+	}
+
+	var response GrantRewardResponse
+	if err := a.doRequest(ctx, "POST", "/v1/children/"+childID+"/rewards", req, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 // doRequest performs an HTTP request to the Metron API
 func (a *MetronAPI) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	url := a.baseURL + path

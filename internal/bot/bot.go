@@ -125,6 +125,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *tgbotapi.Message) erro
 		return b.handleExtend(ctx, message)
 	case "stop":
 		return b.handleStop(ctx, message)
+	case "reward":
+		return b.handleReward(ctx, message)
 	case "children":
 		return b.handleChildren(ctx, message)
 	case "devices":
@@ -194,6 +196,8 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		return b.handleExtendFlow(ctx, callback.Message, data)
 	case "stop":
 		return b.handleStopFlow(ctx, callback.Message, data)
+	case "reward":
+		return b.handleRewardFlow(ctx, callback.Message, data)
 	case "manage":
 		return b.handleManageFlow(ctx, callback.Message, data)
 	default:
