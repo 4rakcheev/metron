@@ -135,11 +135,15 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 			return nil, fmt.Errorf("failed to get daily usage for child %s: %w", childID, err)
 		}
 
-		remainingMinutes := dailyLimit - usage.MinutesUsed
+		// Include granted rewards in available time calculation
+		totalAvailable := dailyLimit + usage.RewardMinutesGranted
+		remainingMinutes := totalAvailable - usage.MinutesUsed
 		m.logger.Debug("Checking child time availability",
 			"child_id", childID,
 			"child_name", child.Name,
 			"daily_limit", dailyLimit,
+			"reward_granted", usage.RewardMinutesGranted,
+			"total_available", totalAvailable,
 			"used", usage.MinutesUsed,
 			"remaining", remainingMinutes,
 			"requested", durationMinutes)
@@ -307,13 +311,17 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 
 		// Calculate time already consumed in this session
 		elapsed := int(time.Since(session.StartTime).Minutes())
-		remainingToday := dailyLimit - usage.MinutesUsed - elapsed
+		// Include granted rewards in available time calculation
+		totalAvailable := dailyLimit + usage.RewardMinutesGranted
+		remainingToday := totalAvailable - usage.MinutesUsed - elapsed
 
 		m.logger.Debug("Checking child time availability for extension",
 			"session_id", sessionID,
 			"child_id", childID,
 			"child_name", child.Name,
 			"daily_limit", dailyLimit,
+			"reward_granted", usage.RewardMinutesGranted,
+			"total_available", totalAvailable,
 			"used", usage.MinutesUsed,
 			"elapsed_in_session", elapsed,
 			"remaining_today", remainingToday,
@@ -566,15 +574,18 @@ func (m *SessionManager) AddChildrenToSession(ctx context.Context, sessionID str
 			return nil, fmt.Errorf("failed to get daily usage for child %s: %w", childID, err)
 		}
 
-		// Calculate remaining time
+		// Calculate remaining time (include granted rewards)
 		dailyLimit := child.GetDailyLimit(today)
-		remaining := dailyLimit - usage.MinutesUsed
+		totalAvailable := dailyLimit + usage.RewardMinutesGranted
+		remaining := totalAvailable - usage.MinutesUsed
 
 		m.logger.Debug("Child time availability",
 			"session_id", sessionID,
 			"child_id", childID,
 			"child_name", child.Name,
 			"daily_limit", dailyLimit,
+			"reward_granted", usage.RewardMinutesGranted,
+			"total_available", totalAvailable,
 			"used", usage.MinutesUsed,
 			"remaining", remaining,
 			"elapsed", elapsed)
