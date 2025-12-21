@@ -507,9 +507,14 @@ func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {
 	// Try to extend by 15 minutes (would exceed daily limit)
 	// Current usage: 40 (stored) + 8 (elapsed) = 48, limit 60, remaining 12
 	// Extension request: 15 minutes (exceeds remaining 12)
-	_, err = manager.ExtendSession(context.Background(), session.ID, 15)
-	assert.Error(t, err)
-	assert.ErrorIs(t, err, ErrInsufficientTime)
+	// Expected behavior: Extension should be capped to available 12 minutes
+	extendedSession, err := manager.ExtendSession(context.Background(), session.ID, 15)
+	assert.NoError(t, err, "Extension should succeed but be capped to available time")
+	assert.NotNil(t, extendedSession)
+
+	// Session duration should be increased by 12 (capped), not 15 (requested)
+	// Original duration: 10, expected after extension: 10 + 12 = 22
+	assert.Equal(t, 22, extendedSession.ExpectedDuration, "Extension should be capped to remaining 12 minutes")
 }
 
 func TestSessionManager_StopSession(t *testing.T) {

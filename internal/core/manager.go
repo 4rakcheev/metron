@@ -287,8 +287,11 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		"current_duration", session.ExpectedDuration,
 		"elapsed", int(time.Since(session.StartTime).Minutes()))
 
-	// Validate children have sufficient time
+	// Calculate maximum extension allowed based on children's remaining time
+	// Cap the extension to what's actually available instead of rejecting it
 	today := time.Now().In(m.timezone)
+	maxExtension := additionalMinutes // Start with requested amount
+
 	for _, childID := range session.ChildIDs {
 		child, err := m.storage.GetChild(ctx, childID)
 		if err != nil {
@@ -327,16 +330,33 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 			"remaining_today", remainingToday,
 			"requested", additionalMinutes)
 
-		if remainingToday < additionalMinutes {
-			m.logger.Warn("Insufficient time for extension",
+		// Cap extension to this child's remaining time
+		if remainingToday < maxExtension {
+			m.logger.Info("Capping extension to child's available time",
 				"session_id", sessionID,
 				"child_id", childID,
 				"child_name", child.Name,
+				"requested", additionalMinutes,
 				"remaining", remainingToday,
-				"requested", additionalMinutes)
-			return nil, fmt.Errorf("%w: child %s would exceed daily limit", ErrInsufficientTime, child.Name)
+				"capped_to", remainingToday)
+			maxExtension = remainingToday
 		}
 	}
+
+	// If no time available at all, return error
+	if maxExtension <= 0 {
+		m.logger.Warn("No time available for any child in session",
+			"session_id", sessionID,
+			"requested", additionalMinutes)
+		return nil, ErrInsufficientTime
+	}
+
+	// Use the capped extension amount
+	actualExtension := maxExtension
+	m.logger.Info("Extension amount determined",
+		"session_id", sessionID,
+		"requested", additionalMinutes,
+		"actual", actualExtension)
 
 	// Look up device to get driver name
 	device, err := m.deviceRegistry.Get(session.DeviceID)
@@ -365,9 +385,10 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 	}); ok {
 		m.logger.Debug("Calling driver ExtendSession method",
 			"session_id", sessionID,
-			"driver", driver.Name())
+			"driver", driver.Name(),
+			"extension_minutes", actualExtension)
 
-		if err := extendable.ExtendSession(ctx, session, additionalMinutes); err != nil {
+		if err := extendable.ExtendSession(ctx, session, actualExtension); err != nil {
 			m.logger.Error("Driver failed to extend session",
 				"session_id", sessionID,
 				"driver", driver.Name(),
@@ -379,8 +400,8 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 	// Calculate values before extension for logging
 	oldExpectedDuration := session.ExpectedDuration
 
-	// Extend session
-	session.ExpectedDuration += additionalMinutes
+	// Extend session by the actual (possibly capped) amount
+	session.ExpectedDuration += actualExtension
 
 	// Reset warning state so a new warning can be sent when time crosses 5 minutes again
 	session.WarningSentAt = nil
@@ -389,7 +410,8 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		"session_id", sessionID,
 		"old_duration", oldExpectedDuration,
 		"new_duration", session.ExpectedDuration,
-		"additional_minutes", additionalMinutes)
+		"requested_minutes", additionalMinutes,
+		"actual_minutes", actualExtension)
 
 	if err := m.storage.UpdateSession(ctx, session); err != nil {
 		m.logger.Error("Failed to persist session extension",
@@ -402,7 +424,9 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		"session_id", sessionID,
 		"old_duration", oldExpectedDuration,
 		"new_duration", session.ExpectedDuration,
-		"additional_minutes", additionalMinutes)
+		"requested_minutes", additionalMinutes,
+		"actual_minutes", actualExtension,
+		"was_capped", actualExtension < additionalMinutes)
 
 	return session, nil
 }
