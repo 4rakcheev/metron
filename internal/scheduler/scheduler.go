@@ -13,7 +13,7 @@ type Storage interface {
 	GetSession(ctx context.Context, id string) (*core.Session, error)
 	UpdateSession(ctx context.Context, session *core.Session) error
 	GetChild(ctx context.Context, id string) (*core.Child, error)
-	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
+	IncrementDailyUsageSummary(ctx context.Context, childID string, date time.Time, minutes int) error
 }
 
 // Device interface for accessing device information
@@ -244,13 +244,13 @@ func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error
 		return err
 	}
 
-	// Update daily usage for all children
+	// Update daily usage summary for all children
 	elapsed := int(time.Since(session.StartTime).Minutes())
 	today := time.Now().In(s.timezone)
 
 	for _, childID := range session.ChildIDs {
-		if err := s.storage.IncrementDailyUsage(ctx, childID, today, elapsed); err != nil {
-			s.logger.Error("Failed to update daily usage", "child_id", childID, "error", err)
+		if err := s.storage.IncrementDailyUsageSummary(ctx, childID, today, elapsed); err != nil {
+			s.logger.Error("Failed to update daily usage summary", "child_id", childID, "error", err)
 		}
 	}
 

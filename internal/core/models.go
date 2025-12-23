@@ -165,3 +165,105 @@ func (s *Session) CalculateRemainingMinutes() int {
 
 	return remaining
 }
+
+// ============================================================================
+// NEW MODELS - Refactored Architecture
+// ============================================================================
+
+// DailyTimeAllocation represents time allocated to a child for a specific day
+// This model answers: "What time budget does this child have TODAY?"
+// Responsibilities:
+// - Stores base limit (from child's schedule)
+// - Stores bonus allocation (rewards)
+// - NO calculation logic - pure data storage
+// Note: Bonus consumption is calculated from sessions, not stored separately
+type DailyTimeAllocation struct {
+	ChildID      string    // Foreign key to children table
+	Date         time.Time // Normalized to start of day in timezone
+	BaseLimit    int       // Weekday/weekend limit for this day
+	BonusGranted int       // Total bonus minutes granted for this day
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// SessionUsageRecord represents a screen-time usage session
+// This model answers: "What happened in this session?"
+// Responsibilities:
+// - Stores usage metadata (who, what device, when)
+// - Stores time tracking (expected and actual duration)
+// - NO calculation logic - pure data storage
+type SessionUsageRecord struct {
+	ID               string
+	DeviceType       string // "tv", "ps5", "ipad", etc.
+	DeviceID         string // specific device identifier
+	ChildIDs         []string
+	StartTime        time.Time
+	ExpectedDuration int   // Original planned duration in minutes
+	ActualDuration   *int  // Actual duration in minutes (set when completed)
+	Status           SessionStatus
+	LastBreakAt      *time.Time
+	BreakEndsAt      *time.Time
+	WarningSentAt    *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+// IsActive returns true if the session is currently active
+func (s *SessionUsageRecord) IsActive() bool {
+	return s.Status == SessionStatusActive
+}
+
+// IsInBreak returns true if the session is currently in a mandatory break
+func (s *SessionUsageRecord) IsInBreak() bool {
+	if s.BreakEndsAt == nil {
+		return false
+	}
+	return time.Now().Before(*s.BreakEndsAt)
+}
+
+// NeedsBreak checks if a break is needed based on the break rule and last break time
+func (s *SessionUsageRecord) NeedsBreak(breakRule *BreakRule) bool {
+	if breakRule == nil {
+		return false
+	}
+
+	var timeSince time.Time
+	if s.LastBreakAt != nil {
+		timeSince = *s.LastBreakAt
+	} else {
+		timeSince = s.StartTime
+	}
+
+	minutesSince := int(time.Since(timeSince).Minutes())
+	return minutesSince >= breakRule.BreakAfterMinutes
+}
+
+// Validate validates a SessionUsageRecord
+func (s *SessionUsageRecord) Validate() error {
+	if s.DeviceType == "" {
+		return ErrInvalidDeviceType
+	}
+	if len(s.ChildIDs) == 0 {
+		return ErrNoChildren
+	}
+	if s.ExpectedDuration <= 0 {
+		return ErrInvalidDuration
+	}
+	return nil
+}
+
+// DailyUsageSummary aggregates completed session usage for a day
+// This model answers: "How much time was consumed from completed sessions?"
+// Responsibilities:
+// - Caches total minutes from completed sessions
+// - Counts completed sessions
+// - NO calculation logic - pure aggregated data storage
+// Note: Active session time is calculated dynamically by TimeCalculationService
+type DailyUsageSummary struct {
+	ChildID      string
+	Date         time.Time // Normalized to start of day
+	MinutesUsed  int       // Minutes from completed sessions (active sessions added by calculator)
+	SessionCount int       // Number of completed sessions
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}

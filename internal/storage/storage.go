@@ -25,12 +25,22 @@ type Storage interface {
 	UpdateSession(ctx context.Context, session *core.Session) error
 	DeleteSession(ctx context.Context, id string) error
 
-	// Daily Usage
-	GetDailyUsage(ctx context.Context, childID string, date time.Time) (*core.DailyUsage, error)
-	UpdateDailyUsage(ctx context.Context, usage *core.DailyUsage) error
-	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
-	GrantRewardMinutes(ctx context.Context, childID string, date time.Time, minutes int) error
-	IncrementSessionCount(ctx context.Context, childID string, date time.Time) error
+	// ============================================================================
+	// Storage Methods - Refactored Architecture
+	// ============================================================================
+
+	// Daily Time Allocation - stores what time is available
+	GetDailyAllocation(ctx context.Context, childID string, date time.Time) (*core.DailyTimeAllocation, error)
+	CreateDailyAllocation(ctx context.Context, allocation *core.DailyTimeAllocation) error
+	UpdateDailyAllocation(ctx context.Context, allocation *core.DailyTimeAllocation) error
+
+	// Daily Usage Summary - stores what time was consumed
+	GetDailyUsageSummary(ctx context.Context, childID string, date time.Time) (*core.DailyUsageSummary, error)
+	IncrementDailyUsageSummary(ctx context.Context, childID string, date time.Time, minutes int) error
+	IncrementSessionCountSummary(ctx context.Context, childID string, date time.Time) error
+
+	// Session Usage Records - stores session history
+	ListActiveSessionRecords(ctx context.Context) ([]*core.SessionUsageRecord, error)
 
 	// Lifecycle
 	Close() error

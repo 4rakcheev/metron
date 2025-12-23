@@ -216,6 +216,87 @@ func (m *mockStorage) ListSessionsByChild(ctx context.Context, childID string) (
 	return sessions, nil
 }
 
+// TimeCalculationStorage interface methods
+func (m *mockStorage) GetDailyAllocation(ctx context.Context, childID string, date time.Time) (*DailyTimeAllocation, error) {
+	// For tests, we'll create a simple allocation on-demand
+	child, err := m.GetChild(ctx, childID)
+	if err != nil {
+		return nil, err
+	}
+	return &DailyTimeAllocation{
+		ChildID:      childID,
+		Date:         date,
+		BaseLimit:    child.GetDailyLimit(date),
+		BonusGranted: 0,
+	}, nil
+}
+
+func (m *mockStorage) CreateDailyAllocation(ctx context.Context, allocation *DailyTimeAllocation) error {
+	// No-op for tests
+	return nil
+}
+
+func (m *mockStorage) GetDailyUsageSummary(ctx context.Context, childID string, date time.Time) (*DailyUsageSummary, error) {
+	// Return summary based on old daily usage for compatibility
+	usage, err := m.GetDailyUsage(ctx, childID, date)
+	if err != nil {
+		return &DailyUsageSummary{
+			ChildID:      childID,
+			Date:         date,
+			MinutesUsed:  0,
+			SessionCount: 0,
+		}, nil
+	}
+	return &DailyUsageSummary{
+		ChildID:      childID,
+		Date:         date,
+		MinutesUsed:  usage.MinutesUsed,
+		SessionCount: usage.SessionCount,
+	}, nil
+}
+
+func (m *mockStorage) ListActiveSessionRecords(ctx context.Context) ([]*SessionUsageRecord, error) {
+	// Convert active sessions to session records
+	activeSessions, err := m.ListActiveSessions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	records := make([]*SessionUsageRecord, len(activeSessions))
+	for i, session := range activeSessions {
+		records[i] = &SessionUsageRecord{
+			ID:               session.ID,
+			DeviceType:       session.DeviceType,
+			DeviceID:         session.DeviceID,
+			ChildIDs:         session.ChildIDs,
+			StartTime:        session.StartTime,
+			ExpectedDuration: session.ExpectedDuration,
+			ActualDuration:   nil,
+			Status:           session.Status,
+			LastBreakAt:      session.LastBreakAt,
+			BreakEndsAt:      session.BreakEndsAt,
+			WarningSentAt:    session.WarningSentAt,
+			CreatedAt:        session.CreatedAt,
+			UpdatedAt:        session.UpdatedAt,
+		}
+	}
+	return records, nil
+}
+
+func (m *mockStorage) IncrementDailyUsageSummary(ctx context.Context, childID string, date time.Time, minutes int) error {
+	// Update old daily usage for compatibility
+	return m.IncrementDailyUsage(ctx, childID, date, minutes)
+}
+
+func (m *mockStorage) IncrementSessionCountSummary(ctx context.Context, childID string, date time.Time) error {
+	// Update old daily usage for compatibility
+	return m.IncrementSessionCount(ctx, childID, date)
+}
+
+func (m *mockStorage) UpdateDailyAllocation(ctx context.Context, allocation *DailyTimeAllocation) error {
+	// No-op for tests - allocation is managed by calculator
+	return nil
+}
+
 func (m *mockStorage) Close() error {
 	return nil
 }
@@ -318,7 +399,7 @@ func TestSessionManager_StartSession(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Create test child
 	child := &Child{
@@ -359,7 +440,7 @@ func TestSessionManager_StartSession_InsufficientTime(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Create test child with same limits for both weekday and weekend
 	child := &Child{
@@ -370,9 +451,9 @@ func TestSessionManager_StartSession_InsufficientTime(t *testing.T) {
 	}
 	storage.CreateChild(context.Background(), child)
 
-	// Set usage to 50 minutes
+	// Set usage to 60 minutes (all time used)
 	today := time.Now()
-	storage.IncrementDailyUsage(context.Background(), "child1", today, 50)
+	storage.IncrementDailyUsage(context.Background(), "child1", today, 60)
 
 	// Create mock driver and device
 	driver := &mockDriver{name: "aqara"}
@@ -380,7 +461,7 @@ func TestSessionManager_StartSession_InsufficientTime(t *testing.T) {
 	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
 	deviceRegistry.addDevice(device)
 
-	// Try to start session for 30 minutes (only 10 remaining)
+	// Try to start session when no time remaining
 	_, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 30)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, ErrInsufficientTime)
@@ -390,7 +471,7 @@ func TestSessionManager_StartSession_InvalidInputs(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Setup valid device
 	driver := &mockDriver{name: "aqara"}
@@ -441,7 +522,7 @@ func TestSessionManager_ExtendSession(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Create test child
 	child := &Child{
@@ -475,7 +556,7 @@ func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Create test child with limited time (same for weekday and weekend)
 	child := &Child{
@@ -521,7 +602,7 @@ func TestSessionManager_StopSession(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Create test child
 	child := &Child{
@@ -569,7 +650,7 @@ func TestSessionManager_StopSession_NotActive(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Create mock driver and device
 	driver := &mockDriver{name: "aqara"}
@@ -598,7 +679,7 @@ func TestSessionManager_GetChildStatus(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Create test child
 	child := &Child{
@@ -633,7 +714,7 @@ func TestSessionManager_MultipleChildren(t *testing.T) {
 	storage := newMockStorage()
 	deviceRegistry := newMockDeviceRegistry()
 	driverRegistry := newMockDriverRegistry()
-	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil)
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil)
 
 	// Create two children
 	child1 := &Child{

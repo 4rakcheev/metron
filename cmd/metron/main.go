@@ -240,9 +240,13 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	schedulerLogger := slog.Default().With("component", "scheduler")
 	apiLogger := slog.Default().With("component", "api")
 
+	// Initialize time calculation service
+	logger.Info("Initializing time calculation service")
+	calculator := core.NewTimeCalculationService(db, timezone)
+
 	// Initialize session manager
 	logger.Info("Initializing session manager")
-	sessionManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, timezone, managerLogger)
+	sessionManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, calculator, timezone, managerLogger)
 
 	// Start scheduler
 	logger.Info("Starting session scheduler", "interval", "1m")

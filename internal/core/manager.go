@@ -21,10 +21,15 @@ type Storage interface {
 	UpdateSession(ctx context.Context, session *Session) error
 	DeleteSession(ctx context.Context, id string) error
 
-	GetDailyUsage(ctx context.Context, childID string, date time.Time) (*DailyUsage, error)
-	IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error
-	GrantRewardMinutes(ctx context.Context, childID string, date time.Time, minutes int) error
-	IncrementSessionCount(ctx context.Context, childID string, date time.Time) error
+	// Daily Time Allocation
+	GetDailyAllocation(ctx context.Context, childID string, date time.Time) (*DailyTimeAllocation, error)
+	CreateDailyAllocation(ctx context.Context, allocation *DailyTimeAllocation) error
+	UpdateDailyAllocation(ctx context.Context, allocation *DailyTimeAllocation) error
+
+	// Daily Usage Summary
+	GetDailyUsageSummary(ctx context.Context, childID string, date time.Time) (*DailyUsageSummary, error)
+	IncrementDailyUsageSummary(ctx context.Context, childID string, date time.Time, minutes int) error
+	IncrementSessionCountSummary(ctx context.Context, childID string, date time.Time) error
 }
 
 // Device interface for accessing device information
@@ -56,22 +61,31 @@ type SessionManager struct {
 	storage        Storage
 	deviceRegistry DeviceRegistry
 	driverRegistry DriverRegistry
+	calculator     *TimeCalculationService
 	timezone       *time.Location
 	logger         *slog.Logger
 }
 
 // NewSessionManager creates a new session manager
-func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, timezone *time.Location, logger *slog.Logger) *SessionManager {
+func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, calculator *TimeCalculationService, timezone *time.Location, logger *slog.Logger) *SessionManager {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if timezone == nil {
 		timezone = time.UTC
 	}
+	if calculator == nil {
+		// Create a default calculator
+		// Note: This requires storage to implement TimeCalculationStorage interface
+		// In production, calculator should be explicitly provided
+		calculator = NewTimeCalculationService(storage.(TimeCalculationStorage), timezone)
+	}
+
 	return &SessionManager{
 		storage:        storage,
 		deviceRegistry: deviceRegistry,
 		driverRegistry: driverRegistry,
+		calculator:     calculator,
 		timezone:       timezone,
 		logger:         logger,
 	}
@@ -113,9 +127,11 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		"device_type", device.GetType(),
 		"driver", device.GetDriver())
 
-	// Validate children exist and have sufficient time
+	// Validate children exist and check time availability
 	now := time.Now()
 	today := now.In(m.timezone)
+	minRemainingTime := durationMinutes // Start with requested duration
+
 	for _, childID := range childIDs {
 		child, err := m.storage.GetChild(ctx, childID)
 		if err != nil {
@@ -125,37 +141,50 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
 		}
 
-		// Check daily limit
-		dailyLimit := child.GetDailyLimit(today)
-		usage, err := m.storage.GetDailyUsage(ctx, childID, today)
+		// Use calculator to check time availability
+		remaining, err := m.calculator.GetRemainingTime(ctx, childID, today)
 		if err != nil {
-			m.logger.Error("Failed to get daily usage",
+			m.logger.Error("Failed to get remaining time",
 				"child_id", childID,
 				"error", err)
-			return nil, fmt.Errorf("failed to get daily usage for child %s: %w", childID, err)
+			return nil, fmt.Errorf("failed to get remaining time for child %s: %w", childID, err)
 		}
 
-		// Include granted rewards in available time calculation
-		totalAvailable := dailyLimit + usage.RewardMinutesGranted
-		remainingMinutes := totalAvailable - usage.MinutesUsed
 		m.logger.Debug("Checking child time availability",
 			"child_id", childID,
 			"child_name", child.Name,
-			"daily_limit", dailyLimit,
-			"reward_granted", usage.RewardMinutesGranted,
-			"total_available", totalAvailable,
-			"used", usage.MinutesUsed,
-			"remaining", remainingMinutes,
+			"daily_limit", remaining.Available.BaseLimit,
+			"reward_granted", remaining.Available.BonusGranted,
+			"total_available", remaining.Available.TotalAvailable,
+			"used", remaining.Consumed.TotalConsumed,
+			"remaining", remaining.RemainingTotal,
 			"requested", durationMinutes)
 
-		if remainingMinutes < durationMinutes {
-			m.logger.Warn("Insufficient time for child",
+		// If child has no time left, reject the session
+		if remaining.RemainingTotal == 0 {
+			m.logger.Warn("No time remaining for child",
+				"child_id", childID,
+				"child_name", child.Name)
+			return nil, fmt.Errorf("%w: child %s has no time remaining", ErrInsufficientTime, child.Name)
+		}
+
+		// Track minimum remaining time to cap the session
+		if remaining.RemainingTotal < minRemainingTime {
+			minRemainingTime = remaining.RemainingTotal
+			m.logger.Debug("Capping session duration to child's remaining time",
 				"child_id", childID,
 				"child_name", child.Name,
-				"remaining", remainingMinutes,
-				"requested", durationMinutes)
-			return nil, fmt.Errorf("%w: child %s has only %d minutes remaining", ErrInsufficientTime, child.Name, remainingMinutes)
+				"remaining", remaining.RemainingTotal,
+				"original_duration", durationMinutes)
 		}
+	}
+
+	// Cap the duration to the minimum remaining time
+	actualDuration := minRemainingTime
+	if actualDuration < durationMinutes {
+		m.logger.Info("Session duration capped to available time",
+			"requested", durationMinutes,
+			"actual", actualDuration)
 	}
 
 	// Create session
@@ -165,7 +194,7 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		DeviceID:         deviceID,
 		ChildIDs:         childIDs,
 		StartTime:        time.Now(),
-		ExpectedDuration: durationMinutes,
+		ExpectedDuration: actualDuration,
 		Status:           SessionStatusActive,
 	}
 
@@ -235,9 +264,9 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 
 	// Increment session count for all children in this session
 	for _, childID := range childIDs {
-		if err := m.storage.IncrementSessionCount(ctx, childID, today); err != nil {
+		if err := m.storage.IncrementSessionCountSummary(ctx, childID, today); err != nil {
 			// Log but don't fail - session is already created
-			m.logger.Warn("Failed to increment session count",
+			m.logger.Warn("Failed to increment session count summary",
 				"session_id", session.ID,
 				"child_id", childID,
 				"error", err)
@@ -302,44 +331,37 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
 		}
 
-		dailyLimit := child.GetDailyLimit(today)
-		usage, err := m.storage.GetDailyUsage(ctx, childID, today)
+		// Use calculator to get accurate remaining time (includes all active sessions)
+		remaining, err := m.calculator.GetRemainingTime(ctx, childID, today)
 		if err != nil {
-			m.logger.Error("Failed to get daily usage for extension validation",
+			m.logger.Error("Failed to get remaining time for extension validation",
 				"session_id", sessionID,
 				"child_id", childID,
 				"error", err)
-			return nil, fmt.Errorf("failed to get daily usage for child %s: %w", childID, err)
+			return nil, fmt.Errorf("failed to get remaining time for child %s: %w", childID, err)
 		}
-
-		// Calculate time already consumed in this session
-		elapsed := int(time.Since(session.StartTime).Minutes())
-		// Include granted rewards in available time calculation
-		totalAvailable := dailyLimit + usage.RewardMinutesGranted
-		remainingToday := totalAvailable - usage.MinutesUsed - elapsed
 
 		m.logger.Debug("Checking child time availability for extension",
 			"session_id", sessionID,
 			"child_id", childID,
 			"child_name", child.Name,
-			"daily_limit", dailyLimit,
-			"reward_granted", usage.RewardMinutesGranted,
-			"total_available", totalAvailable,
-			"used", usage.MinutesUsed,
-			"elapsed_in_session", elapsed,
-			"remaining_today", remainingToday,
+			"daily_limit", remaining.Available.BaseLimit,
+			"reward_granted", remaining.Available.BonusGranted,
+			"total_available", remaining.Available.TotalAvailable,
+			"total_consumed", remaining.Consumed.TotalConsumed,
+			"remaining_today", remaining.RemainingTotal,
 			"requested", additionalMinutes)
 
 		// Cap extension to this child's remaining time
-		if remainingToday < maxExtension {
+		if remaining.RemainingTotal < maxExtension {
 			m.logger.Info("Capping extension to child's available time",
 				"session_id", sessionID,
 				"child_id", childID,
 				"child_name", child.Name,
 				"requested", additionalMinutes,
-				"remaining", remainingToday,
-				"capped_to", remainingToday)
-			maxExtension = remainingToday
+				"remaining", remaining.RemainingTotal,
+				"capped_to", remaining.RemainingTotal)
+			maxExtension = remaining.RemainingTotal
 		}
 	}
 
@@ -504,21 +526,21 @@ func (m *SessionManager) StopSession(ctx context.Context, sessionID string) erro
 		return fmt.Errorf("failed to update session: %w", err)
 	}
 
-	// Update daily usage for all children
+	// Update daily usage summary for all children
 	today := time.Now().In(m.timezone)
 
 	for _, childID := range session.ChildIDs {
-		m.logger.Debug("Updating daily usage for child",
+		m.logger.Debug("Updating daily usage summary for child",
 			"session_id", sessionID,
 			"child_id", childID,
 			"elapsed_minutes", elapsed)
 
-		if err := m.storage.IncrementDailyUsage(ctx, childID, today, elapsed); err != nil {
-			m.logger.Error("Failed to update daily usage",
+		if err := m.storage.IncrementDailyUsageSummary(ctx, childID, today, elapsed); err != nil {
+			m.logger.Error("Failed to update daily usage summary",
 				"session_id", sessionID,
 				"child_id", childID,
 				"error", err)
-			return fmt.Errorf("failed to update daily usage for child %s: %w", childID, err)
+			return fmt.Errorf("failed to update daily usage summary for child %s: %w", childID, err)
 		}
 	}
 
@@ -588,59 +610,64 @@ func (m *SessionManager) AddChildrenToSession(ctx context.Context, sessionID str
 			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
 		}
 
-		// Get daily usage
-		usage, err := m.storage.GetDailyUsage(ctx, childID, today)
+		// Use calculator to get accurate remaining time (includes all active sessions)
+		remainingTime, err := m.calculator.GetRemainingTime(ctx, childID, today)
 		if err != nil {
-			m.logger.Error("Failed to get daily usage",
+			m.logger.Error("Failed to get remaining time",
 				"session_id", sessionID,
 				"child_id", childID,
 				"error", err)
-			return nil, fmt.Errorf("failed to get daily usage for child %s: %w", childID, err)
+			return nil, fmt.Errorf("failed to get remaining time for child %s: %w", childID, err)
 		}
-
-		// Calculate remaining time (include granted rewards)
-		dailyLimit := child.GetDailyLimit(today)
-		totalAvailable := dailyLimit + usage.RewardMinutesGranted
-		remaining := totalAvailable - usage.MinutesUsed
 
 		m.logger.Debug("Child time availability",
 			"session_id", sessionID,
 			"child_id", childID,
 			"child_name", child.Name,
-			"daily_limit", dailyLimit,
-			"reward_granted", usage.RewardMinutesGranted,
-			"total_available", totalAvailable,
-			"used", usage.MinutesUsed,
-			"remaining", remaining,
+			"daily_limit", remainingTime.Available.BaseLimit,
+			"reward_granted", remainingTime.Available.BonusGranted,
+			"total_available", remainingTime.Available.TotalAvailable,
+			"total_consumed", remainingTime.Consumed.TotalConsumed,
+			"remaining", remainingTime.RemainingTotal,
 			"elapsed", elapsed)
 
-		// Check if child has enough time for elapsed minutes
-		if remaining < elapsed {
-			m.logger.Warn("Child has insufficient time for elapsed session time",
+		// Check if child has any time left
+		if remainingTime.RemainingTotal == 0 {
+			m.logger.Warn("Child has no time remaining",
+				"session_id", sessionID,
+				"child_id", childID,
+				"child_name", child.Name)
+			return nil, fmt.Errorf("child %s has no time remaining", child.Name)
+		}
+
+		// Cap the charged time to what the child has available
+		chargedTime := elapsed
+		if remainingTime.RemainingTotal < elapsed {
+			chargedTime = remainingTime.RemainingTotal
+			m.logger.Info("Capping charged time to child's remaining time",
 				"session_id", sessionID,
 				"child_id", childID,
 				"child_name", child.Name,
-				"remaining", remaining,
-				"elapsed", elapsed)
-			return nil, fmt.Errorf("child %s has insufficient time (has %d min, needs %d min for elapsed time)",
-				child.Name, remaining, elapsed)
+				"remaining", remainingTime.RemainingTotal,
+				"elapsed", elapsed,
+				"charged", chargedTime)
 		}
 
-		// Update daily usage for elapsed time
-		if elapsed > 0 {
-			if err := m.storage.IncrementDailyUsage(ctx, childID, today, elapsed); err != nil {
-				m.logger.Error("Failed to update daily usage",
+		// Update daily usage summary for charged time
+		if chargedTime > 0 {
+			if err := m.storage.IncrementDailyUsageSummary(ctx, childID, today, chargedTime); err != nil {
+				m.logger.Error("Failed to update daily usage summary",
 					"session_id", sessionID,
 					"child_id", childID,
 					"error", err)
-				return nil, fmt.Errorf("failed to update daily usage for child %s: %w", childID, err)
+				return nil, fmt.Errorf("failed to update daily usage summary for child %s: %w", childID, err)
 			}
 		}
 
 		// Increment session count for this child
-		if err := m.storage.IncrementSessionCount(ctx, childID, today); err != nil {
+		if err := m.storage.IncrementSessionCountSummary(ctx, childID, today); err != nil {
 			// Log but don't fail
-			m.logger.Warn("Failed to increment session count",
+			m.logger.Warn("Failed to increment session count summary",
 				"session_id", sessionID,
 				"child_id", childID,
 				"error", err)
@@ -706,14 +733,39 @@ func (m *SessionManager) GrantRewardMinutes(ctx context.Context, childID string,
 		return err
 	}
 
-	// Grant reward for today
+	// Grant reward for today using new allocation system
 	today := time.Now().In(m.timezone)
-	if err := m.storage.GrantRewardMinutes(ctx, childID, today, minutes); err != nil {
-		m.logger.Error("Failed to grant reward minutes",
+
+	// Get or create allocation for today
+	allocation, err := m.calculator.GetAvailableTime(ctx, childID, today)
+	if err != nil {
+		m.logger.Error("Failed to get allocation for reward grant",
 			"child_id", childID,
-			"minutes", minutes,
 			"error", err)
-		return fmt.Errorf("failed to grant reward minutes: %w", err)
+		return fmt.Errorf("failed to get allocation: %w", err)
+	}
+
+	// Update the allocation with new bonus
+	normalizedDate := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, m.timezone)
+	newAllocation := &DailyTimeAllocation{
+		ChildID:      childID,
+		Date:         normalizedDate,
+		BaseLimit:    allocation.BaseLimit,
+		BonusGranted: allocation.BonusGranted + minutes,
+		UpdatedAt:    time.Now(),
+	}
+
+	// Try to update first, create if it doesn't exist
+	if err := m.storage.UpdateDailyAllocation(ctx, newAllocation); err != nil {
+		// If update fails, try to create
+		newAllocation.CreatedAt = time.Now()
+		if createErr := m.storage.CreateDailyAllocation(ctx, newAllocation); createErr != nil {
+			m.logger.Error("Failed to grant reward minutes",
+				"child_id", childID,
+				"minutes", minutes,
+				"error", createErr)
+			return fmt.Errorf("failed to grant reward minutes: %w", createErr)
+		}
 	}
 
 	m.logger.Info("Reward minutes granted successfully",
@@ -731,51 +783,27 @@ func (m *SessionManager) GetChildStatus(ctx context.Context, childID string) (*C
 	}
 
 	today := time.Now().In(m.timezone)
-	usage, err := m.storage.GetDailyUsage(ctx, childID, today)
+
+	// Use calculator for all time calculations
+	remaining, err := m.calculator.GetRemainingTime(ctx, childID, today)
 	if err != nil {
 		return nil, err
 	}
 
-	// Get active sessions to include their elapsed time
-	activeSessions, err := m.storage.ListActiveSessions(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	// Calculate elapsed time from active sessions for this child
-	activeMinutes := 0
-	for _, session := range activeSessions {
-		// Check if this session includes the child
-		for _, sessionChildID := range session.ChildIDs {
-			if sessionChildID == childID {
-				// Calculate elapsed time (clamped to expected duration)
-				elapsed := int(time.Since(session.StartTime).Minutes())
-				if elapsed > session.ExpectedDuration {
-					elapsed = session.ExpectedDuration
-				}
-				activeMinutes += elapsed
-				break
-			}
-		}
-	}
-
-	// Total used time = completed sessions + active sessions
-	totalUsed := usage.MinutesUsed + activeMinutes
-	dailyLimit := child.GetDailyLimit(today)
-	// Include granted rewards in available time
-	totalAvailable := dailyLimit + usage.RewardMinutesGranted
-	remaining := totalAvailable - totalUsed
-	if remaining < 0 {
-		remaining = 0
+	// Get session count from daily usage summary
+	summary, err := m.storage.GetDailyUsageSummary(ctx, childID, today)
+	sessionCount := 0
+	if err == nil {
+		sessionCount = summary.SessionCount
 	}
 
 	return &ChildStatus{
 		Child:              child,
-		TodayUsed:          totalUsed,
-		TodayRewardGranted: usage.RewardMinutesGranted,
-		TodayRemaining:     remaining,
-		TodayLimit:         dailyLimit,
-		SessionsToday:      usage.SessionCount,
+		TodayUsed:          remaining.Consumed.TotalConsumed,
+		TodayRewardGranted: remaining.Available.BonusGranted,
+		TodayRemaining:     remaining.RemainingTotal,
+		TodayLimit:         remaining.Available.BaseLimit,
+		SessionsToday:      sessionCount,
 	}, nil
 }
 

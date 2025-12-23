@@ -216,6 +216,68 @@ func (s *SQLiteStorage) runMigrations() error {
 		}
 	}
 
+	// Migration: Refactor to separate allocation and consumption concerns
+	// Drop old daily_usage table and create new tables
+	_, err = s.db.Exec(`
+		-- Drop old daily_usage table (replaced by new architecture)
+		DROP TABLE IF EXISTS daily_usage;
+
+		-- Create daily_time_allocations table
+		CREATE TABLE IF NOT EXISTS daily_time_allocations (
+			child_id TEXT NOT NULL,
+			date DATE NOT NULL,
+			base_limit INTEGER NOT NULL,
+			bonus_granted INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY (child_id, date),
+			FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+		);
+
+		-- Create daily_usage_summaries table
+		CREATE TABLE IF NOT EXISTS daily_usage_summaries (
+			child_id TEXT NOT NULL,
+			date DATE NOT NULL,
+			minutes_used INTEGER NOT NULL DEFAULT 0,
+			session_count INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY (child_id, date),
+			FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+		);
+
+		-- Create indexes for new tables
+		CREATE INDEX IF NOT EXISTS idx_daily_allocations_date ON daily_time_allocations(date);
+		CREATE INDEX IF NOT EXISTS idx_daily_usage_summaries_date ON daily_usage_summaries(date);
+
+		-- Recreate old daily_usage table for backwards compatibility with tests
+		-- This table is deprecated - new code uses daily_time_allocations and daily_usage_summaries
+		CREATE TABLE IF NOT EXISTS daily_usage (
+			child_id TEXT NOT NULL,
+			date DATE NOT NULL,
+			minutes_used INTEGER NOT NULL DEFAULT 0,
+			reward_minutes_granted INTEGER NOT NULL DEFAULT 0,
+			session_count INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			PRIMARY KEY (child_id, date),
+			FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+		);
+		CREATE INDEX IF NOT EXISTS idx_daily_usage_date ON daily_usage(date);
+	`)
+	if err != nil {
+		// Ignore if tables already exist
+	}
+
+	// Add actual_duration column to sessions table
+	_, err = s.db.Exec(`
+		ALTER TABLE sessions ADD COLUMN actual_duration INTEGER;
+	`)
+	// Ignore error if column already exists
+	if err != nil && err.Error() != "duplicate column name: actual_duration" {
+		// Column might already exist, which is fine
+	}
+
 	return nil
 }
 
@@ -645,6 +707,223 @@ func (s *SQLiteStorage) GrantRewardMinutes(ctx context.Context, childID string, 
 	`, childID, normalizedDate, minutes, now, now, minutes, now)
 
 	return err
+}
+
+// ============================================================================
+// NEW STORAGE METHODS - Refactored Architecture
+// ============================================================================
+
+// GetDailyAllocation retrieves the daily time allocation for a child
+func (s *SQLiteStorage) GetDailyAllocation(ctx context.Context, childID string, date time.Time) (*core.DailyTimeAllocation, error) {
+	normalizedDate := s.normalizeDate(date)
+
+	var allocation core.DailyTimeAllocation
+	err := s.db.QueryRowContext(ctx, `
+		SELECT child_id, date, base_limit, bonus_granted, created_at, updated_at
+		FROM daily_time_allocations WHERE child_id = ? AND date = ?
+	`, childID, normalizedDate).Scan(&allocation.ChildID, &allocation.Date, &allocation.BaseLimit,
+		&allocation.BonusGranted, &allocation.CreatedAt, &allocation.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, core.ErrAllocationNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &allocation, nil
+}
+
+// CreateDailyAllocation creates a new daily time allocation
+func (s *SQLiteStorage) CreateDailyAllocation(ctx context.Context, allocation *core.DailyTimeAllocation) error {
+	allocation.Date = s.normalizeDate(allocation.Date)
+	allocation.CreatedAt = time.Now()
+	allocation.UpdatedAt = time.Now()
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO daily_time_allocations (child_id, date, base_limit, bonus_granted, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, allocation.ChildID, allocation.Date, allocation.BaseLimit, allocation.BonusGranted, allocation.CreatedAt, allocation.UpdatedAt)
+
+	return err
+}
+
+// UpdateDailyAllocation updates an existing daily time allocation
+func (s *SQLiteStorage) UpdateDailyAllocation(ctx context.Context, allocation *core.DailyTimeAllocation) error {
+	allocation.Date = s.normalizeDate(allocation.Date)
+	allocation.UpdatedAt = time.Now()
+
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE daily_time_allocations
+		SET base_limit = ?, bonus_granted = ?, updated_at = ?
+		WHERE child_id = ? AND date = ?
+	`, allocation.BaseLimit, allocation.BonusGranted, allocation.UpdatedAt, allocation.ChildID, allocation.Date)
+
+	return err
+}
+
+// GrantRewardMinutesNew grants reward minutes to a child's daily allocation
+// This updates the daily_time_allocations table
+func (s *SQLiteStorage) GrantRewardMinutesNew(ctx context.Context, childID string, date time.Time, minutes int) error {
+	normalizedDate := s.normalizeDate(date)
+	now := time.Now()
+
+	// Try to update existing allocation first
+	result, err := s.db.ExecContext(ctx, `
+		UPDATE daily_time_allocations
+		SET bonus_granted = bonus_granted + ?, updated_at = ?
+		WHERE child_id = ? AND date = ?
+	`, minutes, now, childID, normalizedDate)
+
+	if err != nil {
+		return err
+	}
+
+	// Check if update affected any rows
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	// If no rows were updated, allocation doesn't exist yet - will be created lazily by calculator
+	// This is okay - the calculator's getOrCreateAllocation will handle it
+	if rowsAffected == 0 {
+		// Create the allocation now
+		child, err := s.GetChild(ctx, childID)
+		if err != nil {
+			return err
+		}
+
+		baseLimit := child.GetDailyLimit(normalizedDate)
+
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO daily_time_allocations (child_id, date, base_limit, bonus_granted, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, childID, normalizedDate, baseLimit, minutes, now, now)
+
+		return err
+	}
+
+	return nil
+}
+
+// GetDailyUsageSummary retrieves the daily usage summary for a child
+func (s *SQLiteStorage) GetDailyUsageSummary(ctx context.Context, childID string, date time.Time) (*core.DailyUsageSummary, error) {
+	normalizedDate := s.normalizeDate(date)
+
+	var summary core.DailyUsageSummary
+	err := s.db.QueryRowContext(ctx, `
+		SELECT child_id, date, minutes_used, session_count, created_at, updated_at
+		FROM daily_usage_summaries WHERE child_id = ? AND date = ?
+	`, childID, normalizedDate).Scan(&summary.ChildID, &summary.Date, &summary.MinutesUsed,
+		&summary.SessionCount, &summary.CreatedAt, &summary.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		// Return zero summary if not found
+		return &core.DailyUsageSummary{
+			ChildID:      childID,
+			Date:         normalizedDate,
+			MinutesUsed:  0,
+			SessionCount: 0,
+			CreatedAt:    time.Now(),
+			UpdatedAt:    time.Now(),
+		}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &summary, nil
+}
+
+// IncrementDailyUsageSummary increments the daily usage summary
+func (s *SQLiteStorage) IncrementDailyUsageSummary(ctx context.Context, childID string, date time.Time, minutes int) error {
+	normalizedDate := s.normalizeDate(date)
+	now := time.Now()
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO daily_usage_summaries (child_id, date, minutes_used, session_count, created_at, updated_at)
+		VALUES (?, ?, ?, 0, ?, ?)
+		ON CONFLICT(child_id, date) DO UPDATE SET
+			minutes_used = minutes_used + ?,
+			updated_at = ?
+	`, childID, normalizedDate, minutes, now, now, minutes, now)
+
+	return err
+}
+
+// IncrementSessionCountSummary increments the session count in daily usage summary
+func (s *SQLiteStorage) IncrementSessionCountSummary(ctx context.Context, childID string, date time.Time) error {
+	normalizedDate := s.normalizeDate(date)
+	now := time.Now()
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO daily_usage_summaries (child_id, date, minutes_used, session_count, created_at, updated_at)
+		VALUES (?, ?, 0, 1, ?, ?)
+		ON CONFLICT(child_id, date) DO UPDATE SET
+			session_count = session_count + 1,
+			updated_at = ?
+	`, childID, normalizedDate, now, now, now)
+
+	return err
+}
+
+// ListActiveSessionRecords retrieves all active session usage records
+func (s *SQLiteStorage) ListActiveSessionRecords(ctx context.Context) ([]*core.SessionUsageRecord, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, device_type, device_id, start_time, expected_duration, actual_duration, status,
+			last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
+		FROM sessions WHERE status = ?
+	`, core.SessionStatusActive)
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []*core.SessionUsageRecord
+	for rows.Next() {
+		var session core.SessionUsageRecord
+		var actualDuration sql.NullInt64
+
+		err := rows.Scan(&session.ID, &session.DeviceType, &session.DeviceID, &session.StartTime,
+			&session.ExpectedDuration, &actualDuration, &session.Status, &session.LastBreakAt,
+			&session.BreakEndsAt, &session.WarningSentAt, &session.CreatedAt, &session.UpdatedAt)
+
+		if err != nil {
+			return nil, err
+		}
+
+		// Convert NULL to nil
+		if actualDuration.Valid {
+			duration := int(actualDuration.Int64)
+			session.ActualDuration = &duration
+		}
+
+		// Get child IDs for this session
+		childRows, err := s.db.QueryContext(ctx, `
+			SELECT child_id FROM session_children WHERE session_id = ?
+		`, session.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		var childIDs []string
+		for childRows.Next() {
+			var childID string
+			if err := childRows.Scan(&childID); err != nil {
+				childRows.Close()
+				return nil, err
+			}
+			childIDs = append(childIDs, childID)
+		}
+		childRows.Close()
+
+		session.ChildIDs = childIDs
+		sessions = append(sessions, &session)
+	}
+
+	return sessions, rows.Err()
 }
 
 // Close closes the database connection

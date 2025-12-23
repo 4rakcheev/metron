@@ -66,6 +66,12 @@ func (m *mockStorage) IncrementDailyUsage(ctx context.Context, childID string, d
 	return nil
 }
 
+func (m *mockStorage) IncrementDailyUsageSummary(ctx context.Context, childID string, date time.Time, minutes int) error {
+	key := childID + date.Format("2006-01-02")
+	m.dailyUsage[key] += minutes
+	return nil
+}
+
 func (m *mockStorage) IncrementSessionCount(ctx context.Context, childID string, date time.Time) error {
 	return nil
 }
