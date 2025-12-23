@@ -802,7 +802,7 @@ func (m *SessionManager) GetChildStatus(ctx context.Context, childID string) (*C
 		TodayUsed:          remaining.Consumed.TotalConsumed,
 		TodayRewardGranted: remaining.Available.BonusGranted,
 		TodayRemaining:     remaining.RemainingTotal,
-		TodayLimit:         remaining.Available.BaseLimit,
+		TodayLimit:         remaining.Available.TotalAvailable,
 		SessionsToday:      sessionCount,
 	}, nil
 }
@@ -813,6 +813,6 @@ type ChildStatus struct {
 	TodayUsed           int // regular minutes consumed today
 	TodayRewardGranted  int // bonus minutes granted for today
 	TodayRemaining      int // calculated as: limit + rewardGranted - used
-	TodayLimit          int
+	TodayLimit          int // total available today (base + rewards)
 	SessionsToday       int
 }
