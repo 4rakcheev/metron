@@ -295,6 +295,16 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		return nil, ErrInvalidDuration
 	}
 
+	// Cap individual extension requests to prevent excessive grants
+	const MaxExtensionPerRequest = 30
+	if additionalMinutes > MaxExtensionPerRequest {
+		m.logger.Info("Extension request capped to maximum allowed",
+			"session_id", sessionID,
+			"requested", additionalMinutes,
+			"capped_to", MaxExtensionPerRequest)
+		additionalMinutes = MaxExtensionPerRequest
+	}
+
 	// Get session
 	session, err := m.storage.GetSession(ctx, sessionID)
 	if err != nil {
@@ -309,6 +319,19 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 			"session_id", sessionID,
 			"status", session.Status)
 		return nil, ErrSessionNotActive
+	}
+
+	// Rate limiting: Prevent rapid-fire extensions
+	const ExtensionCooldownSeconds = 30
+	if session.LastExtendedAt != nil {
+		timeSinceLastExtend := time.Since(*session.LastExtendedAt)
+		if timeSinceLastExtend < ExtensionCooldownSeconds*time.Second {
+			m.logger.Warn("Extension rejected due to rate limiting",
+				"session_id", sessionID,
+				"time_since_last_extend_seconds", int(timeSinceLastExtend.Seconds()),
+				"cooldown_seconds", ExtensionCooldownSeconds)
+			return nil, ErrExtensionTooSoon
+		}
 	}
 
 	m.logger.Debug("Session validation passed",
@@ -331,8 +354,10 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
 		}
 
-		// Use calculator to get accurate remaining time (includes all active sessions)
-		remaining, err := m.calculator.GetRemainingTime(ctx, childID, today)
+		// Use calculator to get accurate remaining time for extension validation
+		// CRITICAL: Use GetRemainingTimeForExtension which uses ExpectedDuration
+		// instead of elapsed time to prevent rapid-fire extension exploit
+		remaining, err := m.calculator.GetRemainingTimeForExtension(ctx, childID, today, sessionID)
 		if err != nil {
 			m.logger.Error("Failed to get remaining time for extension validation",
 				"session_id", sessionID,
@@ -354,13 +379,14 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 
 		// Cap extension to this child's remaining time
 		if remaining.RemainingTotal < maxExtension {
-			m.logger.Info("Capping extension to child's available time",
+			m.logger.Warn("Extension capped due to insufficient remaining time",
 				"session_id", sessionID,
 				"child_id", childID,
 				"child_name", child.Name,
-				"requested", additionalMinutes,
-				"remaining", remaining.RemainingTotal,
-				"capped_to", remaining.RemainingTotal)
+				"requested_minutes", additionalMinutes,
+				"granted_minutes", remaining.RemainingTotal,
+				"total_available_today", remaining.Available.TotalAvailable,
+				"total_consumed_today", remaining.Consumed.TotalConsumed)
 			maxExtension = remaining.RemainingTotal
 		}
 	}
@@ -424,6 +450,10 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 
 	// Extend session by the actual (possibly capped) amount
 	session.ExpectedDuration += actualExtension
+
+	// Update last extended timestamp for rate limiting
+	now := time.Now()
+	session.LastExtendedAt = &now
 
 	// Reset warning state so a new warning can be sent when time crosses 5 minutes again
 	session.WarningSentAt = nil

@@ -45,6 +45,7 @@ type Session struct {
 	LastBreakAt      *time.Time
 	BreakEndsAt      *time.Time
 	WarningSentAt    *time.Time // tracks when time-remaining warning was sent
+	LastExtendedAt   *time.Time // tracks when session was last extended (for rate limiting)
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -74,6 +75,7 @@ var (
 	ErrSessionNotActive    = errors.New("session is not active")
 	ErrSessionNotFound     = errors.New("session not found")
 	ErrChildNotFound       = errors.New("child not found")
+	ErrExtensionTooSoon    = errors.New("extension request too soon after previous extension")
 )
 
 // Validate validates a Child

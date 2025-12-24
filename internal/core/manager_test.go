@@ -586,16 +586,18 @@ func TestSessionManager_ExtendSession_InsufficientTime(t *testing.T) {
 	storage.UpdateSession(context.Background(), session)
 
 	// Try to extend by 15 minutes (would exceed daily limit)
-	// Current usage: 40 (stored) + 8 (elapsed) = 48, limit 60, remaining 12
-	// Extension request: 15 minutes (exceeds remaining 12)
-	// Expected behavior: Extension should be capped to available 12 minutes
+	// CORRECTED: Uses ExpectedDuration (committed time) instead of elapsed time
+	// Current usage: 40 (completed) + 10 (ExpectedDuration) = 50, limit 60, remaining 10
+	// Extension request: 15 minutes (exceeds remaining 10)
+	// Expected behavior: Extension should be capped to available 10 minutes
 	extendedSession, err := manager.ExtendSession(context.Background(), session.ID, 15)
 	assert.NoError(t, err, "Extension should succeed but be capped to available time")
 	assert.NotNil(t, extendedSession)
 
-	// Session duration should be increased by 12 (capped), not 15 (requested)
-	// Original duration: 10, expected after extension: 10 + 12 = 22
-	assert.Equal(t, 22, extendedSession.ExpectedDuration, "Extension should be capped to remaining 12 minutes")
+	// Session duration should be increased by 10 (capped), not 15 (requested)
+	// Original duration: 10, expected after extension: 10 + 10 = 20
+	// This prevents the exploit where children spam extend immediately after starting
+	assert.Equal(t, 20, extendedSession.ExpectedDuration, "Extension should be capped to remaining 10 minutes")
 }
 
 func TestSessionManager_StopSession(t *testing.T) {

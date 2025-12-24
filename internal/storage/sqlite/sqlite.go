@@ -73,6 +73,7 @@ func (s *SQLiteStorage) migrate() error {
 			last_break_at DATETIME,
 			break_ends_at DATETIME,
 			warning_sent_at DATETIME,
+			last_extended_at DATETIME,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		);
@@ -129,6 +130,15 @@ func (s *SQLiteStorage) runMigrations() error {
 		// Check if it's a "duplicate column" error (SQLite specific)
 		// If not, it might be a real error
 		// For now, we'll ignore all errors as the column might already exist
+	}
+
+	// Add last_extended_at column if it doesn't exist (for rate limiting exploit fix)
+	_, err = s.db.Exec(`
+		ALTER TABLE sessions ADD COLUMN last_extended_at DATETIME;
+	`)
+	// Ignore error if column already exists
+	if err != nil && err.Error() != "duplicate column name: last_extended_at" {
+		// Column might already exist, which is fine
 	}
 
 	// Add pin column to children table if it doesn't exist (for existing databases)
@@ -444,7 +454,7 @@ func (s *SQLiteStorage) CreateSession(ctx context.Context, session *core.Session
 	}
 	defer tx.Rollback()
 
-	var lastBreakAt, breakEndsAt, warningSentAt sql.NullTime
+	var lastBreakAt, breakEndsAt, warningSentAt, lastExtendedAt sql.NullTime
 	if session.LastBreakAt != nil {
 		lastBreakAt = sql.NullTime{Time: *session.LastBreakAt, Valid: true}
 	}
@@ -454,13 +464,16 @@ func (s *SQLiteStorage) CreateSession(ctx context.Context, session *core.Session
 	if session.WarningSentAt != nil {
 		warningSentAt = sql.NullTime{Time: *session.WarningSentAt, Valid: true}
 	}
+	if session.LastExtendedAt != nil {
+		lastExtendedAt = sql.NullTime{Time: *session.LastExtendedAt, Valid: true}
+	}
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO sessions (id, device_type, device_id, start_time, expected_duration,
-			status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, session.ID, session.DeviceType, session.DeviceID, session.StartTime, session.ExpectedDuration,
-		session.Status, lastBreakAt, breakEndsAt, warningSentAt, session.CreatedAt, session.UpdatedAt)
+		session.Status, lastBreakAt, breakEndsAt, warningSentAt, lastExtendedAt, session.CreatedAt, session.UpdatedAt)
 
 	if err != nil {
 		return err
@@ -482,15 +495,15 @@ func (s *SQLiteStorage) CreateSession(ctx context.Context, session *core.Session
 // GetSession retrieves a session by ID
 func (s *SQLiteStorage) GetSession(ctx context.Context, id string) (*core.Session, error) {
 	var session core.Session
-	var lastBreakAt, breakEndsAt, warningSentAt sql.NullTime
+	var lastBreakAt, breakEndsAt, warningSentAt, lastExtendedAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, device_type, device_id, start_time, expected_duration,
-			status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
+			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, created_at, updated_at
 		FROM sessions WHERE id = ?
 	`, id).Scan(&session.ID, &session.DeviceType, &session.DeviceID, &session.StartTime,
 		&session.ExpectedDuration, &session.Status,
-		&lastBreakAt, &breakEndsAt, &warningSentAt, &session.CreatedAt, &session.UpdatedAt)
+		&lastBreakAt, &breakEndsAt, &warningSentAt, &lastExtendedAt, &session.CreatedAt, &session.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, core.ErrSessionNotFound
@@ -507,6 +520,9 @@ func (s *SQLiteStorage) GetSession(ctx context.Context, id string) (*core.Sessio
 	}
 	if warningSentAt.Valid {
 		session.WarningSentAt = &warningSentAt.Time
+	}
+	if lastExtendedAt.Valid {
+		session.LastExtendedAt = &lastExtendedAt.Time
 	}
 
 	// Load child IDs
@@ -543,7 +559,7 @@ func (s *SQLiteStorage) ListAllSessions(ctx context.Context) ([]*core.Session, e
 func (s *SQLiteStorage) ListSessionsByChild(ctx context.Context, childID string) ([]*core.Session, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id, s.device_type, s.device_id, s.start_time, s.expected_duration,
-			s.status, s.last_break_at, s.break_ends_at, s.warning_sent_at, s.created_at, s.updated_at
+			s.status, s.last_break_at, s.break_ends_at, s.warning_sent_at, s.last_extended_at, s.created_at, s.updated_at
 		FROM sessions s
 		JOIN session_children sc ON s.id = sc.session_id
 		WHERE sc.child_id = ?
@@ -561,7 +577,7 @@ func (s *SQLiteStorage) ListSessionsByChild(ctx context.Context, childID string)
 func (s *SQLiteStorage) UpdateSession(ctx context.Context, session *core.Session) error {
 	session.UpdatedAt = time.Now()
 
-	var lastBreakAt, breakEndsAt, warningSentAt sql.NullTime
+	var lastBreakAt, breakEndsAt, warningSentAt, lastExtendedAt sql.NullTime
 	if session.LastBreakAt != nil {
 		lastBreakAt = sql.NullTime{Time: *session.LastBreakAt, Valid: true}
 	}
@@ -571,14 +587,17 @@ func (s *SQLiteStorage) UpdateSession(ctx context.Context, session *core.Session
 	if session.WarningSentAt != nil {
 		warningSentAt = sql.NullTime{Time: *session.WarningSentAt, Valid: true}
 	}
+	if session.LastExtendedAt != nil {
+		lastExtendedAt = sql.NullTime{Time: *session.LastExtendedAt, Valid: true}
+	}
 
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE sessions
 		SET device_type = ?, device_id = ?, expected_duration = ?, status = ?,
-			last_break_at = ?, break_ends_at = ?, warning_sent_at = ?, updated_at = ?
+			last_break_at = ?, break_ends_at = ?, warning_sent_at = ?, last_extended_at = ?, updated_at = ?
 		WHERE id = ?
 	`, session.DeviceType, session.DeviceID, session.ExpectedDuration, session.Status,
-		lastBreakAt, breakEndsAt, warningSentAt, session.UpdatedAt, session.ID)
+		lastBreakAt, breakEndsAt, warningSentAt, lastExtendedAt, session.UpdatedAt, session.ID)
 
 	if err != nil {
 		return err
@@ -936,7 +955,7 @@ func (s *SQLiteStorage) Close() error {
 func (s *SQLiteStorage) listSessionsByCondition(ctx context.Context, condition string, args ...interface{}) ([]*core.Session, error) {
 	query := `
 		SELECT id, device_type, device_id, start_time, expected_duration,
-			status, last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
+			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, created_at, updated_at
 		FROM sessions WHERE ` + condition + ` ORDER BY start_time DESC
 	`
 
@@ -954,11 +973,11 @@ func (s *SQLiteStorage) scanSessions(ctx context.Context, rows *sql.Rows) ([]*co
 
 	for rows.Next() {
 		var session core.Session
-		var lastBreakAt, breakEndsAt, warningSentAt sql.NullTime
+		var lastBreakAt, breakEndsAt, warningSentAt, lastExtendedAt sql.NullTime
 
 		if err := rows.Scan(&session.ID, &session.DeviceType, &session.DeviceID, &session.StartTime,
 			&session.ExpectedDuration, &session.Status,
-			&lastBreakAt, &breakEndsAt, &warningSentAt, &session.CreatedAt, &session.UpdatedAt); err != nil {
+			&lastBreakAt, &breakEndsAt, &warningSentAt, &lastExtendedAt, &session.CreatedAt, &session.UpdatedAt); err != nil {
 			return nil, err
 		}
 
@@ -970,6 +989,9 @@ func (s *SQLiteStorage) scanSessions(ctx context.Context, rows *sql.Rows) ([]*co
 		}
 		if warningSentAt.Valid {
 			session.WarningSentAt = &warningSentAt.Time
+		}
+		if lastExtendedAt.Valid {
+			session.LastExtendedAt = &lastExtendedAt.Time
 		}
 
 		// Load child IDs

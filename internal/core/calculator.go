@@ -146,6 +146,80 @@ func (s *TimeCalculationService) GetRemainingTime(ctx context.Context, childID s
 	}, nil
 }
 
+// GetRemainingTimeForExtension calculates remaining time for extending a specific session
+// This differs from GetRemainingTime by using the current session's ExpectedDuration
+// instead of elapsed time, preventing the rapid-fire extension exploit
+//
+// For the session being extended (currentSessionID), we use ExpectedDuration because
+// the child has already "committed" to that time even if it hasn't elapsed yet.
+// This prevents the exploit where children spam extend immediately after starting.
+func (s *TimeCalculationService) GetRemainingTimeForExtension(
+	ctx context.Context,
+	childID string,
+	date time.Time,
+	currentSessionID string,
+) (*RemainingTimeResult, error) {
+	normalizedDate := s.normalizeDate(date)
+
+	available, err := s.GetAvailableTime(ctx, childID, normalizedDate)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get completed session usage
+	summary, err := s.storage.GetDailyUsageSummary(ctx, childID, normalizedDate)
+	if err != nil {
+		summary = &DailyUsageSummary{
+			ChildID:      childID,
+			Date:         normalizedDate,
+			MinutesUsed:  0,
+			SessionCount: 0,
+		}
+	}
+
+	// Calculate active session usage
+	// KEY DIFFERENCE: For the current session, use ExpectedDuration instead of elapsed
+	activeSessions, err := s.storage.ListActiveSessionRecords(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	activeMinutes := 0
+	for _, session := range activeSessions {
+		// Check if this session includes the child
+		for _, sid := range session.ChildIDs {
+			if sid == childID {
+				// For the session being extended, use ExpectedDuration (committed time)
+				// For other sessions, use elapsed time
+				if session.ID == currentSessionID {
+					activeMinutes += session.ExpectedDuration
+				} else {
+					elapsed := s.GetSessionElapsed(session)
+					activeMinutes += elapsed
+				}
+				break
+			}
+		}
+	}
+
+	consumed := ConsumedTimeResult{
+		FromCompletedSessions: summary.MinutesUsed,
+		FromActiveSessions:    activeMinutes,
+		TotalConsumed:         summary.MinutesUsed + activeMinutes,
+	}
+
+	totalRemaining := available.TotalAvailable - consumed.TotalConsumed
+	if totalRemaining < 0 {
+		totalRemaining = 0
+	}
+
+	return &RemainingTimeResult{
+		Available:      *available,
+		Consumed:       consumed,
+		RemainingTotal: totalRemaining,
+	}, nil
+}
+
 // GetSessionElapsed calculates elapsed time for a session
 func (s *TimeCalculationService) GetSessionElapsed(session *SessionUsageRecord) int {
 	if session.Status != SessionStatusActive {
