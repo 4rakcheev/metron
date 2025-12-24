@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -18,6 +17,7 @@ import (
 	"metron/internal/drivers"
 	"metron/internal/drivers/aqara"
 	"metron/internal/drivers/kidslox"
+	"metron/internal/logging"
 	"metron/internal/scheduler"
 	"metron/internal/storage/sqlite"
 )
@@ -87,57 +87,38 @@ func main() {
 	useEnv := flag.Bool("env", false, "Load configuration from environment variables")
 	logFormat := flag.String("log-format", "json", "Log format: json or text")
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
+	logDir := flag.String("log-dir", ".", "Directory for log files")
 	flag.Parse()
 
-	// Configure structured logger
-	var handler slog.Handler
-	var level slog.Level
-
 	// Parse log level
-	switch *logLevel {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
+	level := logging.ParseLevel(*logLevel)
 
-	// Configure handler based on format
-	opts := &slog.HandlerOptions{
-		Level: level,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			// Rename timestamp key for better readability
-			if a.Key == slog.TimeKey {
-				a.Key = "timestamp"
-			}
-			return a
-		},
+	// Create multi-logger with separate log files
+	multiLogger, err := logging.NewMultiLogger(logging.MultiLoggerConfig{
+		Format:       *logFormat,
+		Level:        level,
+		CoreLogPath:  fmt.Sprintf("%s/metron.log", *logDir),
+		ChildLogPath: fmt.Sprintf("%s/metron-child.log", *logDir),
+		BotLogPath:   fmt.Sprintf("%s/metron-bot.log", *logDir),
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logging: %v\n", err)
+		os.Exit(1)
 	}
-
-	if *logFormat == "text" {
-		handler = slog.NewTextHandler(os.Stdout, opts)
-	} else {
-		handler = slog.NewJSONHandler(os.Stdout, opts)
-	}
-
-	logger := slog.New(handler)
-	slog.SetDefault(logger)
+	defer multiLogger.Close()
 
 	// Create main component logger
-	mainLogger := slog.Default().With("component", "main")
+	mainLogger := multiLogger.Core.With("component", "main")
 
-	if err := run(*configPath, *useEnv, mainLogger); err != nil {
+	if err := run(*configPath, *useEnv, multiLogger); err != nil {
 		mainLogger.Error("Application failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath string, useEnv bool, logger *slog.Logger) error {
+func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error {
+	logger := multiLogger.Core.With("component", "main")
+
 	// Load configuration
 	logger.Info("Loading configuration", "use_env", useEnv, "config_path", configPath)
 	var cfg *config.Config
@@ -192,7 +173,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		WarnSceneID: cfg.Aqara.Scenes.TVWarning,
 		OffSceneID:  cfg.Aqara.Scenes.TVPowerOff,
 	}
-	aqaraLogger := slog.Default().With("component", "driver.aqara")
+	aqaraLogger := multiLogger.Core.With("component", "driver.aqara")
 	aqaraDriver := aqara.NewDriver(aqaraConfig, db, aqaraLogger)
 	driverRegistry.Register(aqaraDriver)
 
@@ -206,7 +187,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 			DeviceID:  cfg.Kidslox.DeviceID,
 			ProfileID: cfg.Kidslox.ProfileID,
 		}
-		kidsloxLogger := slog.Default().With("component", "driver.kidslox")
+		kidsloxLogger := multiLogger.Core.With("component", "driver.kidslox")
 		kidsloxDriver := kidslox.NewDriver(kidsloxConfig, deviceRegistry, kidsloxLogger)
 		driverRegistry.Register(kidsloxDriver)
 	}
@@ -236,9 +217,9 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	}
 
 	// Create component-specific loggers
-	managerLogger := slog.Default().With("component", "manager")
-	schedulerLogger := slog.Default().With("component", "scheduler")
-	apiLogger := slog.Default().With("component", "api")
+	managerLogger := multiLogger.Core.With("component", "manager")
+	schedulerLogger := multiLogger.Core.With("component", "scheduler")
+	apiLogger := multiLogger.Core.With("component", "api")
 
 	// Initialize time calculation service
 	logger.Info("Initializing time calculation service")
@@ -246,7 +227,10 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 
 	// Initialize session manager
 	logger.Info("Initializing session manager")
-	sessionManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, calculator, timezone, managerLogger)
+	baseManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, calculator, timezone, managerLogger)
+
+	// Wrap session manager with logging decorator
+	sessionManager := logging.NewSessionManagerLogger(baseManager, multiLogger.Core)
 
 	// Start scheduler
 	logger.Info("Starting session scheduler", "interval", "1m")
@@ -262,6 +246,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		DeviceRegistry:    deviceRegistry,
 		APIKey:            cfg.Security.APIKey,
 		Logger:            apiLogger,
+		ChildLogger:       multiLogger.Child,
 		AqaraTokenStorage: db, // SQLite storage also implements aqara.AqaraTokenStorage
 	})
 

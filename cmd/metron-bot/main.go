@@ -114,7 +114,7 @@ func main() {
 	logger.Info("Bot stopped")
 }
 
-// initLogger initializes the structured logger
+// initLogger initializes the structured logger with file output
 func initLogger(format, levelStr string) *slog.Logger {
 	// Parse log level
 	var level slog.Level
@@ -131,16 +131,31 @@ func initLogger(format, levelStr string) *slog.Logger {
 		level = slog.LevelInfo
 	}
 
+	// Open log file (metron-bot.log)
+	logFile, err := os.OpenFile("metron-bot.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		// Fall back to stdout if file cannot be opened
+		fmt.Fprintf(os.Stderr, "Failed to open log file, using stdout: %v\n", err)
+		logFile = os.Stdout
+	}
+
 	// Create handler based on format
 	var handler slog.Handler
 	opts := &slog.HandlerOptions{
 		Level: level,
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			// Rename timestamp key for better readability
+			if a.Key == slog.TimeKey {
+				a.Key = "timestamp"
+			}
+			return a
+		},
 	}
 
 	if format == "text" {
-		handler = slog.NewTextHandler(os.Stdout, opts)
+		handler = slog.NewTextHandler(logFile, opts)
 	} else {
-		handler = slog.NewJSONHandler(os.Stdout, opts)
+		handler = slog.NewJSONHandler(logFile, opts)
 	}
 
 	return slog.New(handler)

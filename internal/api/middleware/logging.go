@@ -17,6 +17,11 @@ func Logging(logger *slog.Logger) gin.HandlerFunc {
 		// Process request
 		c.Next()
 
+		// Skip logging if noise filter flagged this request
+		if c.GetBool("skip_logging") {
+			return
+		}
+
 		// Log after request
 		latency := time.Since(start)
 		clientIP := c.ClientIP()

@@ -22,6 +22,7 @@ func NewRouter(config RouterConfig) *gin.Engine {
 
 	// Add middleware
 	router.Use(gin.Recovery())
+	router.Use(BotLoggingMiddleware(config.Logger))
 
 	// Create webhook handler
 	webhookHandler := NewWebhookHandler(

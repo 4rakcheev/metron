@@ -16,11 +16,12 @@ import (
 // RouterConfig holds dependencies for the API router
 type RouterConfig struct {
 	Storage           storage.Storage
-	Manager           *core.SessionManager
+	Manager           core.SessionManagerInterface
 	DriverRegistry    *drivers.Registry
 	DeviceRegistry    *devices.Registry
 	APIKey            string
 	Logger            *slog.Logger
+	ChildLogger       *slog.Logger // Logger for child API endpoints
 	AqaraTokenStorage aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
 }
 
@@ -34,8 +35,14 @@ func NewRouter(config RouterConfig) *gin.Engine {
 	// Apply global middleware
 	router.Use(middleware.RequestID())
 	router.Use(middleware.Recovery(config.Logger))
+	router.Use(middleware.NoiseFilter(config.Logger))
 	router.Use(middleware.Logging(config.Logger))
 	router.Use(middleware.ContentType())
+
+	// Apply child API logging middleware (logs to metron-child.log)
+	if config.ChildLogger != nil {
+		router.Use(middleware.ChildAPILogging(config.ChildLogger))
+	}
 
 	// CORS middleware for child web app
 	router.Use(func(c *gin.Context) {
