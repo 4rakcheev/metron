@@ -119,6 +119,35 @@ export function HomePage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+        {/* Downtime Notice - Show first when in downtime */}
+        {stats.downtime_enabled && stats.in_downtime && !activeSession && (
+          <div className="card" style={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            border: '3px solid #9f7aea'
+          }}>
+            <div className="text-center py-10 px-6">
+              <div className="text-7xl mb-4">🌙</div>
+              <div className="text-3xl font-black mb-3 text-white">
+                Downtime Period
+              </div>
+              <div className="text-lg font-semibold text-white mb-6 max-w-md mx-auto">
+                It's rest time now! You cannot start or extend sessions during downtime.
+              </div>
+              {stats.downtime_end && (
+                <div className="mt-4 inline-block bg-white/20 backdrop-blur-sm rounded-2xl px-8 py-4 border-2 border-white/30">
+                  <div className="text-sm font-semibold text-white/90 mb-1">Downtime ends at</div>
+                  <div className="text-3xl font-black text-white">
+                    {new Date(stats.downtime_end).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Time Display */}
         <div className="card">
           <TimeDisplay
@@ -140,32 +169,6 @@ export function HomePage() {
               onExtend={handleExtendSession}
               loading={actionLoading}
             />
-          </div>
-        )}
-
-        {/* Downtime Notice */}
-        {stats.downtime_enabled && stats.in_downtime && !activeSession && (
-          <div className="card bg-gradient-to-br from-indigo-900 via-purple-900 to-purple-800 text-white shadow-2xl border-2 border-purple-400">
-            <div className="text-center py-12 px-6">
-              <div className="text-8xl mb-6 animate-pulse">🌙</div>
-              <div className="text-3xl font-black mb-4 bg-gradient-to-r from-purple-200 to-pink-200 bg-clip-text text-transparent">
-                Downtime Period
-              </div>
-              <div className="text-lg text-purple-100 mb-6 max-w-md mx-auto">
-                It's rest time now! You cannot start or extend sessions during downtime.
-              </div>
-              {stats.downtime_end && (
-                <div className="mt-6 inline-block bg-purple-800/50 rounded-2xl px-6 py-3 border border-purple-400/30">
-                  <div className="text-sm text-purple-300 mb-1">Downtime ends at</div>
-                  <div className="text-2xl font-bold text-purple-100">
-                    {new Date(stats.downtime_end).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         )}
 
