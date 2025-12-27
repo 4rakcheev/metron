@@ -122,8 +122,12 @@ class MetronAPI {
     return this.request<Session[]>('/child/sessions');
   }
 
-  async createSession(deviceId: string, minutes: number): Promise<Session> {
-    const request: CreateSessionRequest = { device_id: deviceId, minutes };
+  async createSession(deviceId: string, minutes: number, shared?: boolean): Promise<Session> {
+    const request: CreateSessionRequest = {
+      device_id: deviceId,
+      minutes,
+      shared: shared || false,
+    };
     return this.request<Session>('/child/sessions', {
       method: 'POST',
       body: JSON.stringify(request),

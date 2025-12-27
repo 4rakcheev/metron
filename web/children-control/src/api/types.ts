@@ -52,6 +52,7 @@ export interface LoginResponse {
 export interface CreateSessionRequest {
   device_id: string;
   minutes: number;
+  shared?: boolean; // Optional: create session for all children
 }
 
 export interface APIError {

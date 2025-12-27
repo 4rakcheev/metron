@@ -18,7 +18,7 @@ interface AppContextValue extends AppState {
   login: (childId: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  createSession: (deviceId: string, minutes: number) => Promise<void>;
+  createSession: (deviceId: string, minutes: number, shared?: boolean) => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
   extendSession: (sessionId: string, additionalMinutes: number) => Promise<void>;
   clearError: () => void;
@@ -130,10 +130,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Create session function
-  const createSession = useCallback(async (deviceId: string, minutes: number) => {
+  const createSession = useCallback(async (deviceId: string, minutes: number, shared?: boolean) => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
-      await api.createSession(deviceId, minutes);
+      await api.createSession(deviceId, minutes, shared);
 
       // Reload data to get updated sessions and stats
       await loadData();

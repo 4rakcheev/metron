@@ -24,6 +24,7 @@ export function HomePage() {
   } = useApp();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+  const [isSharedSession, setIsSharedSession] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Redirect if not authenticated
@@ -48,8 +49,9 @@ export function HomePage() {
 
     try {
       setActionLoading(true);
-      await createSession(selectedDeviceId, minutes);
+      await createSession(selectedDeviceId, minutes, isSharedSession);
       setSelectedDeviceId(null);
+      setIsSharedSession(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start session');
     } finally {
@@ -143,18 +145,24 @@ export function HomePage() {
 
         {/* Downtime Notice */}
         {stats.downtime_enabled && stats.in_downtime && !activeSession && (
-          <div className="card bg-purple-900 text-white">
-            <div className="text-center py-8">
-              <div className="text-6xl mb-4">🌙</div>
-              <div className="text-2xl font-bold mb-2">
+          <div className="card bg-gradient-to-br from-indigo-900 via-purple-900 to-purple-800 text-white shadow-2xl border-2 border-purple-400">
+            <div className="text-center py-12 px-6">
+              <div className="text-8xl mb-6 animate-pulse">🌙</div>
+              <div className="text-3xl font-black mb-4 bg-gradient-to-r from-purple-200 to-pink-200 bg-clip-text text-transparent">
                 Downtime Period
               </div>
-              <div className="text-purple-200">
-                You cannot start or extend sessions during downtime.
+              <div className="text-lg text-purple-100 mb-6 max-w-md mx-auto">
+                It's rest time now! You cannot start or extend sessions during downtime.
               </div>
               {stats.downtime_end && (
-                <div className="mt-4 text-sm text-purple-300">
-                  Downtime ends at {new Date(stats.downtime_end).toLocaleTimeString()}
+                <div className="mt-6 inline-block bg-purple-800/50 rounded-2xl px-6 py-3 border border-purple-400/30">
+                  <div className="text-sm text-purple-300 mb-1">Downtime ends at</div>
+                  <div className="text-2xl font-bold text-purple-100">
+                    {new Date(stats.downtime_end).toLocaleTimeString([], {
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </div>
                 </div>
               )}
             </div>
@@ -194,6 +202,23 @@ export function HomePage() {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Shared Session Toggle (only when device is selected) */}
+        {!activeSession && !hasNoTime && !isInDowntime && selectedDeviceId && (
+          <div className="card bg-gradient-to-br from-blue-50 to-cyan-50">
+            <label className="flex items-center justify-center gap-3 cursor-pointer p-2">
+              <input
+                type="checkbox"
+                checked={isSharedSession}
+                onChange={(e) => setIsSharedSession(e.target.checked)}
+                className="w-6 h-6 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
+              />
+              <span className="text-lg font-bold text-gray-800">
+                👥 Make this a shared session (for all children)
+              </span>
+            </label>
           </div>
         )}
 

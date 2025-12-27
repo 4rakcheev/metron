@@ -58,12 +58,13 @@ func (h *ChildHandler) ListChildrenForAuth(c *gin.Context) {
 		return
 	}
 
-	// Return only ID and name (no PINs!)
+	// Return only ID, name, and emoji (no PINs!)
 	response := make([]gin.H, 0, len(children))
 	for _, child := range children {
 		response = append(response, gin.H{
-			"id":   child.ID,
-			"name": child.Name,
+			"id":    child.ID,
+			"name":  child.Name,
+			"emoji": child.Emoji,
 		})
 	}
 
@@ -354,6 +355,7 @@ func (h *ChildHandler) CreateSession(c *gin.Context) {
 	var req struct {
 		DeviceID string `json:"device_id" binding:"required"`
 		Minutes  int    `json:"minutes" binding:"required,gt=0"`
+		Shared   bool   `json:"shared,omitempty"` // Optional: create shared session for all children
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -365,8 +367,35 @@ func (h *ChildHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	// Start session (only for this child)
-	session, err := h.manager.StartSession(c.Request.Context(), req.DeviceID, []string{childID}, req.Minutes)
+	// Determine which children to include
+	var childIDs []string
+	if req.Shared {
+		// Get all children for shared session
+		allChildren, err := h.storage.ListChildren(c.Request.Context())
+		if err != nil {
+			h.logger.Error("Failed to list children for shared session",
+				"error", err,
+			)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to create shared session",
+				"code":  "INTERNAL_ERROR",
+			})
+			return
+		}
+		for _, child := range allChildren {
+			childIDs = append(childIDs, child.ID)
+		}
+		h.logger.Info("Creating shared session",
+			"requesting_child_id", childID,
+			"total_children", len(childIDs),
+		)
+	} else {
+		// Session only for this child
+		childIDs = []string{childID}
+	}
+
+	// Start session
+	session, err := h.manager.StartSession(c.Request.Context(), req.DeviceID, childIDs, req.Minutes)
 	if err != nil {
 		h.logger.Error("Failed to start session",
 			"child_id", childID,
