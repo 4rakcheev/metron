@@ -65,6 +65,7 @@ func (h *StatsHandler) GetTodayStats(c *gin.Context) {
 		childStats = append(childStats, gin.H{
 			"child_id":             child.ID,
 			"child_name":           child.Name,
+			"child_emoji":          child.Emoji,
 			"today_used":           status.TodayUsed,
 			"today_reward_granted": status.TodayRewardGranted,
 			"today_remaining":      status.TodayRemaining,

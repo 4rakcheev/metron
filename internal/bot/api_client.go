@@ -43,6 +43,7 @@ type TodayStats struct {
 type ChildStats struct {
 	ChildID        string `json:"child_id"`
 	ChildName      string `json:"child_name"`
+	ChildEmoji     string `json:"child_emoji"`
 	TodayUsed      int    `json:"today_used"`
 	TodayRemaining int    `json:"today_remaining"`
 	TodayLimit     int    `json:"today_limit"`

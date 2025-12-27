@@ -48,7 +48,7 @@ func FormatTodayStats(stats *TodayStats, activeSessions []Session, childrenMap m
 	}
 
 	for _, child := range stats.Children {
-		emoji := child.Emoji
+		emoji := child.ChildEmoji
 
 		// For now, we can't distinguish personal from shared in the API response
 		// This would require additional API endpoint or session history
