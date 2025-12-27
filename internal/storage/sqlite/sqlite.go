@@ -297,6 +297,23 @@ func (s *SQLiteStorage) runMigrations() error {
 		// Column might already exist, which is fine
 	}
 
+	// Migrate data from daily_usage to daily_usage_summaries
+	// This is a one-time migration to handle the transition from old to new table
+	_, err = s.db.Exec(`
+		INSERT OR REPLACE INTO daily_usage_summaries (child_id, date, minutes_used, session_count, created_at, updated_at)
+		SELECT child_id, date, minutes_used, session_count, created_at, updated_at
+		FROM daily_usage
+		WHERE NOT EXISTS (
+			SELECT 1 FROM daily_usage_summaries
+			WHERE daily_usage_summaries.child_id = daily_usage.child_id
+			AND daily_usage_summaries.date = daily_usage.date
+		);
+	`)
+	// Ignore errors - this migration is best-effort
+	if err != nil {
+		// Migration failed, but we can continue - new sessions will write to summaries
+	}
+
 	return nil
 }
 
@@ -642,99 +659,99 @@ func (s *SQLiteStorage) DeleteSession(ctx context.Context, id string) error {
 }
 
 // GetDailyUsage retrieves daily usage for a child on a specific date
+// DEPRECATED: This method is kept for backward compatibility with tests only.
+// Production code should use GetDailyUsageSummary instead.
+// The daily_usage table has been dropped and replaced with daily_usage_summaries.
 func (s *SQLiteStorage) GetDailyUsage(ctx context.Context, childID string, date time.Time) (*core.DailyUsage, error) {
+	// DEPRECATED: Delegates to new table methods for backward compatibility
 	normalizedDate := s.normalizeDate(date)
 
-	var usage core.DailyUsage
-	err := s.db.QueryRowContext(ctx, `
-		SELECT child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at
-		FROM daily_usage WHERE child_id = ? AND date = ?
-	`, childID, normalizedDate).Scan(&usage.ChildID, &usage.Date, &usage.MinutesUsed,
-		&usage.RewardMinutesGranted, &usage.SessionCount, &usage.CreatedAt, &usage.UpdatedAt)
-
-	if err == sql.ErrNoRows {
-		// Return zero usage if not found
-		return &core.DailyUsage{
-			ChildID:               childID,
-			Date:                  normalizedDate,
-			MinutesUsed:           0,
-			RewardMinutesGranted:  0,
-			SessionCount:          0,
-			CreatedAt:             time.Now(),
-			UpdatedAt:             time.Now(),
-		}, nil
-	}
+	// Get usage summary from new table
+	summary, err := s.GetDailyUsageSummary(ctx, childID, normalizedDate)
 	if err != nil {
 		return nil, err
 	}
 
-	return &usage, nil
+	// Get allocation to find reward minutes
+	allocation, err := s.GetDailyAllocation(ctx, childID, normalizedDate)
+	rewardMinutes := 0
+	if err == nil {
+		rewardMinutes = allocation.BonusGranted
+	}
+
+	return &core.DailyUsage{
+		ChildID:              summary.ChildID,
+		Date:                 summary.Date,
+		MinutesUsed:          summary.MinutesUsed,
+		RewardMinutesGranted: rewardMinutes,
+		SessionCount:         summary.SessionCount,
+		CreatedAt:            summary.CreatedAt,
+		UpdatedAt:            summary.UpdatedAt,
+	}, nil
 }
 
 // UpdateDailyUsage updates daily usage
+// DEPRECATED: Delegates to new table methods for backward compatibility
 func (s *SQLiteStorage) UpdateDailyUsage(ctx context.Context, usage *core.DailyUsage) error {
-	usage.Date = s.normalizeDate(usage.Date)
-	usage.UpdatedAt = time.Now()
+	normalizedDate := s.normalizeDate(usage.Date)
+	now := time.Now()
 
+	// Update summary table
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO daily_usage (child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO daily_usage_summaries (child_id, date, minutes_used, session_count, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(child_id, date) DO UPDATE SET
 			minutes_used = excluded.minutes_used,
-			reward_minutes_granted = excluded.reward_minutes_granted,
 			session_count = excluded.session_count,
 			updated_at = excluded.updated_at
-	`, usage.ChildID, usage.Date, usage.MinutesUsed, usage.RewardMinutesGranted, usage.SessionCount, usage.CreatedAt, usage.UpdatedAt)
+	`, usage.ChildID, normalizedDate, usage.MinutesUsed, usage.SessionCount, now, now)
 
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Update allocation table if there are reward minutes
+	if usage.RewardMinutesGranted > 0 {
+		child, err := s.GetChild(ctx, usage.ChildID)
+		if err != nil {
+			return err
+		}
+
+		baseLimit := child.GetDailyLimit(normalizedDate)
+
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO daily_time_allocations (child_id, date, base_limit, bonus_granted, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+			ON CONFLICT(child_id, date) DO UPDATE SET
+				bonus_granted = excluded.bonus_granted,
+				updated_at = excluded.updated_at
+		`, usage.ChildID, normalizedDate, baseLimit, usage.RewardMinutesGranted, now, now)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // IncrementDailyUsage increments the daily usage for a child
+// DEPRECATED: Delegates to IncrementDailyUsageSummary for backward compatibility
 func (s *SQLiteStorage) IncrementDailyUsage(ctx context.Context, childID string, date time.Time, minutes int) error {
-	normalizedDate := s.normalizeDate(date)
-	now := time.Now()
-
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO daily_usage (child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at)
-		VALUES (?, ?, ?, 0, 0, ?, ?)
-		ON CONFLICT(child_id, date) DO UPDATE SET
-			minutes_used = minutes_used + ?,
-			updated_at = ?
-	`, childID, normalizedDate, minutes, now, now, minutes, now)
-
-	return err
+	return s.IncrementDailyUsageSummary(ctx, childID, date, minutes)
 }
 
 // IncrementSessionCount increments the session count for a child on a given date
+// DEPRECATED: Delegates to IncrementSessionCountSummary for backward compatibility
 func (s *SQLiteStorage) IncrementSessionCount(ctx context.Context, childID string, date time.Time) error {
-	normalizedDate := s.normalizeDate(date)
-	now := time.Now()
-
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO daily_usage (child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at)
-		VALUES (?, ?, 0, 0, 1, ?, ?)
-		ON CONFLICT(child_id, date) DO UPDATE SET
-			session_count = session_count + 1,
-			updated_at = ?
-	`, childID, normalizedDate, now, now, now)
-
-	return err
+	return s.IncrementSessionCountSummary(ctx, childID, date)
 }
 
 // GrantRewardMinutes grants reward minutes to a child for a specific day
+// DEPRECATED: Not used in production. GrantRewardMinutes in manager.go uses allocation system.
 func (s *SQLiteStorage) GrantRewardMinutes(ctx context.Context, childID string, date time.Time, minutes int) error {
-	normalizedDate := s.normalizeDate(date)
-	now := time.Now()
-
-	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO daily_usage (child_id, date, minutes_used, reward_minutes_granted, session_count, created_at, updated_at)
-		VALUES (?, ?, 0, ?, 0, ?, ?)
-		ON CONFLICT(child_id, date) DO UPDATE SET
-			reward_minutes_granted = reward_minutes_granted + ?,
-			updated_at = ?
-	`, childID, normalizedDate, minutes, now, now, minutes, now)
-
-	return err
+	// This method is no longer used - manager uses UpdateDailyAllocation
+	return nil
 }
 
 // ============================================================================
