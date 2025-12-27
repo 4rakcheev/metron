@@ -3,10 +3,12 @@ package handlers
 import (
 	"context"
 	"log/slog"
+	"math/rand"
 	"metron/internal/core"
 	"metron/internal/idgen"
 	"metron/internal/storage"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -31,6 +33,55 @@ func NewChildrenHandler(storage storage.Storage, manager SessionManager, logger 
 		manager: manager,
 		logger:  logger,
 	}
+}
+
+// getRandomEmoji returns a random emoji from a predefined list of child-appropriate emojis
+func getRandomEmoji() string {
+	emojis := []string{
+		"👦", // Boy
+		"👧", // Girl
+		"👶", // Baby
+		"🧒", // Child
+		"🧑", // Person
+		"😊", // Smiling face
+		"😀", // Grinning face
+		"🎮", // Video game
+		"🎨", // Artist palette
+		"🎭", // Performing arts
+		"🎪", // Circus tent
+		"🎯", // Direct hit
+		"🎸", // Guitar
+		"🎺", // Trumpet
+		"🎹", // Musical keyboard
+		"⚽", // Soccer ball
+		"🏀", // Basketball
+		"🎾", // Tennis
+		"🏐", // Volleyball
+		"🎳", // Bowling
+		"🎲", // Game die
+		"🧩", // Puzzle piece
+		"🎬", // Clapper board
+		"📚", // Books
+		"🚀", // Rocket
+		"🌟", // Glowing star
+		"⭐", // Star
+		"🌈", // Rainbow
+		"🦄", // Unicorn
+		"🐶", // Dog face
+		"🐱", // Cat face
+		"🐼", // Panda
+		"🐨", // Koala
+		"🦁", // Lion
+		"🐯", // Tiger face
+		"🦊", // Fox
+		"🐰", // Rabbit face
+		"🐻", // Bear
+	}
+
+	// Use crypto-based random for better randomness
+	source := rand.NewSource(time.Now().UnixNano())
+	r := rand.New(source)
+	return emojis[r.Intn(len(emojis))]
 }
 
 // ListChildren returns all children
@@ -134,8 +185,8 @@ func (h *ChildrenHandler) GetChild(c *gin.Context) {
 func (h *ChildrenHandler) CreateChild(c *gin.Context) {
 	var req struct {
 		Name         string `json:"name" binding:"required"`
-		Emoji        string `json:"emoji" binding:"required"`
-		PIN          string `json:"pin,omitempty"` // Optional 4-digit PIN
+		Emoji        string `json:"emoji,omitempty"` // Optional emoji, will be randomly assigned if empty
+		PIN          string `json:"pin,omitempty"`   // Optional 4-digit PIN
 		WeekdayLimit int    `json:"weekday_limit" binding:"required,gt=0"`
 		WeekendLimit int    `json:"weekend_limit" binding:"required,gt=0"`
 		BreakRule    *struct {
@@ -153,11 +204,17 @@ func (h *ChildrenHandler) CreateChild(c *gin.Context) {
 		return
 	}
 
+	// Assign random emoji if not provided
+	emoji := req.Emoji
+	if emoji == "" {
+		emoji = getRandomEmoji()
+	}
+
 	// Create child model
 	child := &core.Child{
 		ID:           idgen.NewChild(),
 		Name:         req.Name,
-		Emoji:        req.Emoji,
+		Emoji:        emoji,
 		PIN:          req.PIN, // Store PIN (can be empty string)
 		WeekdayLimit: req.WeekdayLimit,
 		WeekendLimit: req.WeekendLimit,
@@ -263,7 +320,12 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 		child.Name = *req.Name
 	}
 	if req.Emoji != nil {
-		child.Emoji = *req.Emoji
+		if *req.Emoji == "" {
+			// If explicitly set to empty, assign a random emoji
+			child.Emoji = getRandomEmoji()
+		} else {
+			child.Emoji = *req.Emoji
+		}
 	}
 	if req.PIN != nil {
 		child.PIN = *req.PIN
