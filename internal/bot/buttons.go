@@ -45,7 +45,7 @@ func BuildChildrenButtons(children []Child, action string, step int) tgbotapi.In
 
 	// Individual children - use index instead of full UUID
 	for i, child := range children {
-		emoji := getChildEmoji(child.Name)
+		emoji := child.Emoji
 		callback := MarshalCallback(CallbackData{
 			Action:     action,
 			Step:       step,
@@ -206,7 +206,7 @@ func BuildSessionManagementButtons(sessions []Session, childrenMap map[string]Ch
 		var childNames []string
 		for _, childID := range session.ChildIDs {
 			if child, ok := childrenMap[childID]; ok {
-				childEmoji := getChildEmoji(child.Name)
+				childEmoji := child.Emoji
 				childNames = append(childNames, childEmoji+" "+child.Name)
 			}
 		}
@@ -283,7 +283,7 @@ func BuildAddKidButtons(sessionIndex int, availableChildren []Child, alreadyShar
 
 	// Show available children to add
 	for i, child := range availableChildren {
-		emoji := getChildEmoji(child.Name)
+		emoji := child.Emoji
 		callback := MarshalCallback(CallbackData{
 			Action:       "manage",
 			SubAction:    "add_kid",
@@ -444,7 +444,7 @@ func BuildDowntimeToggleButtons(children []Child) tgbotapi.InlineKeyboardMarkup 
 
 	// Create button for each child
 	for i, child := range children {
-		emoji := getChildEmoji(child.Name)
+		emoji := child.Emoji
 		var statusEmoji string
 		if child.DowntimeEnabled {
 			statusEmoji = "🌙"

@@ -54,6 +54,7 @@ type ChildStats struct {
 type Child struct {
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`
+	Emoji           string     `json:"emoji"`
 	WeekdayLimit    int        `json:"weekday_limit"`
 	WeekendLimit    int        `json:"weekend_limit"`
 	BreakRule       *BreakRule `json:"break_rule,omitempty"`

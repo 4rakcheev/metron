@@ -19,6 +19,7 @@ const (
 type Child struct {
 	ID              string
 	Name            string
+	Emoji           string // emoji representing the child (e.g., "👦", "👧")
 	PIN             string // 4-digit PIN for child authentication (hashed with bcrypt)
 	WeekdayLimit    int    // minutes per weekday
 	WeekendLimit    int    // minutes per weekend day

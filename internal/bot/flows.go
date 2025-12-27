@@ -557,10 +557,11 @@ func (b *Bot) grantReward(ctx context.Context, message *tgbotapi.Message, childI
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
-	var childName string
+	var childName, childEmoji string
 	for _, child := range children {
 		if child.ID == childID {
 			childName = child.Name
+			childEmoji = child.Emoji
 			break
 		}
 	}
@@ -571,7 +572,7 @@ func (b *Bot) grantReward(ctx context.Context, message *tgbotapi.Message, childI
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
-	text := FormatRewardGranted(childName, response)
+	text := FormatRewardGranted(childName, childEmoji, response)
 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
 }
@@ -653,7 +654,7 @@ func (b *Bot) handleDowntimeFlow(ctx context.Context, message *tgbotapi.Message,
 		}
 
 		// Build confirmation message
-		emoji := getChildEmoji(child.Name)
+		emoji := child.Emoji
 		statusText := "enabled"
 		if !newStatus {
 			statusText = "disabled"

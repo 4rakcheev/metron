@@ -48,7 +48,7 @@ func FormatTodayStats(stats *TodayStats, activeSessions []Session, childrenMap m
 	}
 
 	for _, child := range stats.Children {
-		emoji := getChildEmoji(child.ChildName)
+		emoji := child.Emoji
 
 		// For now, we can't distinguish personal from shared in the API response
 		// This would require additional API endpoint or session history
@@ -105,7 +105,7 @@ func FormatChildren(children []Child) string {
 	}
 
 	for _, child := range children {
-		emoji := getChildEmoji(child.Name)
+		emoji := child.Emoji
 		sb.WriteString(fmt.Sprintf("%s *%s*\n", emoji, child.Name))
 		sb.WriteString(fmt.Sprintf("   ID: `%s`\n", child.ID))
 		sb.WriteString(fmt.Sprintf("   Weekday: %d min\n", child.WeekdayLimit))
@@ -193,7 +193,7 @@ func FormatActiveSessions(sessions []Session, childrenMap map[string]Child) stri
 		var childNames []string
 		for _, childID := range sess.ChildIDs {
 			if child, ok := childrenMap[childID]; ok {
-				emoji := getChildEmoji(child.Name)
+				emoji := child.Emoji
 				childNames = append(childNames, emoji+" "+child.Name)
 			}
 		}
@@ -223,7 +223,7 @@ func FormatSessionCreated(session *Session, childrenMap map[string]Child) string
 	var childNames []string
 	for _, childID := range session.ChildIDs {
 		if child, ok := childrenMap[childID]; ok {
-			emoji := getChildEmoji(child.Name)
+			emoji := child.Emoji
 			childNames = append(childNames, emoji+" "+child.Name)
 		}
 	}
@@ -267,7 +267,7 @@ func FormatChildrenAddedToSession(session *Session, addedChildIDs []string, chil
 	var addedNames []string
 	for _, childID := range addedChildIDs {
 		if child, ok := childrenMap[childID]; ok {
-			emoji := getChildEmoji(child.Name)
+			emoji := child.Emoji
 			addedNames = append(addedNames, emoji+" "+child.Name)
 		}
 	}
@@ -280,7 +280,7 @@ func FormatChildrenAddedToSession(session *Session, addedChildIDs []string, chil
 	var allNames []string
 	for _, childID := range session.ChildIDs {
 		if child, ok := childrenMap[childID]; ok {
-			emoji := getChildEmoji(child.Name)
+			emoji := child.Emoji
 			allNames = append(allNames, emoji+" "+child.Name)
 		}
 	}
@@ -309,7 +309,7 @@ func FormatSessionStopped(session *Session, childrenMap map[string]Child) string
 	var childNames []string
 	for _, childID := range session.ChildIDs {
 		if child, ok := childrenMap[childID]; ok {
-			emoji := getChildEmoji(child.Name)
+			emoji := child.Emoji
 			childNames = append(childNames, emoji+" "+child.Name)
 		}
 	}
@@ -328,13 +328,11 @@ func FormatSessionStopped(session *Session, childrenMap map[string]Child) string
 }
 
 // FormatRewardGranted formats a success message for granting a reward
-func FormatRewardGranted(childName string, response *GrantRewardResponse) string {
+func FormatRewardGranted(childName, childEmoji string, response *GrantRewardResponse) string {
 	var sb strings.Builder
 
-	emoji := getChildEmoji(childName)
-
 	sb.WriteString("✅ *Reward Granted!*\n\n")
-	sb.WriteString(fmt.Sprintf("%s *%s*\n\n", emoji, childName))
+	sb.WriteString(fmt.Sprintf("%s *%s*\n\n", childEmoji, childName))
 	sb.WriteString(fmt.Sprintf("🎁 Bonus added: +%d minutes\n", response.MinutesGranted))
 	sb.WriteString(fmt.Sprintf("📊 Total rewards today: %d minutes\n", response.TodayRewardGranted))
 	sb.WriteString(fmt.Sprintf("⏱ Remaining time: %d minutes\n", response.TodayRemaining))
@@ -367,21 +365,6 @@ func calculateSessionEnd(session Session) (time.Time, int) {
 	}
 
 	return endTime, remaining
-}
-
-// getChildEmoji returns an emoji for a child based on their name
-func getChildEmoji(name string) string {
-	// Map common names to emojis
-	lowerName := strings.ToLower(name)
-
-	switch {
-	case strings.Contains(lowerName, "сем") || strings.Contains(lowerName, "sem"):
-		return "👦"
-	case strings.Contains(lowerName, "алис") || strings.Contains(lowerName, "alic"):
-		return "👧"
-	default:
-		return "👶"
-	}
 }
 
 // getDeviceEmoji returns an emoji for a device type

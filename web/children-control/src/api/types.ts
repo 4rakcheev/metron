@@ -3,6 +3,7 @@
 export interface Child {
   id: string;
   name: string;
+  emoji: string;
   weekday_limit: number;
   weekend_limit: number;
 }
@@ -10,6 +11,7 @@ export interface Child {
 export interface ChildForAuth {
   id: string;
   name: string;
+  emoji: string;
 }
 
 export interface TodayStats {
