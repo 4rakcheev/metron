@@ -22,6 +22,7 @@ type Config struct {
 	Devices  []DeviceConfig  `json:"devices"`  // Global device registry
 	Aqara    AqaraConfig     `json:"aqara"`
 	Kidslox  *KidsloxConfig  `json:"kidslox,omitempty"`
+	Downtime *DowntimeConfig `json:"downtime,omitempty"`
 }
 
 // DeviceConfig represents a device configuration
@@ -77,6 +78,12 @@ type KidsloxConfig struct {
 	ProfileID string `json:"profile_id,omitempty"` // Default Kidslox profile ID
 }
 
+// DowntimeConfig defines the global downtime schedule
+type DowntimeConfig struct {
+	StartTime string `json:"start_time"` // HH:MM format (e.g., "22:00")
+	EndTime   string `json:"end_time"`   // HH:MM format (e.g., "10:00")
+}
+
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.Server.Port <= 0 || c.Server.Port > 65535 {
@@ -122,7 +129,35 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	// Validate downtime config if present
+	if c.Downtime != nil {
+		if _, _, err := parseTimeOfDay(c.Downtime.StartTime); err != nil {
+			return fmt.Errorf("%w: invalid downtime start_time '%s': %v", ErrInvalidConfig, c.Downtime.StartTime, err)
+		}
+		if _, _, err := parseTimeOfDay(c.Downtime.EndTime); err != nil {
+			return fmt.Errorf("%w: invalid downtime end_time '%s': %v", ErrInvalidConfig, c.Downtime.EndTime, err)
+		}
+	}
+
 	return nil
+}
+
+// parseTimeOfDay parses a time string in HH:MM format and returns hour and minute
+func parseTimeOfDay(timeStr string) (hour, minute int, err error) {
+	n, err := fmt.Sscanf(timeStr, "%d:%d", &hour, &minute)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid time format, expected HH:MM: %w", err)
+	}
+	if n != 2 {
+		return 0, 0, fmt.Errorf("invalid time format, expected HH:MM")
+	}
+	if hour < 0 || hour > 23 {
+		return 0, 0, fmt.Errorf("hour must be between 0 and 23, got %d", hour)
+	}
+	if minute < 0 || minute > 59 {
+		return 0, 0, fmt.Errorf("minute must be between 0 and 59, got %d", minute)
+	}
+	return hour, minute, nil
 }
 
 // Load loads configuration from a JSON file

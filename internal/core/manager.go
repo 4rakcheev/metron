@@ -62,12 +62,13 @@ type SessionManager struct {
 	deviceRegistry DeviceRegistry
 	driverRegistry DriverRegistry
 	calculator     *TimeCalculationService
+	downtime       *DowntimeService
 	timezone       *time.Location
 	logger         *slog.Logger
 }
 
 // NewSessionManager creates a new session manager
-func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, calculator *TimeCalculationService, timezone *time.Location, logger *slog.Logger) *SessionManager {
+func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, calculator *TimeCalculationService, downtime *DowntimeService, timezone *time.Location, logger *slog.Logger) *SessionManager {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -86,6 +87,7 @@ func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverReg
 		deviceRegistry: deviceRegistry,
 		driverRegistry: driverRegistry,
 		calculator:     calculator,
+		downtime:       downtime,
 		timezone:       timezone,
 		logger:         logger,
 	}
@@ -132,6 +134,9 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 	today := now.In(m.timezone)
 	minRemainingTime := durationMinutes // Start with requested duration
 
+	// Check for parent override context
+	isParentOverride := ctx.Value("parent_override") != nil
+
 	for _, childID := range childIDs {
 		child, err := m.storage.GetChild(ctx, childID)
 		if err != nil {
@@ -139,6 +144,15 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 				"child_id", childID,
 				"error", err)
 			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
+		}
+
+		// Check downtime (unless parent override)
+		if !isParentOverride && m.downtime != nil && m.downtime.IsChildInDowntime(child, now) {
+			m.logger.Warn("Session start blocked by downtime",
+				"child_id", childID,
+				"child_name", child.Name,
+				"downtime_enabled", child.DowntimeEnabled)
+			return nil, ErrDowntimeActive
 		}
 
 		// Use calculator to check time availability
@@ -176,6 +190,32 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 				"child_name", child.Name,
 				"remaining", remaining.RemainingTotal,
 				"original_duration", durationMinutes)
+		}
+	}
+
+	// If parent override, disable downtime for all children
+	if isParentOverride {
+		for _, childID := range childIDs {
+			child, err := m.storage.GetChild(ctx, childID)
+			if err != nil {
+				m.logger.Error("Failed to get child for downtime override",
+					"child_id", childID,
+					"error", err)
+				continue
+			}
+
+			if child.DowntimeEnabled {
+				child.DowntimeEnabled = false
+				if err := m.storage.UpdateChild(ctx, child); err != nil {
+					m.logger.Error("Failed to disable downtime for child",
+						"child_id", childID,
+						"error", err)
+				} else {
+					m.logger.Info("Downtime disabled via parent override",
+						"child_id", childID,
+						"child_name", child.Name)
+				}
+			}
 		}
 	}
 
@@ -352,6 +392,16 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 				"child_id", childID,
 				"error", err)
 			return nil, fmt.Errorf("failed to get child %s: %w", childID, err)
+		}
+
+		// Check downtime (no parent override allowed for extensions)
+		if m.downtime != nil && m.downtime.IsChildInDowntime(child, time.Now()) {
+			m.logger.Warn("Session extension blocked by downtime",
+				"session_id", sessionID,
+				"child_id", childID,
+				"child_name", child.Name,
+				"downtime_enabled", child.DowntimeEnabled)
+			return nil, ErrDowntimeActive
 		}
 
 		// Use calculator to get accurate remaining time for extension validation

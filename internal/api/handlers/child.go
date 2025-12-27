@@ -7,6 +7,7 @@ import (
 	"metron/internal/devices"
 	"metron/internal/storage"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -18,6 +19,7 @@ type ChildHandler struct {
 	manager        FullSessionManager
 	deviceRegistry *devices.Registry
 	sessionManager *middleware.SessionManager
+	downtime       *core.DowntimeService
 	logger         *slog.Logger
 }
 
@@ -27,6 +29,7 @@ func NewChildHandler(
 	manager FullSessionManager,
 	deviceRegistry *devices.Registry,
 	sessionManager *middleware.SessionManager,
+	downtime *core.DowntimeService,
 	logger *slog.Logger,
 ) *ChildHandler {
 	return &ChildHandler{
@@ -34,6 +37,7 @@ func NewChildHandler(
 		manager:        manager,
 		deviceRegistry: deviceRegistry,
 		sessionManager: sessionManager,
+		downtime:       downtime,
 		logger:         logger,
 	}
 }
@@ -244,12 +248,42 @@ func (h *ChildHandler) GetToday(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	// Get child to check downtime status
+	child, err := h.storage.GetChild(c.Request.Context(), childID)
+	if err != nil {
+		h.logger.Error("Failed to get child for downtime check",
+			"child_id", childID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve child",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	response := gin.H{
 		"used_minutes":      status.TodayUsed,
 		"remaining_minutes": status.TodayRemaining,
 		"daily_limit":       status.TodayLimit,
 		"sessions_count":    status.SessionsToday,
-	})
+		"downtime_enabled":  child.DowntimeEnabled,
+	}
+
+	// Add downtime active status if downtime is enabled
+	if h.downtime != nil && child.DowntimeEnabled {
+		response["in_downtime"] = h.downtime.IsInDowntime(time.Now())
+		if h.downtime.IsInDowntime(time.Now()) {
+			downtimeEnd := h.downtime.GetCurrentDowntimeEnd(time.Now())
+			if !downtimeEnd.IsZero() {
+				response["downtime_end"] = downtimeEnd.Format("2006-01-02T15:04:05Z07:00")
+			}
+		}
+	} else {
+		response["in_downtime"] = false
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 // ListDevices returns available devices

@@ -168,7 +168,7 @@ func TestScheduler_ProcessSession_Expired(t *testing.T) {
 	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, nil, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
 
 	// Create child
 	child := &core.Child{
@@ -219,7 +219,7 @@ func TestScheduler_ProcessSession_Warning(t *testing.T) {
 	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, nil, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
 
 	// Create child
 	child := &core.Child{
@@ -265,7 +265,7 @@ func TestScheduler_ProcessSession_NoWarning(t *testing.T) {
 	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, nil, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
 
 	// Create child
 	child := &core.Child{
@@ -311,7 +311,7 @@ func TestScheduler_ProcessSession_BreakRule(t *testing.T) {
 	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, nil, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
 
 	// Create child with break rule
 	child := &core.Child{
@@ -362,7 +362,7 @@ func TestScheduler_ProcessSession_InBreak(t *testing.T) {
 	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, nil, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
 
 	// Create child
 	child := &core.Child{
@@ -411,7 +411,7 @@ func TestScheduler_ProcessSession_BreakEnded(t *testing.T) {
 	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, nil, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
 
 	// Create child
 	child := &core.Child{
@@ -455,7 +455,7 @@ func TestScheduler_Tick(t *testing.T) {
 	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, time.Minute, nil, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
 
 	// Create child
 	child := &core.Child{
@@ -509,7 +509,7 @@ func TestScheduler_StartStop(t *testing.T) {
 	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, 100*time.Millisecond, nil, logger)
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, 100*time.Millisecond, nil, logger)
 
 	// Start scheduler in goroutine
 	go scheduler.Start()

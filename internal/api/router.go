@@ -19,6 +19,7 @@ type RouterConfig struct {
 	Manager           core.SessionManagerInterface
 	DriverRegistry    *drivers.Registry
 	DeviceRegistry    *devices.Registry
+	Downtime          *core.DowntimeService
 	APIKey            string
 	Logger            *slog.Logger
 	ChildLogger       *slog.Logger // Logger for child API endpoints
@@ -133,6 +134,7 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			config.Manager,
 			config.DeviceRegistry,
 			sessionManager,
+			config.Downtime,
 			config.Logger,
 		)
 

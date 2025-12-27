@@ -42,6 +42,7 @@ type Scheduler struct {
 	storage        Storage
 	deviceRegistry DeviceRegistry
 	driverRegistry DriverRegistry
+	downtime       *core.DowntimeService
 	interval       time.Duration
 	timezone       *time.Location
 	stopChan       chan struct{}
@@ -49,7 +50,7 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a new scheduler
-func NewScheduler(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, interval time.Duration, timezone *time.Location, logger *slog.Logger) *Scheduler {
+func NewScheduler(storage Storage, deviceRegistry DeviceRegistry, driverRegistry DriverRegistry, downtime *core.DowntimeService, interval time.Duration, timezone *time.Location, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -60,6 +61,7 @@ func NewScheduler(storage Storage, deviceRegistry DeviceRegistry, driverRegistry
 		storage:        storage,
 		deviceRegistry: deviceRegistry,
 		driverRegistry: driverRegistry,
+		downtime:       downtime,
 		interval:       interval,
 		timezone:       timezone,
 		stopChan:       make(chan struct{}),
@@ -132,6 +134,29 @@ func (s *Scheduler) tick() {
 
 // processSession processes a single session
 func (s *Scheduler) processSession(ctx context.Context, session *core.Session) error {
+	// Check if any child is in downtime period
+	if s.downtime != nil {
+		now := time.Now()
+		for _, childID := range session.ChildIDs {
+			child, err := s.storage.GetChild(ctx, childID)
+			if err != nil {
+				s.logger.Error("Failed to get child for downtime check",
+					"session_id", session.ID,
+					"child_id", childID,
+					"error", err)
+				continue
+			}
+
+			if s.downtime.IsChildInDowntime(child, now) {
+				s.logger.Info("Session stopped due to downtime",
+					"session_id", session.ID,
+					"child_id", childID,
+					"child_name", child.Name)
+				return s.endSession(ctx, session)
+			}
+		}
+	}
+
 	// Check if session has a break time set
 	if session.BreakEndsAt != nil {
 		if time.Now().After(*session.BreakEndsAt) {

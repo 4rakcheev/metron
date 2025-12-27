@@ -65,7 +65,9 @@ func (b *Bot) handleChildren(ctx context.Context, message *tgbotapi.Message) err
 	}
 
 	text := FormatChildren(children)
-	return b.sendMessage(message.Chat.ID, text, BuildQuickActionsButtons())
+	// Add instruction about downtime toggle
+	text += "\nTap a child below to toggle downtime:"
+	return b.sendMessage(message.Chat.ID, text, BuildDowntimeToggleButtons(children))
 }
 
 // handleDevices handles the /devices command

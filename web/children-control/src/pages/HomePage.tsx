@@ -94,6 +94,7 @@ export function HomePage() {
   }
 
   const hasNoTime = stats.remaining_minutes === 0;
+  const isInDowntime = stats.downtime_enabled && stats.in_downtime;
 
   return (
     <div className="min-h-screen pb-8">
@@ -140,6 +141,26 @@ export function HomePage() {
           </div>
         )}
 
+        {/* Downtime Notice */}
+        {stats.downtime_enabled && stats.in_downtime && !activeSession && (
+          <div className="card bg-purple-900 text-white">
+            <div className="text-center py-8">
+              <div className="text-6xl mb-4">🌙</div>
+              <div className="text-2xl font-bold mb-2">
+                Downtime Period
+              </div>
+              <div className="text-purple-200">
+                You cannot start or extend sessions during downtime.
+              </div>
+              {stats.downtime_end && (
+                <div className="mt-4 text-sm text-purple-300">
+                  Downtime ends at {new Date(stats.downtime_end).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* No Time Message */}
         {hasNoTime && !activeSession && (
           <div className="card bg-yellow-50 border-2 border-yellow-200">
@@ -155,8 +176,8 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Device Selection (only if no active session and has time) */}
-        {!activeSession && !hasNoTime && (
+        {/* Device Selection (only if no active session, has time, and not in downtime) */}
+        {!activeSession && !hasNoTime && !isInDowntime && (
           <div>
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               📱 Choose a device
@@ -176,8 +197,8 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Duration Selection (only if device selected) */}
-        {!activeSession && !hasNoTime && selectedDeviceId && (
+        {/* Duration Selection (only if device selected and not in downtime) */}
+        {!activeSession && !hasNoTime && !isInDowntime && selectedDeviceId && (
           <div className="card bg-gradient-to-br from-purple-50 to-pink-50">
             <DurationPicker
               onSelect={handleCreateSession}

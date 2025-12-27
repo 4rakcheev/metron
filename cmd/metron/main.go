@@ -81,6 +81,24 @@ type schedulerDriverAdapter struct {
 	devices.DeviceDriver
 }
 
+// parseTimeOfDay parses a time string in HH:MM format and returns hour and minute
+func parseTimeOfDay(timeStr string) (hour, minute int, err error) {
+	n, err := fmt.Sscanf(timeStr, "%d:%d", &hour, &minute)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid time format, expected HH:MM: %w", err)
+	}
+	if n != 2 {
+		return 0, 0, fmt.Errorf("invalid time format, expected HH:MM")
+	}
+	if hour < 0 || hour > 23 {
+		return 0, 0, fmt.Errorf("hour must be between 0 and 23, got %d", hour)
+	}
+	if minute < 0 || minute > 59 {
+		return 0, 0, fmt.Errorf("minute must be between 0 and 59, got %d", minute)
+	}
+	return hour, minute, nil
+}
+
 func main() {
 	// Parse command-line flags
 	configPath := flag.String("config", defaultConfigPath, "Path to configuration file")
@@ -225,16 +243,49 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 	logger.Info("Initializing time calculation service")
 	calculator := core.NewTimeCalculationService(db, timezone)
 
+	// Initialize downtime service
+	var downtimeService *core.DowntimeService
+	if cfg.Downtime != nil {
+		logger.Info("Initializing downtime service",
+			"start_time", cfg.Downtime.StartTime,
+			"end_time", cfg.Downtime.EndTime)
+
+		// Parse time configuration
+		startHour, startMinute, err := parseTimeOfDay(cfg.Downtime.StartTime)
+		if err != nil {
+			logger.Error("Invalid downtime start_time", "error", err)
+			os.Exit(1)
+		}
+
+		endHour, endMinute, err := parseTimeOfDay(cfg.Downtime.EndTime)
+		if err != nil {
+			logger.Error("Invalid downtime end_time", "error", err)
+			os.Exit(1)
+		}
+
+		schedule := &core.DowntimeSchedule{
+			StartHour:   startHour,
+			StartMinute: startMinute,
+			EndHour:     endHour,
+			EndMinute:   endMinute,
+		}
+
+		downtimeService = core.NewDowntimeService(schedule, timezone)
+	} else {
+		logger.Info("Downtime service disabled (no configuration)")
+		downtimeService = core.NewDowntimeService(nil, timezone)
+	}
+
 	// Initialize session manager
 	logger.Info("Initializing session manager")
-	baseManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, calculator, timezone, managerLogger)
+	baseManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, calculator, downtimeService, timezone, managerLogger)
 
 	// Wrap session manager with logging decorator
 	sessionManager := logging.NewSessionManagerLogger(baseManager, multiLogger.Core)
 
 	// Start scheduler
 	logger.Info("Starting session scheduler", "interval", "1m")
-	sched := scheduler.NewScheduler(db, &schedulerDeviceRegistry{deviceRegistry}, &schedulerDriverRegistry{driverRegistry}, 1*time.Minute, timezone, schedulerLogger)
+	sched := scheduler.NewScheduler(db, &schedulerDeviceRegistry{deviceRegistry}, &schedulerDriverRegistry{driverRegistry}, downtimeService, 1*time.Minute, timezone, schedulerLogger)
 	go sched.Start()
 
 	// Initialize REST API with Gin
@@ -244,6 +295,7 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 		Manager:           sessionManager,
 		DriverRegistry:    driverRegistry,
 		DeviceRegistry:    deviceRegistry,
+		Downtime:          downtimeService,
 		APIKey:            cfg.Security.APIKey,
 		Logger:            apiLogger,
 		ChildLogger:       multiLogger.Child,

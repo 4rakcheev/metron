@@ -200,6 +200,8 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		return b.handleRewardFlow(ctx, callback.Message, data)
 	case "manage":
 		return b.handleManageFlow(ctx, callback.Message, data)
+	case "downtime":
+		return b.handleDowntimeFlow(ctx, callback.Message, data)
 	default:
 		return b.sendMessage(callback.Message.Chat.ID,
 			"Unknown action.", nil)

@@ -52,13 +52,14 @@ type ChildStats struct {
 
 // Child represents a child
 type Child struct {
-	ID           string     `json:"id"`
-	Name         string     `json:"name"`
-	WeekdayLimit int        `json:"weekday_limit"`
-	WeekendLimit int        `json:"weekend_limit"`
-	BreakRule    *BreakRule `json:"break_rule,omitempty"`
-	CreatedAt    string     `json:"created_at"`
-	UpdatedAt    string     `json:"updated_at"`
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	WeekdayLimit    int        `json:"weekday_limit"`
+	WeekendLimit    int        `json:"weekend_limit"`
+	BreakRule       *BreakRule `json:"break_rule,omitempty"`
+	DowntimeEnabled bool       `json:"downtime_enabled"`
+	CreatedAt       string     `json:"created_at"`
+	UpdatedAt       string     `json:"updated_at"`
 }
 
 // BreakRule represents break rule settings
@@ -228,6 +229,17 @@ func (a *MetronAPI) GrantReward(ctx context.Context, childID string, minutes int
 		return nil, err
 	}
 	return &response, nil
+}
+
+// UpdateChildDowntime updates the downtime enabled status for a child
+func (a *MetronAPI) UpdateChildDowntime(ctx context.Context, childID string, enabled bool) error {
+	req := struct {
+		DowntimeEnabled bool `json:"downtime_enabled"`
+	}{
+		DowntimeEnabled: enabled,
+	}
+
+	return a.doRequest(ctx, "PATCH", "/v1/children/"+childID, req, nil)
 }
 
 // doRequest performs an HTTP request to the Metron API

@@ -17,14 +17,15 @@ const (
 
 // Child represents a child with screen-time limits
 type Child struct {
-	ID           string
-	Name         string
-	PIN          string // 4-digit PIN for child authentication (hashed with bcrypt)
-	WeekdayLimit int    // minutes per weekday
-	WeekendLimit int    // minutes per weekend day
-	BreakRule    *BreakRule
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID              string
+	Name            string
+	PIN             string // 4-digit PIN for child authentication (hashed with bcrypt)
+	WeekdayLimit    int    // minutes per weekday
+	WeekendLimit    int    // minutes per weekend day
+	BreakRule       *BreakRule
+	DowntimeEnabled bool // whether downtime schedule is enforced for this child
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // BreakRule defines mandatory break periods
@@ -76,6 +77,7 @@ var (
 	ErrSessionNotFound     = errors.New("session not found")
 	ErrChildNotFound       = errors.New("child not found")
 	ErrExtensionTooSoon    = errors.New("extension request too soon after previous extension")
+	ErrDowntimeActive      = errors.New("session cannot be started during downtime period")
 )
 
 // Validate validates a Child

@@ -139,6 +139,9 @@ func (b *Bot) newSessionCreate(ctx context.Context, message *tgbotapi.Message, c
 		Minutes:  duration,
 	}
 
+	// Add parent override context (Telegram bot requests are always from parent)
+	ctx = context.WithValue(ctx, "parent_override", true)
+
 	session, err := b.client.CreateSession(ctx, req)
 	if err != nil {
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
@@ -613,4 +616,55 @@ func (b *Bot) stopSession(ctx context.Context, message *tgbotapi.Message, sessio
 	text := FormatSessionStopped(stoppedSession, childrenMap)
 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
+}
+
+// handleDowntimeFlow handles downtime toggle callbacks
+func (b *Bot) handleDowntimeFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	b.logger.Info("Downtime flow",
+		"sub_action", data.SubAction,
+		"child_index", data.ChildIndex,
+	)
+
+	if data.SubAction == "toggle" {
+		// Get all children
+		children, err := b.client.ListChildren(ctx)
+		if err != nil {
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+		}
+
+		// Validate child index
+		if data.ChildIndex < 0 || data.ChildIndex >= len(children) {
+			return b.editMessage(message.Chat.ID, message.MessageID,
+				"❌ Invalid child selection.", nil)
+		}
+
+		child := children[data.ChildIndex]
+
+		// Toggle downtime
+		newStatus := !child.DowntimeEnabled
+		if err := b.client.UpdateChildDowntime(ctx, child.ID, newStatus); err != nil {
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+		}
+
+		// Refresh children list
+		children, err = b.client.ListChildren(ctx)
+		if err != nil {
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+		}
+
+		// Build confirmation message
+		emoji := getChildEmoji(child.Name)
+		statusText := "enabled"
+		if !newStatus {
+			statusText = "disabled"
+		}
+		confirmText := fmt.Sprintf("✅ Downtime %s for %s %s\n\n", statusText, emoji, child.Name)
+		confirmText += FormatChildren(children)
+		confirmText += "\nTap a child below to toggle downtime:"
+
+		return b.editMessage(message.Chat.ID, message.MessageID, confirmText, BuildDowntimeToggleButtons(children))
+	}
+
+	return b.editMessage(message.Chat.ID, message.MessageID,
+		"❌ Unknown downtime action.", nil)
 }

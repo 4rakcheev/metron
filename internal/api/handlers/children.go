@@ -53,13 +53,14 @@ func (h *ChildrenHandler) ListChildren(c *gin.Context) {
 	response := make([]gin.H, 0, len(children))
 	for _, child := range children {
 		response = append(response, gin.H{
-			"id":            child.ID,
-			"name":          child.Name,
-			"weekday_limit": child.WeekdayLimit,
-			"weekend_limit": child.WeekendLimit,
-			"break_rule":    formatBreakRule(child.BreakRule),
-			"created_at":    child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-			"updated_at":    child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			"id":               child.ID,
+			"name":             child.Name,
+			"weekday_limit":    child.WeekdayLimit,
+			"weekend_limit":    child.WeekendLimit,
+			"break_rule":       formatBreakRule(child.BreakRule),
+			"downtime_enabled": child.DowntimeEnabled,
+			"created_at":       child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			"updated_at":       child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		})
 	}
 
@@ -115,6 +116,7 @@ func (h *ChildrenHandler) GetChild(c *gin.Context) {
 		"weekday_limit":        child.WeekdayLimit,
 		"weekend_limit":        child.WeekendLimit,
 		"break_rule":           formatBreakRule(child.BreakRule),
+		"downtime_enabled":     child.DowntimeEnabled,
 		"created_at":           child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		"updated_at":           child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		"today_used":           status.TodayUsed,
@@ -230,11 +232,12 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 
 	// Parse update request
 	var req struct {
-		Name         *string `json:"name,omitempty"`
-		PIN          *string `json:"pin,omitempty"` // Optional PIN update
-		WeekdayLimit *int    `json:"weekday_limit,omitempty"`
-		WeekendLimit *int    `json:"weekend_limit,omitempty"`
-		BreakRule    *struct {
+		Name            *string `json:"name,omitempty"`
+		PIN             *string `json:"pin,omitempty"` // Optional PIN update
+		WeekdayLimit    *int    `json:"weekday_limit,omitempty"`
+		WeekendLimit    *int    `json:"weekend_limit,omitempty"`
+		DowntimeEnabled *bool   `json:"downtime_enabled,omitempty"`
+		BreakRule       *struct {
 			BreakAfterMinutes    int `json:"break_after_minutes" binding:"required,gt=0"`
 			BreakDurationMinutes int `json:"break_duration_minutes" binding:"required,gt=0"`
 		} `json:"break_rule,omitempty"`
@@ -261,6 +264,9 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 	}
 	if req.WeekendLimit != nil {
 		child.WeekendLimit = *req.WeekendLimit
+	}
+	if req.DowntimeEnabled != nil {
+		child.DowntimeEnabled = *req.DowntimeEnabled
 	}
 	if req.BreakRule != nil {
 		child.BreakRule = &core.BreakRule{

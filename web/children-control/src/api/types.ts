@@ -17,6 +17,9 @@ export interface TodayStats {
   remaining_minutes: number;
   daily_limit: number;
   sessions_count: number;
+  downtime_enabled: boolean;
+  in_downtime: boolean;
+  downtime_end?: string;
 }
 
 export interface Device {

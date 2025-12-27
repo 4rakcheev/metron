@@ -116,6 +116,14 @@ func FormatChildren(children []Child) string {
 				child.BreakRule.BreakAfterMinutes,
 				child.BreakRule.BreakDurationMinutes))
 		}
+
+		// Show downtime status
+		if child.DowntimeEnabled {
+			sb.WriteString("   🌙 Downtime: Enabled\n")
+		} else {
+			sb.WriteString("   ☀️ Downtime: Disabled\n")
+		}
+
 		sb.WriteString("\n")
 	}
 

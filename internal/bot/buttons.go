@@ -437,3 +437,38 @@ func BuildRewardDurationButtons(childIndex int) tgbotapi.InlineKeyboardMarkup {
 
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
+
+// BuildDowntimeToggleButtons creates buttons for toggling downtime per child
+func BuildDowntimeToggleButtons(children []Child) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	// Create button for each child
+	for i, child := range children {
+		emoji := getChildEmoji(child.Name)
+		var statusEmoji string
+		if child.DowntimeEnabled {
+			statusEmoji = "🌙"
+		} else {
+			statusEmoji = "☀️"
+		}
+
+		callback := MarshalCallback(CallbackData{
+			Action:     "downtime",
+			SubAction:  "toggle",
+			ChildIndex: i,
+		})
+
+		label := fmt.Sprintf("%s %s %s", emoji, child.Name, statusEmoji)
+		btn := tgbotapi.NewInlineKeyboardButtonData(label, callback)
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{btn})
+	}
+
+	// Cancel button
+	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"❌ Close",
+		MarshalCallback(CallbackData{Action: "cancel"}),
+	)
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{cancelBtn})
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
