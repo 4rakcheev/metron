@@ -15,14 +15,15 @@ import (
 
 // RouterConfig holds dependencies for the API router
 type RouterConfig struct {
-	Storage           storage.Storage
-	Manager           core.SessionManagerInterface
-	DriverRegistry    *drivers.Registry
-	DeviceRegistry    *devices.Registry
-	Downtime          *core.DowntimeService
-	APIKey            string
-	Logger            *slog.Logger
-	AqaraTokenStorage aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
+	Storage             storage.Storage
+	Manager             core.SessionManagerInterface
+	DriverRegistry      *drivers.Registry
+	DeviceRegistry      *devices.Registry
+	Downtime            *core.DowntimeService
+	DowntimeSkipStorage core.DowntimeSkipStorage // For skip downtime feature
+	APIKey              string
+	Logger              *slog.Logger
+	AqaraTokenStorage   aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
 }
 
 // NewRouter creates and configures the Gin router
@@ -119,6 +120,17 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			)
 			v1.POST("/admin/aqara/refresh-token", adminHandler.UpdateAqaraRefreshToken)
 			v1.GET("/admin/aqara/token-status", adminHandler.GetAqaraTokenStatus)
+		}
+
+		// Downtime endpoints (only register if downtime service is configured)
+		if config.DowntimeSkipStorage != nil && config.Downtime != nil {
+			downtimeHandler := handlers.NewDowntimeHandler(
+				config.DowntimeSkipStorage,
+				config.Downtime,
+				config.Logger,
+			)
+			v1.POST("/downtime/skip-today", downtimeHandler.SkipDowntimeToday)
+			v1.GET("/downtime/skip-status", downtimeHandler.GetSkipStatus)
 		}
 	}
 

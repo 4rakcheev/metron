@@ -244,6 +244,26 @@ func (a *MetronAPI) UpdateChildDowntime(ctx context.Context, childID string, ena
 	return a.doRequest(ctx, "PATCH", "/v1/children/"+childID, req, nil)
 }
 
+// SkipDowntimeToday skips downtime for all children today
+func (a *MetronAPI) SkipDowntimeToday(ctx context.Context) error {
+	return a.doRequest(ctx, "POST", "/v1/downtime/skip-today", nil, nil)
+}
+
+// DowntimeSkipStatus represents the skip status response
+type DowntimeSkipStatus struct {
+	SkippedToday bool    `json:"skipped_today"`
+	SkipDate     *string `json:"skip_date"`
+}
+
+// IsDowntimeSkippedToday checks if downtime is skipped for today
+func (a *MetronAPI) IsDowntimeSkippedToday(ctx context.Context) (bool, error) {
+	var status DowntimeSkipStatus
+	if err := a.doRequest(ctx, "GET", "/v1/downtime/skip-status", nil, &status); err != nil {
+		return false, err
+	}
+	return status.SkippedToday, nil
+}
+
 // doRequest performs an HTTP request to the Metron API
 func (a *MetronAPI) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	url := a.baseURL + path

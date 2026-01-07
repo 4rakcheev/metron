@@ -78,10 +78,98 @@ type KidsloxConfig struct {
 	ProfileID string `json:"profile_id,omitempty"` // Default Kidslox profile ID
 }
 
-// DowntimeConfig defines the global downtime schedule
-type DowntimeConfig struct {
+// DayScheduleConfig defines start/end times for a day type (weekday or weekend)
+type DayScheduleConfig struct {
 	StartTime string `json:"start_time"` // HH:MM format (e.g., "22:00")
 	EndTime   string `json:"end_time"`   // HH:MM format (e.g., "10:00")
+}
+
+// DowntimeConfig defines the global downtime schedule
+// Supports two formats:
+// 1. Legacy flat format: {"start_time": "22:00", "end_time": "10:00"} - applies to all days
+// 2. New nested format: {"weekday": {...}, "weekend": {...}} - separate schedules
+type DowntimeConfig struct {
+	// Legacy flat fields (for backward compatibility)
+	StartTime string `json:"start_time,omitempty"` // HH:MM format (e.g., "22:00")
+	EndTime   string `json:"end_time,omitempty"`   // HH:MM format (e.g., "10:00")
+
+	// New day-specific schedules
+	Weekday *DayScheduleConfig `json:"weekday,omitempty"` // Mon-Fri schedule
+	Weekend *DayScheduleConfig `json:"weekend,omitempty"` // Sat-Sun schedule
+}
+
+// IsLegacyFormat returns true if using old flat start_time/end_time format
+func (d *DowntimeConfig) IsLegacyFormat() bool {
+	return d.StartTime != "" && d.EndTime != "" && d.Weekday == nil && d.Weekend == nil
+}
+
+// GetWeekdaySchedule returns the weekday schedule, falling back to legacy format
+func (d *DowntimeConfig) GetWeekdaySchedule() *DayScheduleConfig {
+	if d.Weekday != nil {
+		return d.Weekday
+	}
+	if d.IsLegacyFormat() {
+		return &DayScheduleConfig{StartTime: d.StartTime, EndTime: d.EndTime}
+	}
+	return nil
+}
+
+// GetWeekendSchedule returns the weekend schedule, falling back to legacy format
+func (d *DowntimeConfig) GetWeekendSchedule() *DayScheduleConfig {
+	if d.Weekend != nil {
+		return d.Weekend
+	}
+	if d.IsLegacyFormat() {
+		return &DayScheduleConfig{StartTime: d.StartTime, EndTime: d.EndTime}
+	}
+	return nil
+}
+
+// Validate validates the downtime configuration
+func (d *DowntimeConfig) Validate() error {
+	// Check if using legacy format
+	if d.IsLegacyFormat() {
+		if _, _, err := parseTimeOfDay(d.StartTime); err != nil {
+			return fmt.Errorf("invalid downtime start_time '%s': %v", d.StartTime, err)
+		}
+		if _, _, err := parseTimeOfDay(d.EndTime); err != nil {
+			return fmt.Errorf("invalid downtime end_time '%s': %v", d.EndTime, err)
+		}
+		return nil
+	}
+
+	// Check if using new nested format
+	if d.Weekday != nil || d.Weekend != nil {
+		// At least one of weekday/weekend must be set
+		if d.Weekday == nil && d.Weekend == nil {
+			return fmt.Errorf("downtime config must have at least weekday or weekend schedule")
+		}
+
+		// Validate weekday schedule if present
+		if d.Weekday != nil {
+			if _, _, err := parseTimeOfDay(d.Weekday.StartTime); err != nil {
+				return fmt.Errorf("invalid weekday downtime start_time '%s': %v", d.Weekday.StartTime, err)
+			}
+			if _, _, err := parseTimeOfDay(d.Weekday.EndTime); err != nil {
+				return fmt.Errorf("invalid weekday downtime end_time '%s': %v", d.Weekday.EndTime, err)
+			}
+		}
+
+		// Validate weekend schedule if present
+		if d.Weekend != nil {
+			if _, _, err := parseTimeOfDay(d.Weekend.StartTime); err != nil {
+				return fmt.Errorf("invalid weekend downtime start_time '%s': %v", d.Weekend.StartTime, err)
+			}
+			if _, _, err := parseTimeOfDay(d.Weekend.EndTime); err != nil {
+				return fmt.Errorf("invalid weekend downtime end_time '%s': %v", d.Weekend.EndTime, err)
+			}
+		}
+
+		return nil
+	}
+
+	// Empty config is valid (downtime disabled)
+	return nil
 }
 
 // Validate validates the configuration
@@ -131,11 +219,8 @@ func (c *Config) Validate() error {
 
 	// Validate downtime config if present
 	if c.Downtime != nil {
-		if _, _, err := parseTimeOfDay(c.Downtime.StartTime); err != nil {
-			return fmt.Errorf("%w: invalid downtime start_time '%s': %v", ErrInvalidConfig, c.Downtime.StartTime, err)
-		}
-		if _, _, err := parseTimeOfDay(c.Downtime.EndTime); err != nil {
-			return fmt.Errorf("%w: invalid downtime end_time '%s': %v", ErrInvalidConfig, c.Downtime.EndTime, err)
+		if err := c.Downtime.Validate(); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 		}
 	}
 

@@ -323,6 +323,18 @@ func (s *SQLiteStorage) runMigrations() error {
 		// Migration failed, but we can continue - new sessions will write to summaries
 	}
 
+	// Create downtime_skip table for storing skip downtime dates
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS downtime_skip (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			skip_date DATE NOT NULL,
+			created_at DATETIME NOT NULL
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create downtime_skip table: %w", err)
+	}
+
 	return nil
 }
 
@@ -1118,6 +1130,58 @@ func (s *SQLiteStorage) SaveAqaraTokens(ctx context.Context, tokens *aqara.Aqara
 			INSERT INTO aqara_tokens (id, refresh_token, access_token, access_token_expires_at, created_at, updated_at)
 			VALUES (1, ?, ?, ?, ?, ?)
 		`, tokens.RefreshToken, tokens.AccessToken, expiresAt, tokens.CreatedAt, tokens.UpdatedAt)
+	}
+
+	return err
+}
+
+// ============================================================================
+// DOWNTIME SKIP STORAGE - Implements core.DowntimeSkipStorage interface
+// ============================================================================
+
+// GetDowntimeSkipDate retrieves the stored skip date for downtime
+// Returns nil if no skip date is set
+func (s *SQLiteStorage) GetDowntimeSkipDate(ctx context.Context) (*time.Time, error) {
+	var skipDate time.Time
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT skip_date FROM downtime_skip WHERE id = 1
+	`).Scan(&skipDate)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No skip date set
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &skipDate, nil
+}
+
+// SetDowntimeSkipDate sets the skip date for downtime
+// Uses upsert pattern to insert or update the single-row table
+func (s *SQLiteStorage) SetDowntimeSkipDate(ctx context.Context, date time.Time) error {
+	normalizedDate := s.normalizeDate(date)
+	now := time.Now()
+
+	// Check if skip date exists
+	var exists bool
+	err := s.db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM downtime_skip WHERE id = 1)").Scan(&exists)
+	if err != nil {
+		return err
+	}
+
+	if exists {
+		// Update existing skip date
+		_, err = s.db.ExecContext(ctx, `
+			UPDATE downtime_skip SET skip_date = ? WHERE id = 1
+		`, normalizedDate)
+	} else {
+		// Insert new skip date
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO downtime_skip (id, skip_date, created_at)
+			VALUES (1, ?, ?)
+		`, normalizedDate, now)
 	}
 
 	return err

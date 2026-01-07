@@ -5,14 +5,23 @@ import (
 	"time"
 )
 
+// Helper to create a schedule with same times for both weekday and weekend
+func newUnifiedSchedule(startHour, startMinute, endHour, endMinute int) *DowntimeSchedule {
+	daySched := &DaySchedule{
+		StartHour:   startHour,
+		StartMinute: startMinute,
+		EndHour:     endHour,
+		EndMinute:   endMinute,
+	}
+	return &DowntimeSchedule{
+		Weekday: daySched,
+		Weekend: daySched,
+	}
+}
+
 // TestIsInDowntime_SameDay tests downtime within the same day (e.g., 08:00-17:00)
 func TestIsInDowntime_SameDay(t *testing.T) {
-	schedule := &DowntimeSchedule{
-		StartHour:   8,
-		StartMinute: 0,
-		EndHour:     17,
-		EndMinute:   0,
-	}
+	schedule := newUnifiedSchedule(8, 0, 17, 0)
 
 	loc, _ := time.LoadLocation("UTC")
 	service := NewDowntimeService(schedule, loc)
@@ -33,7 +42,8 @@ func TestIsInDowntime_SameDay(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			testTime := time.Date(2024, 1, 1, tt.hour, tt.minute, 0, 0, loc)
+			// Use a Monday (weekday) for consistent testing
+			testTime := time.Date(2024, 1, 1, tt.hour, tt.minute, 0, 0, loc) // Monday
 			got := service.IsInDowntime(testTime)
 			if got != tt.wantActive {
 				t.Errorf("IsInDowntime(%02d:%02d) = %v, want %v", tt.hour, tt.minute, got, tt.wantActive)
@@ -44,12 +54,7 @@ func TestIsInDowntime_SameDay(t *testing.T) {
 
 // TestIsInDowntime_Overnight tests downtime crossing midnight (e.g., 22:00-10:00)
 func TestIsInDowntime_Overnight(t *testing.T) {
-	schedule := &DowntimeSchedule{
-		StartHour:   22,
-		StartMinute: 0,
-		EndHour:     10,
-		EndMinute:   0,
-	}
+	schedule := newUnifiedSchedule(22, 0, 10, 0)
 
 	loc, _ := time.LoadLocation("UTC")
 	service := NewDowntimeService(schedule, loc)
@@ -72,7 +77,8 @@ func TestIsInDowntime_Overnight(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			testTime := time.Date(2024, 1, 1, tt.hour, tt.minute, 0, 0, loc)
+			// Use a Monday (weekday) for consistent testing
+			testTime := time.Date(2024, 1, 1, tt.hour, tt.minute, 0, 0, loc) // Monday
 			got := service.IsInDowntime(testTime)
 			if got != tt.wantActive {
 				t.Errorf("IsInDowntime(%02d:%02d) = %v, want %v", tt.hour, tt.minute, got, tt.wantActive)
@@ -110,12 +116,7 @@ func TestIsInDowntime_Disabled(t *testing.T) {
 
 // TestIsChildInDowntime tests per-child downtime checks
 func TestIsChildInDowntime(t *testing.T) {
-	schedule := &DowntimeSchedule{
-		StartHour:   22,
-		StartMinute: 0,
-		EndHour:     10,
-		EndMinute:   0,
-	}
+	schedule := newUnifiedSchedule(22, 0, 10, 0)
 
 	loc, _ := time.LoadLocation("UTC")
 	service := NewDowntimeService(schedule, loc)
@@ -139,7 +140,8 @@ func TestIsChildInDowntime(t *testing.T) {
 				Name:            "Test",
 				DowntimeEnabled: tt.downtimeEnabled,
 			}
-			testTime := time.Date(2024, 1, 1, tt.hour, 0, 0, 0, loc)
+			// Use a Monday (weekday) for consistent testing
+			testTime := time.Date(2024, 1, 1, tt.hour, 0, 0, 0, loc) // Monday
 			got := service.IsChildInDowntime(child, testTime)
 			if got != tt.wantActive {
 				t.Errorf("IsChildInDowntime(enabled=%v, time=%02d:00) = %v, want %v",
@@ -151,12 +153,7 @@ func TestIsChildInDowntime(t *testing.T) {
 
 // TestGetCurrentDowntimeEnd tests calculating when downtime ends
 func TestGetCurrentDowntimeEnd(t *testing.T) {
-	schedule := &DowntimeSchedule{
-		StartHour:   22,
-		StartMinute: 0,
-		EndHour:     10,
-		EndMinute:   0,
-	}
+	schedule := newUnifiedSchedule(22, 0, 10, 0)
 
 	loc, _ := time.LoadLocation("UTC")
 	service := NewDowntimeService(schedule, loc)
@@ -175,7 +172,8 @@ func TestGetCurrentDowntimeEnd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			testTime := time.Date(2024, 1, 1, tt.hour, 0, 0, 0, loc)
+			// Use a Monday (weekday) for consistent testing
+			testTime := time.Date(2024, 1, 1, tt.hour, 0, 0, 0, loc) // Monday
 			got := service.GetCurrentDowntimeEnd(testTime)
 
 			if tt.expectZeroTime {
@@ -196,12 +194,7 @@ func TestGetCurrentDowntimeEnd(t *testing.T) {
 
 // TestGetNextDowntimeStart tests calculating when next downtime starts
 func TestGetNextDowntimeStart(t *testing.T) {
-	schedule := &DowntimeSchedule{
-		StartHour:   22,
-		StartMinute: 0,
-		EndHour:     10,
-		EndMinute:   0,
-	}
+	schedule := newUnifiedSchedule(22, 0, 10, 0)
 
 	loc, _ := time.LoadLocation("UTC")
 	service := NewDowntimeService(schedule, loc)
@@ -220,7 +213,8 @@ func TestGetNextDowntimeStart(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.desc, func(t *testing.T) {
-			testTime := time.Date(2024, 1, 1, tt.hour, 0, 0, 0, loc)
+			// Use a Monday (weekday) for consistent testing
+			testTime := time.Date(2024, 1, 1, tt.hour, 0, 0, 0, loc) // Monday
 			got := service.GetNextDowntimeStart(testTime)
 
 			if got.Hour() != tt.wantStartHour || got.Minute() != tt.wantStartMinute {
@@ -242,14 +236,34 @@ func TestGetNextDowntimeStart(t *testing.T) {
 func TestIsEnabled(t *testing.T) {
 	loc, _ := time.LoadLocation("UTC")
 
-	t.Run("enabled with schedule", func(t *testing.T) {
+	t.Run("enabled with weekday schedule", func(t *testing.T) {
 		schedule := &DowntimeSchedule{
-			StartHour: 22,
-			EndHour:   10,
+			Weekday: &DaySchedule{StartHour: 22, EndHour: 10},
 		}
 		service := NewDowntimeService(schedule, loc)
 		if !service.IsEnabled() {
-			t.Error("IsEnabled() = false, want true when schedule provided")
+			t.Error("IsEnabled() = false, want true when weekday schedule provided")
+		}
+	})
+
+	t.Run("enabled with weekend schedule", func(t *testing.T) {
+		schedule := &DowntimeSchedule{
+			Weekend: &DaySchedule{StartHour: 23, EndHour: 11},
+		}
+		service := NewDowntimeService(schedule, loc)
+		if !service.IsEnabled() {
+			t.Error("IsEnabled() = false, want true when weekend schedule provided")
+		}
+	})
+
+	t.Run("enabled with both schedules", func(t *testing.T) {
+		schedule := &DowntimeSchedule{
+			Weekday: &DaySchedule{StartHour: 21, EndHour: 10},
+			Weekend: &DaySchedule{StartHour: 22, EndHour: 10},
+		}
+		service := NewDowntimeService(schedule, loc)
+		if !service.IsEnabled() {
+			t.Error("IsEnabled() = false, want true when both schedules provided")
 		}
 	})
 
@@ -259,4 +273,50 @@ func TestIsEnabled(t *testing.T) {
 			t.Error("IsEnabled() = true, want false when schedule is nil")
 		}
 	})
+
+	t.Run("disabled with empty schedule", func(t *testing.T) {
+		schedule := &DowntimeSchedule{}
+		service := NewDowntimeService(schedule, loc)
+		if service.IsEnabled() {
+			t.Error("IsEnabled() = true, want false when schedule has no day schedules")
+		}
+	})
+}
+
+// TestWeekdayWeekendSchedules tests different schedules for weekday vs weekend
+func TestWeekdayWeekendSchedules(t *testing.T) {
+	loc, _ := time.LoadLocation("UTC")
+
+	// Weekday: 21:00-10:00, Weekend: 22:00-11:00
+	schedule := &DowntimeSchedule{
+		Weekday: &DaySchedule{StartHour: 21, StartMinute: 0, EndHour: 10, EndMinute: 0},
+		Weekend: &DaySchedule{StartHour: 22, StartMinute: 0, EndHour: 11, EndMinute: 0},
+	}
+	service := NewDowntimeService(schedule, loc)
+
+	tests := []struct {
+		date       time.Time
+		hour       int
+		wantActive bool
+		desc       string
+	}{
+		// Monday (weekday) - downtime starts at 21:00
+		{time.Date(2024, 1, 1, 21, 0, 0, 0, loc), 21, true, "Monday 21:00 - weekday downtime active"},
+		{time.Date(2024, 1, 1, 20, 59, 0, 0, loc), 20, false, "Monday 20:59 - before weekday downtime"},
+
+		// Saturday (weekend) - downtime starts at 22:00
+		{time.Date(2024, 1, 6, 21, 30, 0, 0, loc), 21, false, "Saturday 21:30 - between weekday and weekend start"},
+		{time.Date(2024, 1, 6, 22, 0, 0, 0, loc), 22, true, "Saturday 22:00 - weekend downtime active"},
+		{time.Date(2024, 1, 6, 10, 30, 0, 0, loc), 10, true, "Saturday 10:30 - still in weekend downtime (ends 11:00)"},
+		{time.Date(2024, 1, 6, 11, 0, 0, 0, loc), 11, false, "Saturday 11:00 - weekend downtime ended"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.desc, func(t *testing.T) {
+			got := service.IsInDowntime(tt.date)
+			if got != tt.wantActive {
+				t.Errorf("IsInDowntime(%v) = %v, want %v", tt.date.Format("Mon 15:04"), got, tt.wantActive)
+			}
+		})
+	}
 }

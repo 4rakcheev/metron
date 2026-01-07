@@ -15,11 +15,7 @@ I help you manage your children's screen time across all devices.
 *Available Commands:*
 
 📊 /today - View today's screen time summary
-➕ /newsession - Start a new screen time session
-⏱ /extend - Extend an active session
-🛑 /stop - Stop an active session early
-🎁 /reward - Grant bonus time to a child
-👶 /children - List all children
+👶 /children - List all children and toggle downtime
 📺 /devices - List available devices
 
 *Quick Actions:*`

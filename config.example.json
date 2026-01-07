@@ -12,8 +12,14 @@
     "enable_ip_check": false
   },
   "downtime": {
-    "start_time": "22:00",
-    "end_time": "10:00"
+    "weekday": {
+      "start_time": "21:00",
+      "end_time": "10:00"
+    },
+    "weekend": {
+      "start_time": "22:00",
+      "end_time": "10:00"
+    }
   },
   "devices": [
     {

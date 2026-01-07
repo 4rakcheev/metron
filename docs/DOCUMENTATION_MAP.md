@@ -43,6 +43,7 @@ docs/drivers/
 
 ```
 docs/features/
+├── downtime.md                  # Downtime schedules and skip functionality
 └── shared-time.md               # Multi-child shared session feature
 ```
 
@@ -99,6 +100,9 @@ deploy/systemd/
 
 **...understand shared sessions**
 → [docs/features/shared-time.md](features/shared-time.md)
+
+**...configure downtime schedules**
+→ [docs/features/downtime.md](features/downtime.md)
 
 **...contribute code**
 → [docs/development/git-commits.md](development/git-commits.md)

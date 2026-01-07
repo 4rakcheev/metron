@@ -1,21 +1,36 @@
 package core
 
 import (
+	"context"
 	"time"
 )
 
-// DowntimeSchedule defines the time period when downtime is active
-type DowntimeSchedule struct {
+// DaySchedule defines start/end times for a specific day type
+type DaySchedule struct {
 	StartHour   int
 	StartMinute int
 	EndHour     int
 	EndMinute   int
 }
 
+// DowntimeSchedule defines the time periods when downtime is active
+// Supports separate schedules for weekdays (Mon-Fri) and weekends (Sat-Sun)
+type DowntimeSchedule struct {
+	Weekday *DaySchedule // Mon-Fri schedule
+	Weekend *DaySchedule // Sat-Sun schedule
+}
+
+// DowntimeSkipStorage defines the interface for skip date persistence
+type DowntimeSkipStorage interface {
+	GetDowntimeSkipDate(ctx context.Context) (*time.Time, error)
+	SetDowntimeSkipDate(ctx context.Context, date time.Time) error
+}
+
 // DowntimeService manages downtime schedule logic
 type DowntimeService struct {
-	schedule *DowntimeSchedule
-	timezone *time.Location
+	schedule    *DowntimeSchedule
+	timezone    *time.Location
+	skipStorage DowntimeSkipStorage
 }
 
 // NewDowntimeService creates a new downtime service
@@ -27,14 +42,69 @@ func NewDowntimeService(schedule *DowntimeSchedule, timezone *time.Location) *Do
 	}
 }
 
+// SetSkipStorage sets the storage for downtime skip feature
+func (d *DowntimeService) SetSkipStorage(storage DowntimeSkipStorage) {
+	d.skipStorage = storage
+}
+
+// getScheduleForDay returns the appropriate schedule for the given day
+func (d *DowntimeService) getScheduleForDay(t time.Time) *DaySchedule {
+	if d.schedule == nil {
+		return nil
+	}
+
+	weekday := t.In(d.timezone).Weekday()
+	if weekday == time.Saturday || weekday == time.Sunday {
+		return d.schedule.Weekend
+	}
+	return d.schedule.Weekday
+}
+
 // IsEnabled returns true if downtime schedule is configured
 func (d *DowntimeService) IsEnabled() bool {
-	return d.schedule != nil
+	return d.schedule != nil && (d.schedule.Weekday != nil || d.schedule.Weekend != nil)
+}
+
+// IsDowntimeSkippedToday checks if downtime has been skipped for today
+func (d *DowntimeService) IsDowntimeSkippedToday(ctx context.Context, now time.Time) bool {
+	if d.skipStorage == nil {
+		return false
+	}
+
+	skipDate, err := d.skipStorage.GetDowntimeSkipDate(ctx)
+	if err != nil || skipDate == nil {
+		return false
+	}
+
+	// Compare dates in configured timezone
+	localNow := now.In(d.timezone)
+	localSkip := skipDate.In(d.timezone)
+
+	return localNow.Year() == localSkip.Year() &&
+		localNow.Month() == localSkip.Month() &&
+		localNow.Day() == localSkip.Day()
 }
 
 // IsInDowntime checks if the given time falls within the downtime period
 func (d *DowntimeService) IsInDowntime(t time.Time) bool {
+	return d.IsInDowntimeWithContext(context.Background(), t)
+}
+
+// IsInDowntimeWithContext checks if the given time falls within the downtime period
+// with support for checking skip status
+func (d *DowntimeService) IsInDowntimeWithContext(ctx context.Context, t time.Time) bool {
 	if !d.IsEnabled() {
+		return false
+	}
+
+	// Check if downtime is skipped today
+	if d.IsDowntimeSkippedToday(ctx, t) {
+		return false
+	}
+
+	// Get the schedule for this day
+	schedule := d.getScheduleForDay(t)
+	if schedule == nil {
 		return false
 	}
 
@@ -43,8 +113,8 @@ func (d *DowntimeService) IsInDowntime(t time.Time) bool {
 
 	// Calculate minutes since midnight
 	currentMinutes := localTime.Hour()*60 + localTime.Minute()
-	startMinutes := d.schedule.StartHour*60 + d.schedule.StartMinute
-	endMinutes := d.schedule.EndHour*60 + d.schedule.EndMinute
+	startMinutes := schedule.StartHour*60 + schedule.StartMinute
+	endMinutes := schedule.EndHour*60 + schedule.EndMinute
 
 	if startMinutes > endMinutes {
 		// Overnight period (e.g., 22:00 to 10:00)
@@ -82,20 +152,24 @@ func (d *DowntimeService) GetCurrentDowntimeEnd(now time.Time) time.Time {
 	}
 
 	localNow := now.In(d.timezone)
+	schedule := d.getScheduleForDay(now)
+	if schedule == nil {
+		return time.Time{}
+	}
 
 	// Calculate the end time for today
 	endTime := time.Date(
 		localNow.Year(),
 		localNow.Month(),
 		localNow.Day(),
-		d.schedule.EndHour,
-		d.schedule.EndMinute,
+		schedule.EndHour,
+		schedule.EndMinute,
 		0, 0,
 		d.timezone,
 	)
 
-	startMinutes := d.schedule.StartHour*60 + d.schedule.StartMinute
-	endMinutes := d.schedule.EndHour*60 + d.schedule.EndMinute
+	startMinutes := schedule.StartHour*60 + schedule.StartMinute
+	endMinutes := schedule.EndHour*60 + schedule.EndMinute
 
 	if startMinutes > endMinutes {
 		// Overnight period
@@ -122,14 +196,18 @@ func (d *DowntimeService) GetNextDowntimeStart(now time.Time) time.Time {
 	}
 
 	localNow := now.In(d.timezone)
+	schedule := d.getScheduleForDay(now)
+	if schedule == nil {
+		return time.Time{}
+	}
 
 	// Calculate the start time for today
 	startTime := time.Date(
 		localNow.Year(),
 		localNow.Month(),
 		localNow.Day(),
-		d.schedule.StartHour,
-		d.schedule.StartMinute,
+		schedule.StartHour,
+		schedule.StartMinute,
 		0, 0,
 		d.timezone,
 	)

@@ -202,6 +202,16 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		return b.handleManageFlow(ctx, callback.Message, data)
 	case "downtime":
 		return b.handleDowntimeFlow(ctx, callback.Message, data)
+	case "sessions_menu":
+		return b.handleSessionsMenu(ctx, callback.Message)
+	case "more_menu":
+		return b.handleMoreMenu(ctx, callback.Message)
+	case "skip_downtime":
+		return b.handleSkipDowntime(ctx, callback.Message)
+	case "stop_all":
+		return b.handleStopAll(ctx, callback.Message)
+	case "main_menu":
+		return b.handleMainMenu(ctx, callback.Message)
 	default:
 		return b.sendMessage(callback.Message.Chat.ID,
 			"Unknown action.", nil)

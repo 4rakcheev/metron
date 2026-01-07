@@ -669,3 +669,99 @@ func (b *Bot) handleDowntimeFlow(ctx context.Context, message *tgbotapi.Message,
 	return b.editMessage(message.Chat.ID, message.MessageID,
 		"❌ Unknown downtime action.", nil)
 }
+
+// handleMainMenu returns to the main menu
+func (b *Bot) handleMainMenu(ctx context.Context, message *tgbotapi.Message) error {
+	text := `👋 *Metron Screen Time Bot*
+
+Use the buttons below to manage screen time.`
+
+	keyboard := BuildMainMenuButtons()
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// handleSessionsMenu shows the sessions management submenu
+func (b *Bot) handleSessionsMenu(ctx context.Context, message *tgbotapi.Message) error {
+	text := `🎬 *Session Management*
+
+• 🎁 Give Reward - Grant bonus time for today
+• 🛑 Stop All Sessions - End all active sessions
+• 🛑 Stop Specific Session - Select session to stop`
+
+	keyboard := BuildSessionsMenuButtons()
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// handleMoreMenu shows the additional features submenu
+func (b *Bot) handleMoreMenu(ctx context.Context, message *tgbotapi.Message) error {
+	// Check if downtime is already skipped today
+	skipActive, err := b.client.IsDowntimeSkippedToday(ctx)
+	if err != nil {
+		b.logger.Warn("Failed to check downtime skip status", "error", err)
+		skipActive = false
+	}
+
+	text := `⚙️ *Additional Features*
+
+Manage advanced options:`
+
+	keyboard := BuildMoreMenuButtons(skipActive)
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// handleSkipDowntime handles the skip downtime today action
+func (b *Bot) handleSkipDowntime(ctx context.Context, message *tgbotapi.Message) error {
+	// Check if already skipped
+	alreadySkipped, err := b.client.IsDowntimeSkippedToday(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false))
+	}
+
+	if alreadySkipped {
+		text := `✅ *Downtime Already Skipped*
+
+Downtime is already skipped for today.
+It will resume automatically tomorrow.`
+		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true))
+	}
+
+	// Skip downtime for today
+	if err := b.client.SkipDowntimeToday(ctx); err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false))
+	}
+
+	text := `✅ *Downtime Skipped for Today!*
+
+All children can now use screen time without downtime restrictions until midnight.
+
+Downtime will automatically resume tomorrow.`
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true))
+}
+
+// handleStopAll stops all active sessions
+func (b *Bot) handleStopAll(ctx context.Context, message *tgbotapi.Message) error {
+	// Get active sessions
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildSessionsMenuButtons())
+	}
+
+	if len(sessions) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ No active sessions to stop.", BuildSessionsMenuButtons())
+	}
+
+	// Stop all sessions
+	stoppedCount := 0
+	for _, session := range sessions {
+		if err := b.client.StopSession(ctx, session.ID); err != nil {
+			b.logger.Error("Failed to stop session", "session_id", session.ID, "error", err)
+		} else {
+			stoppedCount++
+		}
+	}
+
+	text := fmt.Sprintf("🛑 *Sessions Stopped*\n\nStopped %d active session(s).", stoppedCount)
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
+}

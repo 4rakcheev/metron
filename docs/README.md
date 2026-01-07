@@ -24,6 +24,7 @@ Welcome to the Metron documentation. This directory contains all technical docum
 ### Features
 
 - **[features/](features/)** - Feature-specific documentation
+  - [Downtime](features/downtime.md) - Weekday/weekend schedules and skip downtime
   - [Shared Time](features/shared-time.md) - Multi-child shared session support
 
 ### Development

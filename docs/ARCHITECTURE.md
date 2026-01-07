@@ -55,6 +55,22 @@ type Storage interface {
 
 **Key Design Decision**: Driver-specific storage needs (like Aqara tokens) are **NOT** part of this interface.
 
+### Feature-Specific Storage
+
+Some features require their own storage interfaces. These follow the same pattern as driver storage:
+
+**Example: Downtime Skip Storage**
+
+```go
+// internal/core/downtime.go
+type DowntimeSkipStorage interface {
+    GetDowntimeSkipDate(ctx context.Context) (*time.Time, error)
+    SetDowntimeSkipDate(ctx context.Context, date time.Time) error
+}
+```
+
+The SQLite storage implements this interface, and the `DowntimeService` receives it via `SetSkipStorage()`.
+
 ### Driver-Specific Storage
 
 Each driver defines its own storage interface for driver-specific data:

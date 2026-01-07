@@ -237,31 +237,59 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	// Initialize downtime service
 	var downtimeService *core.DowntimeService
 	if cfg.Downtime != nil {
-		mainLogger.Info("Initializing downtime service",
-			"start_time", cfg.Downtime.StartTime,
-			"end_time", cfg.Downtime.EndTime)
+		schedule := &core.DowntimeSchedule{}
 
-		// Parse time configuration
-		startHour, startMinute, err := parseTimeOfDay(cfg.Downtime.StartTime)
-		if err != nil {
-			mainLogger.Error("Invalid downtime start_time", "error", err)
-			os.Exit(1)
+		// Parse weekday schedule
+		weekdayCfg := cfg.Downtime.GetWeekdaySchedule()
+		if weekdayCfg != nil {
+			startHour, startMinute, err := parseTimeOfDay(weekdayCfg.StartTime)
+			if err != nil {
+				mainLogger.Error("Invalid weekday downtime start_time", "error", err)
+				os.Exit(1)
+			}
+			endHour, endMinute, err := parseTimeOfDay(weekdayCfg.EndTime)
+			if err != nil {
+				mainLogger.Error("Invalid weekday downtime end_time", "error", err)
+				os.Exit(1)
+			}
+			schedule.Weekday = &core.DaySchedule{
+				StartHour:   startHour,
+				StartMinute: startMinute,
+				EndHour:     endHour,
+				EndMinute:   endMinute,
+			}
+			mainLogger.Info("Weekday downtime configured",
+				"start", weekdayCfg.StartTime,
+				"end", weekdayCfg.EndTime)
 		}
 
-		endHour, endMinute, err := parseTimeOfDay(cfg.Downtime.EndTime)
-		if err != nil {
-			mainLogger.Error("Invalid downtime end_time", "error", err)
-			os.Exit(1)
-		}
-
-		schedule := &core.DowntimeSchedule{
-			StartHour:   startHour,
-			StartMinute: startMinute,
-			EndHour:     endHour,
-			EndMinute:   endMinute,
+		// Parse weekend schedule
+		weekendCfg := cfg.Downtime.GetWeekendSchedule()
+		if weekendCfg != nil {
+			startHour, startMinute, err := parseTimeOfDay(weekendCfg.StartTime)
+			if err != nil {
+				mainLogger.Error("Invalid weekend downtime start_time", "error", err)
+				os.Exit(1)
+			}
+			endHour, endMinute, err := parseTimeOfDay(weekendCfg.EndTime)
+			if err != nil {
+				mainLogger.Error("Invalid weekend downtime end_time", "error", err)
+				os.Exit(1)
+			}
+			schedule.Weekend = &core.DaySchedule{
+				StartHour:   startHour,
+				StartMinute: startMinute,
+				EndHour:     endHour,
+				EndMinute:   endMinute,
+			}
+			mainLogger.Info("Weekend downtime configured",
+				"start", weekendCfg.StartTime,
+				"end", weekendCfg.EndTime)
 		}
 
 		downtimeService = core.NewDowntimeService(schedule, timezone)
+		// Wire up skip storage
+		downtimeService.SetSkipStorage(db)
 	} else {
 		mainLogger.Info("Downtime service disabled (no configuration)")
 		downtimeService = core.NewDowntimeService(nil, timezone)
@@ -282,14 +310,15 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	// Initialize REST API with Gin
 	mainLogger.Info("Initializing REST API server")
 	router := api.NewRouter(api.RouterConfig{
-		Storage:           db,
-		Manager:           sessionManager,
-		DriverRegistry:    driverRegistry,
-		DeviceRegistry:    deviceRegistry,
-		Downtime:          downtimeService,
-		APIKey:            cfg.Security.APIKey,
-		Logger:            apiLogger,
-		AqaraTokenStorage: db, // SQLite storage also implements aqara.AqaraTokenStorage
+		Storage:             db,
+		Manager:             sessionManager,
+		DriverRegistry:      driverRegistry,
+		DeviceRegistry:      deviceRegistry,
+		Downtime:            downtimeService,
+		DowntimeSkipStorage: db, // SQLite storage also implements core.DowntimeSkipStorage
+		APIKey:              cfg.Security.APIKey,
+		Logger:              apiLogger,
+		AqaraTokenStorage:   db, // SQLite storage also implements aqara.AqaraTokenStorage
 	})
 
 	server := &http.Server{

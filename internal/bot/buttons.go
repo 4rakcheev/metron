@@ -380,10 +380,14 @@ func BuildMainMenuButtons() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📊 Today", "/today"),
-			tgbotapi.NewInlineKeyboardButtonData("➕ New Session", "/newsession"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⏱ Extend", "/extend"),
+			tgbotapi.NewInlineKeyboardButtonData("🎬 Sessions",
+				MarshalCallback(CallbackData{Action: "sessions_menu"})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⚙️ More...",
+				MarshalCallback(CallbackData{Action: "more_menu"})),
 		),
 	)
 }
@@ -393,8 +397,51 @@ func BuildQuickActionsButtons() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📊 Today", "/today"),
-			tgbotapi.NewInlineKeyboardButtonData("➕ New", "/newsession"),
-			tgbotapi.NewInlineKeyboardButtonData("⏱ Extend", "/extend"),
+			tgbotapi.NewInlineKeyboardButtonData("🎬 Sessions",
+				MarshalCallback(CallbackData{Action: "sessions_menu"})),
+			tgbotapi.NewInlineKeyboardButtonData("⚙️ More",
+				MarshalCallback(CallbackData{Action: "more_menu"})),
+		),
+	)
+}
+
+// BuildSessionsMenuButtons creates the sessions management submenu
+func BuildSessionsMenuButtons() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🎁 Give Reward",
+				MarshalCallback(CallbackData{Action: "reward", Step: 0})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🛑 Stop All Sessions",
+				MarshalCallback(CallbackData{Action: "stop_all"})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🛑 Stop Specific Session",
+				MarshalCallback(CallbackData{Action: "stop", Step: 0})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
+				MarshalCallback(CallbackData{Action: "main_menu"})),
+		),
+	)
+}
+
+// BuildMoreMenuButtons creates the additional features submenu
+func BuildMoreMenuButtons(skipDowntimeActive bool) tgbotapi.InlineKeyboardMarkup {
+	skipText := "🌙 Skip Downtime Today"
+	if skipDowntimeActive {
+		skipText = "✅ Downtime Skipped Today"
+	}
+
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(skipText,
+				MarshalCallback(CallbackData{Action: "skip_downtime"})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
+				MarshalCallback(CallbackData{Action: "main_menu"})),
 		),
 	)
 }
