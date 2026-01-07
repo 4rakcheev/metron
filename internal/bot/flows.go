@@ -256,6 +256,9 @@ func (b *Bot) extendSession(ctx context.Context, message *tgbotapi.Message, sess
 // handleStopFlow handles the flow for stopping an active session early
 func (b *Bot) handleStopFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
 	switch data.Step {
+	case 0:
+		// Step 0: Show session selection
+		return b.stopStep1(ctx, message)
 	case 1:
 		// Step 1: Session selected (by index), stop it immediately
 		sessionID, err := b.resolveSessionIndex(ctx, data.SessionIndex)
@@ -267,6 +270,38 @@ func (b *Bot) handleStopFlow(ctx context.Context, message *tgbotapi.Message, dat
 		return b.editMessage(message.Chat.ID, message.MessageID,
 			"❌ Invalid step in stop flow.", nil)
 	}
+}
+
+// stopStep1 shows session selection for stopping
+func (b *Bot) stopStep1(ctx context.Context, message *tgbotapi.Message) error {
+	// Get active sessions
+	sessions, err := b.client.ListSessions(ctx, true, "")
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildSessionsMenuButtons())
+	}
+
+	if len(sessions) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ No active sessions to stop.", BuildSessionsMenuButtons())
+	}
+
+	// Get children for mapping
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildSessionsMenuButtons())
+	}
+
+	childrenMap := make(map[string]Child)
+	for _, child := range children {
+		childrenMap[child.ID] = child
+	}
+
+	text := "🛑 *Stop Session*\n\n" + FormatActiveSessions(sessions, childrenMap)
+	text += "Select a session to stop:"
+
+	keyboard := BuildSessionsButtons(sessions, "stop")
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
 // handleManageFlow handles the unified session management flow
