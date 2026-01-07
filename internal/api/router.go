@@ -22,7 +22,6 @@ type RouterConfig struct {
 	Downtime          *core.DowntimeService
 	APIKey            string
 	Logger            *slog.Logger
-	ChildLogger       *slog.Logger // Logger for child API endpoints
 	AqaraTokenStorage aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
 }
 
@@ -40,10 +39,9 @@ func NewRouter(config RouterConfig) *gin.Engine {
 	router.Use(middleware.Logging(config.Logger))
 	router.Use(middleware.ContentType())
 
-	// Apply child API logging middleware (logs to metron-child.log)
-	if config.ChildLogger != nil {
-		router.Use(middleware.ChildAPILogging(config.ChildLogger))
-	}
+	// Apply child API logging middleware (adds detailed logging for child API routes)
+	childLogger := config.Logger.With("component", "child-api")
+	router.Use(middleware.ChildAPILogging(childLogger))
 
 	// CORS middleware for child web app
 	router.Use(func(c *gin.Context) {

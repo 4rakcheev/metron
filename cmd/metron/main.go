@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,7 +24,7 @@ import (
 )
 
 const (
-	shutdownTimeout = 10 * time.Second
+	shutdownTimeout   = 10 * time.Second
 	defaultConfigPath = "config.json"
 )
 
@@ -105,40 +106,30 @@ func main() {
 	useEnv := flag.Bool("env", false, "Load configuration from environment variables")
 	logFormat := flag.String("log-format", "json", "Log format: json or text")
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
-	logDir := flag.String("log-dir", ".", "Directory for log files")
 	flag.Parse()
 
-	// Parse log level
+	// Parse log level and create logger (writes to stdout)
 	level := logging.ParseLevel(*logLevel)
-
-	// Create multi-logger with separate log files
-	multiLogger, err := logging.NewMultiLogger(logging.MultiLoggerConfig{
-		Format:       *logFormat,
-		Level:        level,
-		CoreLogPath:  fmt.Sprintf("%s/metron.log", *logDir),
-		ChildLogPath: fmt.Sprintf("%s/metron-child.log", *logDir),
-		BotLogPath:   fmt.Sprintf("%s/metron-bot.log", *logDir),
+	logger := logging.NewLogger(logging.LoggerConfig{
+		Format: *logFormat,
+		Level:  level,
 	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logging: %v\n", err)
-		os.Exit(1)
-	}
-	defer multiLogger.Close()
+	slog.SetDefault(logger)
 
 	// Create main component logger
-	mainLogger := multiLogger.Core.With("component", "main")
+	mainLogger := logger.With("component", "main")
 
-	if err := run(*configPath, *useEnv, multiLogger); err != nil {
+	if err := run(*configPath, *useEnv, logger); err != nil {
 		mainLogger.Error("Application failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error {
-	logger := multiLogger.Core.With("component", "main")
+func run(configPath string, useEnv bool, logger *slog.Logger) error {
+	mainLogger := logger.With("component", "main")
 
 	// Load configuration
-	logger.Info("Loading configuration", "use_env", useEnv, "config_path", configPath)
+	mainLogger.Info("Loading configuration", "use_env", useEnv, "config_path", configPath)
 	var cfg *config.Config
 	var err error
 
@@ -157,10 +148,10 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 	if err != nil {
 		return fmt.Errorf("failed to load timezone '%s': %w", cfg.Timezone, err)
 	}
-	logger.Info("Application timezone configured", "timezone", cfg.Timezone)
+	mainLogger.Info("Application timezone configured", "timezone", cfg.Timezone)
 
 	// Initialize database
-	logger.Info("Initializing database", "path", cfg.Database.Path)
+	mainLogger.Info("Initializing database", "path", cfg.Database.Path)
 	db, err := sqlite.New(cfg.Database.Path, timezone)
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -168,15 +159,15 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 	defer db.Close()
 
 	// Initialize device registry first (needed by drivers)
-	logger.Info("Initializing device registry")
+	mainLogger.Info("Initializing device registry")
 	deviceRegistry := devices.NewRegistry()
 
 	// Initialize driver registry
-	logger.Info("Initializing device driver registry")
+	mainLogger.Info("Initializing device driver registry")
 	driverRegistry := drivers.NewRegistry()
 
 	// Register Aqara driver
-	logger.Info("Registering Aqara Cloud driver",
+	mainLogger.Info("Registering Aqara Cloud driver",
 		"base_url", cfg.Aqara.BaseURL,
 		"pin_scene", cfg.Aqara.Scenes.TVPINEntry,
 		"warn_scene", cfg.Aqara.Scenes.TVWarning,
@@ -191,13 +182,13 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 		WarnSceneID: cfg.Aqara.Scenes.TVWarning,
 		OffSceneID:  cfg.Aqara.Scenes.TVPowerOff,
 	}
-	aqaraLogger := multiLogger.Core.With("component", "driver.aqara")
+	aqaraLogger := logger.With("component", "driver.aqara")
 	aqaraDriver := aqara.NewDriver(aqaraConfig, db, aqaraLogger)
 	driverRegistry.Register(aqaraDriver)
 
 	// Register Kidslox driver if configured
 	if cfg.Kidslox != nil {
-		logger.Info("Registering Kidslox driver")
+		mainLogger.Info("Registering Kidslox driver")
 		kidsloxConfig := kidslox.Config{
 			BaseURL:   cfg.Kidslox.BaseURL,
 			APIKey:    cfg.Kidslox.APIKey,
@@ -205,13 +196,13 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 			DeviceID:  cfg.Kidslox.DeviceID,
 			ProfileID: cfg.Kidslox.ProfileID,
 		}
-		kidsloxLogger := multiLogger.Core.With("component", "driver.kidslox")
+		kidsloxLogger := logger.With("component", "driver.kidslox")
 		kidsloxDriver := kidslox.NewDriver(kidsloxConfig, deviceRegistry, kidsloxLogger)
 		driverRegistry.Register(kidsloxDriver)
 	}
 
 	// Register devices from configuration
-	logger.Info("Registering devices", "count", len(cfg.Devices))
+	mainLogger.Info("Registering devices", "count", len(cfg.Devices))
 	for _, deviceCfg := range cfg.Devices {
 		device := &devices.Device{
 			ID:         deviceCfg.ID,
@@ -221,13 +212,13 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 			Parameters: deviceCfg.Parameters,
 		}
 		if err := deviceRegistry.Register(device); err != nil {
-			logger.Error("Failed to register device",
+			mainLogger.Error("Failed to register device",
 				"device_id", deviceCfg.ID,
 				"device_name", deviceCfg.Name,
 				"error", err)
 			return fmt.Errorf("failed to register device %s: %w", deviceCfg.ID, err)
 		}
-		logger.Info("Device registered",
+		mainLogger.Info("Device registered",
 			"id", device.ID,
 			"name", device.Name,
 			"type", device.Type,
@@ -235,31 +226,31 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 	}
 
 	// Create component-specific loggers
-	managerLogger := multiLogger.Core.With("component", "manager")
-	schedulerLogger := multiLogger.Core.With("component", "scheduler")
-	apiLogger := multiLogger.Core.With("component", "api")
+	managerLogger := logger.With("component", "manager")
+	schedulerLogger := logger.With("component", "scheduler")
+	apiLogger := logger.With("component", "api")
 
 	// Initialize time calculation service
-	logger.Info("Initializing time calculation service")
+	mainLogger.Info("Initializing time calculation service")
 	calculator := core.NewTimeCalculationService(db, timezone)
 
 	// Initialize downtime service
 	var downtimeService *core.DowntimeService
 	if cfg.Downtime != nil {
-		logger.Info("Initializing downtime service",
+		mainLogger.Info("Initializing downtime service",
 			"start_time", cfg.Downtime.StartTime,
 			"end_time", cfg.Downtime.EndTime)
 
 		// Parse time configuration
 		startHour, startMinute, err := parseTimeOfDay(cfg.Downtime.StartTime)
 		if err != nil {
-			logger.Error("Invalid downtime start_time", "error", err)
+			mainLogger.Error("Invalid downtime start_time", "error", err)
 			os.Exit(1)
 		}
 
 		endHour, endMinute, err := parseTimeOfDay(cfg.Downtime.EndTime)
 		if err != nil {
-			logger.Error("Invalid downtime end_time", "error", err)
+			mainLogger.Error("Invalid downtime end_time", "error", err)
 			os.Exit(1)
 		}
 
@@ -272,24 +263,24 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 
 		downtimeService = core.NewDowntimeService(schedule, timezone)
 	} else {
-		logger.Info("Downtime service disabled (no configuration)")
+		mainLogger.Info("Downtime service disabled (no configuration)")
 		downtimeService = core.NewDowntimeService(nil, timezone)
 	}
 
 	// Initialize session manager
-	logger.Info("Initializing session manager")
+	mainLogger.Info("Initializing session manager")
 	baseManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, calculator, downtimeService, timezone, managerLogger)
 
 	// Wrap session manager with logging decorator
-	sessionManager := logging.NewSessionManagerLogger(baseManager, multiLogger.Core)
+	sessionManager := logging.NewSessionManagerLogger(baseManager, logger)
 
 	// Start scheduler
-	logger.Info("Starting session scheduler", "interval", "1m")
+	mainLogger.Info("Starting session scheduler", "interval", "1m")
 	sched := scheduler.NewScheduler(db, &schedulerDeviceRegistry{deviceRegistry}, &schedulerDriverRegistry{driverRegistry}, downtimeService, 1*time.Minute, timezone, schedulerLogger)
 	go sched.Start()
 
 	// Initialize REST API with Gin
-	logger.Info("Initializing REST API server")
+	mainLogger.Info("Initializing REST API server")
 	router := api.NewRouter(api.RouterConfig{
 		Storage:           db,
 		Manager:           sessionManager,
@@ -298,7 +289,6 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 		Downtime:          downtimeService,
 		APIKey:            cfg.Security.APIKey,
 		Logger:            apiLogger,
-		ChildLogger:       multiLogger.Child,
 		AqaraTokenStorage: db, // SQLite storage also implements aqara.AqaraTokenStorage
 	})
 
@@ -313,7 +303,7 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 	// Start server in a goroutine
 	serverErrors := make(chan error, 1)
 	go func() {
-		logger.Info("HTTP server starting",
+		mainLogger.Info("HTTP server starting",
 			"host", cfg.Server.Host,
 			"port", cfg.Server.Port,
 			"endpoint", fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port))
@@ -329,14 +319,14 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 		return fmt.Errorf("server error: %w", err)
 
 	case sig := <-shutdown:
-		logger.Info("Shutdown signal received", "signal", sig.String())
+		mainLogger.Info("Shutdown signal received", "signal", sig.String())
 
 		// Stop scheduler
-		logger.Info("Stopping scheduler")
+		mainLogger.Info("Stopping scheduler")
 		sched.Stop()
 
 		// Shutdown HTTP server
-		logger.Info("Shutting down HTTP server", "timeout", shutdownTimeout)
+		mainLogger.Info("Shutting down HTTP server", "timeout", shutdownTimeout)
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer shutdownCancel()
 
@@ -344,7 +334,7 @@ func run(configPath string, useEnv bool, multiLogger *logging.MultiLogger) error
 			return fmt.Errorf("server shutdown error: %w", err)
 		}
 
-		logger.Info("Graceful shutdown complete")
+		mainLogger.Info("Graceful shutdown complete")
 	}
 
 	return nil

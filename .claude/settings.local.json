@@ -32,7 +32,15 @@
       "Bash(grep:*)",
       "Bash(xargs:*)",
       "Bash(wc:*)",
-      "Bash(git -C /Users/tema/Pr/go/src/metron log --oneline -20)"
+      "Bash(git -C /Users/tema/Pr/go/src/metron log --oneline -20)",
+      "Bash(git -C /Users/tema/Pr/go/src/metron log --oneline --since=\"2024-12-20\" --until=\"2024-12-31\")",
+      "Bash(git -C /Users/tema/Pr/go/src/metron log --oneline -30)",
+      "Bash(git -C /Users/tema/Pr/go/src/metron log --oneline --since=\"2024-12-23\" --until=\"2024-12-25\" --all)",
+      "Bash(git -C /Users/tema/Pr/go/src/metron log --oneline --all -- deploy/systemd/)",
+      "Bash(git -C /Users/tema/Pr/go/src/metron log --oneline --all -- '**/main.go')",
+      "Bash(git -C /Users/tema/Pr/go/src/metron log --format=\"%h %ad %s\" --date=short --all)",
+      "Bash(git -C /Users/tema/Pr/go/src/metron show 52e9678 --stat)",
+      "Bash(git -C /Users/tema/Pr/go/src/metron show 52e9678 -- cmd/metron/main.go)"
     ],
     "deny": [],
     "ask": []
