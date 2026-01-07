@@ -199,6 +199,32 @@ func (l *SessionManagerLogger) GrantRewardMinutes(ctx context.Context, childID s
 	return nil
 }
 
+func (l *SessionManagerLogger) DeductFineMinutes(ctx context.Context, childID string, minutes int) error {
+	start := time.Now()
+	l.logger.Info("DeductFineMinutes called",
+		"child_id", childID,
+		"minutes", minutes)
+
+	err := l.manager.DeductFineMinutes(ctx, childID, minutes)
+	duration := time.Since(start)
+
+	if err != nil {
+		l.logger.Error("DeductFineMinutes failed",
+			"child_id", childID,
+			"minutes", minutes,
+			"duration", duration,
+			"error", err)
+		return err
+	}
+
+	l.logger.Info("DeductFineMinutes completed",
+		"child_id", childID,
+		"minutes", minutes,
+		"duration", duration)
+
+	return nil
+}
+
 func (l *SessionManagerLogger) GetChildStatus(ctx context.Context, childID string) (*core.ChildStatus, error) {
 	start := time.Now()
 	l.logger.Debug("GetChildStatus called",

@@ -233,6 +233,30 @@ func (a *MetronAPI) GrantReward(ctx context.Context, childID string, minutes int
 	return &response, nil
 }
 
+// DeductFineResponse represents the response from applying a fine
+type DeductFineResponse struct {
+	Message            string `json:"message"`
+	MinutesDeducted    int    `json:"minutes_deducted"`
+	TodayFinesDeducted int    `json:"today_fines_deducted"`
+	TodayRemaining     int    `json:"today_remaining"`
+	TodayLimit         int    `json:"today_limit"`
+}
+
+// DeductFine applies a fine to a child (deducts minutes)
+func (a *MetronAPI) DeductFine(ctx context.Context, childID string, minutes int) (*DeductFineResponse, error) {
+	req := struct {
+		Minutes int `json:"minutes"`
+	}{
+		Minutes: minutes,
+	}
+
+	var response DeductFineResponse
+	if err := a.doRequest(ctx, "POST", "/v1/children/"+childID+"/fines", req, &response); err != nil {
+		return nil, err
+	}
+	return &response, nil
+}
+
 // UpdateChildDowntime updates the downtime enabled status for a child
 func (a *MetronAPI) UpdateChildDowntime(ctx context.Context, childID string, enabled bool) error {
 	req := struct {

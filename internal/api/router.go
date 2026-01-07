@@ -84,6 +84,7 @@ func NewRouter(config RouterConfig) *gin.Engine {
 		v1.PATCH("/children/:id", childrenHandler.UpdateChild)
 		v1.DELETE("/children/:id", childrenHandler.DeleteChild)
 		v1.POST("/children/:id/rewards", childrenHandler.GrantReward)
+		v1.POST("/children/:id/fines", childrenHandler.DeductFine)
 
 		// Devices endpoints
 		devicesHandler := handlers.NewDevicesHandler(

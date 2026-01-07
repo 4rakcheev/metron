@@ -855,6 +855,87 @@ func (m *SessionManager) GrantRewardMinutes(ctx context.Context, childID string,
 	return nil
 }
 
+// DeductFineMinutes deducts penalty minutes from a child for today
+func (m *SessionManager) DeductFineMinutes(ctx context.Context, childID string, minutes int) error {
+	m.logger.Info("Deducting fine minutes",
+		"child_id", childID,
+		"minutes", minutes)
+
+	if minutes <= 0 {
+		m.logger.Error("Invalid fine minutes",
+			"child_id", childID,
+			"minutes", minutes)
+		return fmt.Errorf("fine minutes must be positive")
+	}
+
+	// Verify child exists
+	_, err := m.storage.GetChild(ctx, childID)
+	if err != nil {
+		m.logger.Error("Failed to get child for fine deduction",
+			"child_id", childID,
+			"error", err)
+		return err
+	}
+
+	today := time.Now().In(m.timezone)
+
+	// Get remaining time to validate we can apply the fine
+	remaining, err := m.calculator.GetRemainingTime(ctx, childID, today)
+	if err != nil {
+		m.logger.Error("Failed to get remaining time for fine deduction",
+			"child_id", childID,
+			"error", err)
+		return fmt.Errorf("failed to get remaining time: %w", err)
+	}
+
+	// Cannot fine more than remaining time (remaining cannot go below zero)
+	if remaining.RemainingTotal < minutes {
+		m.logger.Warn("Insufficient time for fine",
+			"child_id", childID,
+			"minutes", minutes,
+			"remaining", remaining.RemainingTotal)
+		return fmt.Errorf("insufficient time: only %d minutes remaining", remaining.RemainingTotal)
+	}
+
+	// Get or create allocation for today
+	allocation, err := m.calculator.GetAvailableTime(ctx, childID, today)
+	if err != nil {
+		m.logger.Error("Failed to get allocation for fine deduction",
+			"child_id", childID,
+			"error", err)
+		return fmt.Errorf("failed to get allocation: %w", err)
+	}
+
+	// Update the allocation with reduced bonus (subtract fine)
+	normalizedDate := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, m.timezone)
+	newAllocation := &DailyTimeAllocation{
+		ChildID:      childID,
+		Date:         normalizedDate,
+		BaseLimit:    allocation.BaseLimit,
+		BonusGranted: allocation.BonusGranted - minutes,
+		UpdatedAt:    time.Now(),
+	}
+
+	// Try to update first, create if it doesn't exist
+	if err := m.storage.UpdateDailyAllocation(ctx, newAllocation); err != nil {
+		// If update fails, try to create
+		newAllocation.CreatedAt = time.Now()
+		if createErr := m.storage.CreateDailyAllocation(ctx, newAllocation); createErr != nil {
+			m.logger.Error("Failed to deduct fine minutes",
+				"child_id", childID,
+				"minutes", minutes,
+				"error", createErr)
+			return fmt.Errorf("failed to deduct fine minutes: %w", createErr)
+		}
+	}
+
+	m.logger.Info("Fine minutes deducted successfully",
+		"child_id", childID,
+		"minutes", minutes)
+
+	return nil
+}
+
 // GetChildStatus retrieves the current status for a child
 func (m *SessionManager) GetChildStatus(ctx context.Context, childID string) (*ChildStatus, error) {
 	child, err := m.storage.GetChild(ctx, childID)

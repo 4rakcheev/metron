@@ -8,6 +8,7 @@ import (
 	"metron/internal/idgen"
 	"metron/internal/storage"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,7 @@ type ChildrenHandler struct {
 type SessionManager interface {
 	GetChildStatus(ctx context.Context, childID string) (*core.ChildStatus, error)
 	GrantRewardMinutes(ctx context.Context, childID string, minutes int) error
+	DeductFineMinutes(ctx context.Context, childID string, minutes int) error
 }
 
 // NewChildrenHandler creates a new children handler
@@ -451,6 +453,96 @@ func (h *ChildrenHandler) GrantReward(c *gin.Context) {
 		"message":              "Reward granted successfully",
 		"minutes_granted":      req.Minutes,
 		"today_reward_granted": status.TodayRewardGranted,
+		"today_remaining":      status.TodayRemaining,
+		"today_limit":          status.TodayLimit,
+	})
+}
+
+// DeductFine deducts fine minutes from a child
+// POST /children/:id/fines
+func (h *ChildrenHandler) DeductFine(c *gin.Context) {
+	childID := c.Param("id")
+
+	var req struct {
+		Minutes int `json:"minutes" binding:"required,gt=0"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request body",
+			"code":    "INVALID_REQUEST",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Validate minutes is one of the allowed values
+	validMinutes := map[int]bool{15: true, 30: true, 60: true}
+	if !validMinutes[req.Minutes] {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Minutes must be one of: 15, 30, or 60",
+			"code":  "INVALID_MINUTES",
+		})
+		return
+	}
+
+	// Deduct fine minutes
+	if err := h.manager.DeductFineMinutes(c.Request.Context(), childID, req.Minutes); err != nil {
+		if err == core.ErrChildNotFound {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "Child not found",
+				"code":  "CHILD_NOT_FOUND",
+			})
+			return
+		}
+
+		// Check for insufficient time error
+		if strings.HasPrefix(err.Error(), "insufficient time") {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+				"code":  "INSUFFICIENT_TIME",
+			})
+			return
+		}
+
+		h.logger.Error("Failed to deduct fine minutes",
+			"component", "api",
+			"child_id", childID,
+			"minutes", req.Minutes,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to deduct fine minutes",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	// Get updated child status
+	status, err := h.manager.GetChildStatus(c.Request.Context(), childID)
+	if err != nil {
+		h.logger.Error("Failed to get child status after fine deduction",
+			"component", "api",
+			"child_id", childID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve updated child status",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	// Calculate fines deducted (negative portion of TodayRewardGranted)
+	todayFinesDeducted := 0
+	if status.TodayRewardGranted < 0 {
+		todayFinesDeducted = -status.TodayRewardGranted
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":              "Fine applied successfully",
+		"minutes_deducted":     req.Minutes,
+		"today_fines_deducted": todayFinesDeducted,
 		"today_remaining":      status.TodayRemaining,
 		"today_limit":          status.TodayLimit,
 	})

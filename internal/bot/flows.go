@@ -577,6 +577,83 @@ func (b *Bot) grantReward(ctx context.Context, message *tgbotapi.Message, childI
 	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
 }
 
+// handleFineFlow handles the multi-step flow for applying fines
+func (b *Bot) handleFineFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	switch data.Step {
+	case 0:
+		// Step 0: Back to child selection
+		return b.fineStep1(ctx, message)
+	case 1:
+		// Step 1: Child selected (by index), show fine durations
+		return b.fineStep2(ctx, message, data.ChildIndex)
+	case 2:
+		// Step 2: Duration selected, apply fine
+		childID, err := b.resolveChildIndex(ctx, data.ChildIndex)
+		if err != nil {
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+		}
+		return b.applyFine(ctx, message, childID, data.Duration)
+	default:
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"Invalid step in fine flow.", nil)
+	}
+}
+
+// fineStep1 shows child selection
+func (b *Bot) fineStep1(ctx context.Context, message *tgbotapi.Message) error {
+	// Get children list
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), nil)
+	}
+
+	if len(children) == 0 {
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"No children configured. Add children first using the API.", nil)
+	}
+
+	text := "*Apply Fine*\n\nStep 1/2: Select child"
+	keyboard := BuildChildrenButtons(children, "fine", 1)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// fineStep2 shows fine duration selection
+func (b *Bot) fineStep2(ctx context.Context, message *tgbotapi.Message, childIndex int) error {
+	text := "*Apply Fine*\n\nStep 2/2: Select deduction amount"
+	keyboard := BuildFineDurationButtons(childIndex)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// applyFine applies the fine to the child
+func (b *Bot) applyFine(ctx context.Context, message *tgbotapi.Message, childID string, minutes int) error {
+	// Get child info for formatting
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	var childName, childEmoji string
+	for _, child := range children {
+		if child.ID == childID {
+			childName = child.Name
+			childEmoji = child.Emoji
+			break
+		}
+	}
+
+	// Apply fine
+	response, err := b.client.DeductFine(ctx, childID, minutes)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	text := FormatFineApplied(childName, childEmoji, response)
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
+}
+
 // stopSession stops an active session and returns remaining time to children
 func (b *Bot) stopSession(ctx context.Context, message *tgbotapi.Message, sessionID string) error {
 	// Get session details before stopping (to calculate returned time)

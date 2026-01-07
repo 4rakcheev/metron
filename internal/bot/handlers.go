@@ -186,3 +186,22 @@ func (b *Bot) handleReward(ctx context.Context, message *tgbotapi.Message) error
 
 	return b.sendMessage(message.Chat.ID, text, keyboard)
 }
+
+// handleFine handles the /fine command - allows applying time fines to children
+func (b *Bot) handleFine(ctx context.Context, message *tgbotapi.Message) error {
+	// Get children list
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	if len(children) == 0 {
+		return b.sendMessage(message.Chat.ID,
+			"No children configured. Please add children first.", BuildQuickActionsButtons())
+	}
+
+	text := "*Apply Fine*\n\nStep 1/2: Select child"
+	keyboard := BuildChildrenButtons(children, "fine", 1)
+
+	return b.sendMessage(message.Chat.ID, text, keyboard)
+}

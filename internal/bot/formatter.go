@@ -341,6 +341,20 @@ func FormatRewardGranted(childName, childEmoji string, response *GrantRewardResp
 	return sb.String()
 }
 
+// FormatFineApplied formats a success message for applying a fine
+func FormatFineApplied(childName, childEmoji string, response *DeductFineResponse) string {
+	var sb strings.Builder
+
+	sb.WriteString("*Fine Applied*\n\n")
+	sb.WriteString(fmt.Sprintf("%s *%s*\n\n", childEmoji, childName))
+	sb.WriteString(fmt.Sprintf("Time deducted: -%d minutes\n", response.MinutesDeducted))
+	sb.WriteString(fmt.Sprintf("Total fines today: %d minutes\n", response.TodayFinesDeducted))
+	sb.WriteString(fmt.Sprintf("Remaining time: %d minutes\n", response.TodayRemaining))
+	sb.WriteString(fmt.Sprintf("Daily limit: %d minutes\n", response.TodayLimit))
+
+	return sb.String()
+}
+
 // FormatError formats an error message
 func FormatError(err error) string {
 	return fmt.Sprintf("❌ *Error*\n\n%s", err.Error())

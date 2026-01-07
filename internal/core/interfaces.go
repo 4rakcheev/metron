@@ -11,5 +11,6 @@ type SessionManagerInterface interface {
 	GetSession(ctx context.Context, sessionID string) (*Session, error)
 	ListActiveSessions(ctx context.Context) ([]*Session, error)
 	GrantRewardMinutes(ctx context.Context, childID string, minutes int) error
+	DeductFineMinutes(ctx context.Context, childID string, minutes int) error
 	GetChildStatus(ctx context.Context, childID string) (*ChildStatus, error)
 }
