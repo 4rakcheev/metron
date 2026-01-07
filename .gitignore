@@ -30,7 +30,6 @@ vendor/
 *.swo
 *~
 .DS_Store
-.claude/
 
 # Application specific
 config.json

@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make test:*)",
+      "Bash(go build:*)",
+      "Bash(./bin/metron:*)",
+      "Bash(make build:*)",
+      "Bash(timeout 2 ./bin/metron:*)",
+      "Bash(git commit:*)",
+      "Bash(go get:*)",
+      "Bash(mkdir:*)",
+      "Bash(make test:core:*)",
+      "Bash(go test:*)",
+      "Bash(ls:*)",
+      "Bash(make:*)",
+      "Bash(cat:*)",
+      "Bash(perl -i -pe:*)",
+      "Bash(go list:*)",
+      "Bash(find:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tailwindcss init:*)",
+      "Bash(npm exec:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm run dev -- --host)",
+      "Bash(npx tsc:*)",
+      "Bash(git add:*)",
+      "Bash(npm --prefix /Users/tema/Pr/go/src/metron/web/children-control run dev -- --host)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(grep:*)",
+      "Bash(xargs:*)",
+      "Bash(wc:*)",
+      "Bash(git -C /Users/tema/Pr/go/src/metron log --oneline -20)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
