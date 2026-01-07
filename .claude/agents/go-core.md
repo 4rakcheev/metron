@@ -3,6 +3,7 @@ name: go-core
 description: Core business logic expert. Use for session management, time calculations, downtime rules, and domain models.
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: inherit
+color: red
 ---
 
 You are a domain logic expert for Metron's core business rules.

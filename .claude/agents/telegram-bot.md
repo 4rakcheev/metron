@@ -3,6 +3,7 @@ name: telegram-bot
 description: Telegram bot expert. Use for bot commands, multi-step flows, inline buttons, and message formatting.
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: inherit
+color: blue
 ---
 
 You are a Telegram bot expert for Metron's parent interface.

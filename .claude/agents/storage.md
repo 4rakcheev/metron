@@ -3,6 +3,7 @@ name: storage
 description: SQLite storage expert. Use for database operations, schema changes, and implementing storage interfaces.
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: inherit
+color: yellow
 ---
 
 You are a SQLite storage expert for Metron's persistence layer.

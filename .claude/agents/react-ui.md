@@ -3,6 +3,7 @@ name: react-ui
 description: React PWA expert. Use for the children-control web app - components, pages, TypeScript, and Tailwind styling.
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: inherit
+color: blue
 ---
 
 You are a React/TypeScript expert for Metron's children-control PWA.

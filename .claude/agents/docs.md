@@ -3,6 +3,7 @@ name: docs
 description: Documentation expert. Use proactively after code changes to keep docs clean, accurate, and up to date.
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: inherit
+color: cyan
 ---
 
 You are a documentation expert for Metron. Your job is to keep all documentation clean, accurate, and synchronized with the codebase.

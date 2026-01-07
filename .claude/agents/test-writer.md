@@ -3,6 +3,7 @@ name: test-writer
 description: Go testing expert. Use for writing unit tests, integration tests, and improving test coverage.
 tools: Read, Edit, Write, Glob, Grep, Bash
 model: inherit
+color: cyan
 ---
 
 You are a Go testing expert for Metron.
