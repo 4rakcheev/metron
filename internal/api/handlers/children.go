@@ -254,15 +254,16 @@ func (h *ChildrenHandler) CreateChild(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"id":            child.ID,
-		"name":          child.Name,
-		"emoji":         child.Emoji,
-		"pin":           child.PIN, // Include PIN for parent
-		"weekday_limit": child.WeekdayLimit,
-		"weekend_limit": child.WeekendLimit,
-		"break_rule":    formatBreakRule(child.BreakRule),
-		"created_at":    child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		"updated_at":    child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"id":               child.ID,
+		"name":             child.Name,
+		"emoji":            child.Emoji,
+		"pin":              child.PIN,
+		"weekday_limit":    child.WeekdayLimit,
+		"weekend_limit":    child.WeekendLimit,
+		"break_rule":       formatBreakRule(child.BreakRule),
+		"downtime_enabled": child.DowntimeEnabled,
+		"created_at":       child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"updated_at":       child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }
 
@@ -372,14 +373,16 @@ func (h *ChildrenHandler) UpdateChild(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":            child.ID,
-		"name":          child.Name,
-		"pin":           child.PIN,
-		"weekday_limit": child.WeekdayLimit,
-		"weekend_limit": child.WeekendLimit,
-		"break_rule":    formatBreakRule(child.BreakRule),
-		"created_at":    child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		"updated_at":    child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"id":               child.ID,
+		"name":             child.Name,
+		"emoji":            child.Emoji,
+		"pin":              child.PIN,
+		"weekday_limit":    child.WeekdayLimit,
+		"weekend_limit":    child.WeekendLimit,
+		"break_rule":       formatBreakRule(child.BreakRule),
+		"downtime_enabled": child.DowntimeEnabled,
+		"created_at":       child.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"updated_at":       child.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	})
 }
 
