@@ -307,7 +307,8 @@ func (a *MetronAPI) doRequest(ctx context.Context, method, path string, body int
 	}
 
 	req.Header.Set("X-Metron-Key", a.apiKey)
-	if body != nil {
+	// Always set Content-Type for POST/PATCH as middleware requires it
+	if method == "POST" || method == "PATCH" {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
