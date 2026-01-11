@@ -45,6 +45,10 @@ tags:
     description: Manage screen-time sessions
   - name: Statistics
     description: View usage statistics
+  - name: Admin
+    description: Administrative endpoints for driver management
+  - name: Downtime
+    description: Downtime schedule management
   - name: Agent
     description: Agent endpoints for external device agents (Windows agent, etc.)
   - name: Bypass
@@ -228,6 +232,94 @@ paths:
       responses:
         '204':
           description: Child deleted successfully (no content)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/ChildNotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/children/{id}/rewards:
+    post:
+      tags:
+        - Children
+      summary: Grant reward minutes
+      description: Adds bonus screen-time minutes to a child's daily limit as a reward
+      operationId: grantReward
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Child ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RewardFineRequest'
+            example:
+              minutes: 30
+      responses:
+        '200':
+          description: Reward granted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RewardFineResponse'
+              example:
+                success: true
+                message: Granted 30 reward minutes
+                minutes: 30
+                new_remaining: 90
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/ChildNotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/children/{id}/fines:
+    post:
+      tags:
+        - Children
+      summary: Deduct fine minutes
+      description: Deducts screen-time minutes from a child's daily limit as a penalty
+      operationId: deductFine
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Child ID
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RewardFineRequest'
+            example:
+              minutes: 15
+      responses:
+        '200':
+          description: Fine deducted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RewardFineResponse'
+              example:
+                success: true
+                message: Deducted 15 fine minutes
+                minutes: 15
+                new_remaining: 45
+        '400':
+          $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '404':
@@ -430,6 +522,142 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TodayStats'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/aqara/refresh-token:
+    post:
+      tags:
+        - Admin
+      summary: Update Aqara refresh token
+      description: |
+        Updates the Aqara Cloud API refresh token. This token is used to authenticate
+        with the Aqara Cloud API for device control operations.
+
+        After updating the refresh token, the access token cache is cleared and a new
+        access token will be obtained on the next API call.
+      operationId: updateAqaraRefreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAqaraTokenRequest'
+            example:
+              refresh_token: "your-new-refresh-token"
+      responses:
+        '200':
+          description: Refresh token updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UpdateAqaraTokenResponse'
+              example:
+                message: Refresh token updated successfully
+                updated_at: "2025-12-09T15:30:45Z"
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/aqara/token-status:
+    get:
+      tags:
+        - Admin
+      summary: Get Aqara token status
+      description: |
+        Returns the current status of Aqara tokens, including whether a refresh token
+        is configured and the status of the cached access token.
+      operationId: getAqaraTokenStatus
+      responses:
+        '200':
+          description: Token status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AqaraTokenStatus'
+              examples:
+                configured:
+                  summary: Tokens configured and valid
+                  value:
+                    configured: true
+                    refresh_token_updated_at: "2025-12-09T15:30:45Z"
+                    access_token_status: valid
+                    access_token_expires_in_seconds: 3600
+                notConfigured:
+                  summary: No refresh token configured
+                  value:
+                    configured: false
+                    message: "No refresh token configured. Use POST /v1/admin/aqara/refresh-token to add one."
+                expired:
+                  summary: Access token expired
+                  value:
+                    configured: true
+                    refresh_token_updated_at: "2025-12-09T10:00:00Z"
+                    access_token_status: expired
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/downtime/skip-today:
+    post:
+      tags:
+        - Downtime
+      summary: Skip downtime for today
+      description: |
+        Skips the downtime enforcement for the current day. This affects all children
+        and allows sessions to be created during normally restricted hours.
+
+        The skip applies only to the current calendar day and resets at midnight.
+      operationId: skipDowntimeToday
+      responses:
+        '200':
+          description: Downtime skipped successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkipDowntimeResponse'
+              example:
+                success: true
+                skip_date: "2025-12-09"
+                message: "Downtime skipped for today (all children)"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/downtime/skip-status:
+    get:
+      tags:
+        - Downtime
+      summary: Get downtime skip status
+      description: |
+        Returns whether downtime is currently skipped for today and the date
+        of the last skip (if any).
+      operationId: getDowntimeSkipStatus
+      responses:
+        '200':
+          description: Skip status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DowntimeSkipStatus'
+              examples:
+                skippedToday:
+                  summary: Downtime is skipped today
+                  value:
+                    skipped_today: true
+                    skip_date: "2025-12-09"
+                notSkipped:
+                  summary: Downtime is not skipped
+                  value:
+                    skipped_today: false
+                    skip_date: null
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '500':
@@ -937,6 +1165,133 @@ components:
             - $ref: '#/components/schemas/BreakRule'
           description: Mandatory break rule (optional)
           nullable: true
+
+    RewardFineRequest:
+      type: object
+      required:
+        - minutes
+      properties:
+        minutes:
+          type: integer
+          description: Number of minutes to add (reward) or deduct (fine)
+          enum: [15, 30, 60]
+          example: 30
+
+    RewardFineResponse:
+      type: object
+      required:
+        - success
+        - message
+        - minutes
+        - new_remaining
+      properties:
+        success:
+          type: boolean
+          description: Whether the operation succeeded
+          example: true
+        message:
+          type: string
+          description: Human-readable success message
+          example: "Granted 30 reward minutes"
+        minutes:
+          type: integer
+          description: Number of minutes added or deducted
+          example: 30
+        new_remaining:
+          type: integer
+          description: New remaining minutes after the operation
+          example: 90
+
+    UpdateAqaraTokenRequest:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: The new Aqara Cloud API refresh token
+          example: "your-refresh-token-here"
+
+    UpdateAqaraTokenResponse:
+      type: object
+      required:
+        - message
+        - updated_at
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: "Refresh token updated successfully"
+        updated_at:
+          type: string
+          format: date-time
+          description: When the token was updated
+          example: "2025-12-09T15:30:45Z"
+
+    AqaraTokenStatus:
+      type: object
+      required:
+        - configured
+      properties:
+        configured:
+          type: boolean
+          description: Whether a refresh token is configured
+          example: true
+        message:
+          type: string
+          description: Status message (only when not configured)
+          example: "No refresh token configured. Use POST /v1/admin/aqara/refresh-token to add one."
+        refresh_token_updated_at:
+          type: string
+          format: date-time
+          description: When the refresh token was last updated (only when configured)
+          example: "2025-12-09T15:30:45Z"
+        access_token_status:
+          type: string
+          enum: [not_cached, cached_no_expiry, valid, expired]
+          description: Status of the cached access token (only when configured)
+          example: valid
+        access_token_expires_in_seconds:
+          type: integer
+          description: Seconds until access token expires (only when status is 'valid')
+          example: 3600
+
+    SkipDowntimeResponse:
+      type: object
+      required:
+        - success
+        - skip_date
+        - message
+      properties:
+        success:
+          type: boolean
+          description: Whether the operation succeeded
+          example: true
+        skip_date:
+          type: string
+          format: date
+          description: The date for which downtime was skipped
+          example: "2025-12-09"
+        message:
+          type: string
+          description: Success message
+          example: "Downtime skipped for today (all children)"
+
+    DowntimeSkipStatus:
+      type: object
+      required:
+        - skipped_today
+      properties:
+        skipped_today:
+          type: boolean
+          description: Whether downtime is skipped for today
+          example: true
+        skip_date:
+          type: string
+          format: date
+          description: The date of the last skip (null if never skipped)
+          nullable: true
+          example: "2025-12-09"
 
     TodayStats:
       type: object
