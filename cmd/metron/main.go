@@ -239,53 +239,45 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	if cfg.Downtime != nil {
 		schedule := &core.DowntimeSchedule{}
 
-		// Parse weekday schedule
-		weekdayCfg := cfg.Downtime.GetWeekdaySchedule()
-		if weekdayCfg != nil {
-			startHour, startMinute, err := parseTimeOfDay(weekdayCfg.StartTime)
+		// Helper to parse a day schedule config
+		parseDaySchedule := func(name string, dayCfg *config.DayScheduleConfig) *core.DaySchedule {
+			if dayCfg == nil {
+				return nil
+			}
+			startHour, startMinute, err := parseTimeOfDay(dayCfg.StartTime)
 			if err != nil {
-				mainLogger.Error("Invalid weekday downtime start_time", "error", err)
+				mainLogger.Error("Invalid downtime start_time", "day", name, "error", err)
 				os.Exit(1)
 			}
-			endHour, endMinute, err := parseTimeOfDay(weekdayCfg.EndTime)
+			endHour, endMinute, err := parseTimeOfDay(dayCfg.EndTime)
 			if err != nil {
-				mainLogger.Error("Invalid weekday downtime end_time", "error", err)
+				mainLogger.Error("Invalid downtime end_time", "day", name, "error", err)
 				os.Exit(1)
 			}
-			schedule.Weekday = &core.DaySchedule{
+			mainLogger.Info("Downtime configured",
+				"day", name,
+				"start", dayCfg.StartTime,
+				"end", dayCfg.EndTime)
+			return &core.DaySchedule{
 				StartHour:   startHour,
 				StartMinute: startMinute,
 				EndHour:     endHour,
 				EndMinute:   endMinute,
 			}
-			mainLogger.Info("Weekday downtime configured",
-				"start", weekdayCfg.StartTime,
-				"end", weekdayCfg.EndTime)
 		}
 
-		// Parse weekend schedule
-		weekendCfg := cfg.Downtime.GetWeekendSchedule()
-		if weekendCfg != nil {
-			startHour, startMinute, err := parseTimeOfDay(weekendCfg.StartTime)
-			if err != nil {
-				mainLogger.Error("Invalid weekend downtime start_time", "error", err)
-				os.Exit(1)
-			}
-			endHour, endMinute, err := parseTimeOfDay(weekendCfg.EndTime)
-			if err != nil {
-				mainLogger.Error("Invalid weekend downtime end_time", "error", err)
-				os.Exit(1)
-			}
-			schedule.Weekend = &core.DaySchedule{
-				StartHour:   startHour,
-				StartMinute: startMinute,
-				EndHour:     endHour,
-				EndMinute:   endMinute,
-			}
-			mainLogger.Info("Weekend downtime configured",
-				"start", weekendCfg.StartTime,
-				"end", weekendCfg.EndTime)
-		}
+		// Parse per-day schedules (highest priority)
+		schedule.Sunday = parseDaySchedule("sunday", cfg.Downtime.Sunday)
+		schedule.Monday = parseDaySchedule("monday", cfg.Downtime.Monday)
+		schedule.Tuesday = parseDaySchedule("tuesday", cfg.Downtime.Tuesday)
+		schedule.Wednesday = parseDaySchedule("wednesday", cfg.Downtime.Wednesday)
+		schedule.Thursday = parseDaySchedule("thursday", cfg.Downtime.Thursday)
+		schedule.Friday = parseDaySchedule("friday", cfg.Downtime.Friday)
+		schedule.Saturday = parseDaySchedule("saturday", cfg.Downtime.Saturday)
+
+		// Parse weekday/weekend schedules (fallback)
+		schedule.Weekday = parseDaySchedule("weekday", cfg.Downtime.GetWeekdaySchedule())
+		schedule.Weekend = parseDaySchedule("weekend", cfg.Downtime.GetWeekendSchedule())
 
 		downtimeService = core.NewDowntimeService(schedule, timezone)
 		// Wire up skip storage

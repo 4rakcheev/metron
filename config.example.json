@@ -11,15 +11,15 @@
     "allowed_ips": [],
     "enable_ip_check": false
   },
+  "timezone": "Europe/Riga",
   "downtime": {
-    "weekday": {
-      "start_time": "21:00",
-      "end_time": "10:00"
-    },
-    "weekend": {
-      "start_time": "22:00",
-      "end_time": "10:00"
-    }
+    "sunday": { "start_time": "21:00", "end_time": "10:00" },
+    "monday": { "start_time": "21:00", "end_time": "10:00" },
+    "tuesday": { "start_time": "21:00", "end_time": "10:00" },
+    "wednesday": { "start_time": "21:00", "end_time": "10:00" },
+    "thursday": { "start_time": "21:00", "end_time": "10:00" },
+    "friday": { "start_time": "22:00", "end_time": "10:00" },
+    "saturday": { "start_time": "22:00", "end_time": "10:00" }
   },
   "devices": [
     {

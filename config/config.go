@@ -27,11 +27,11 @@ type Config struct {
 
 // DeviceConfig represents a device configuration
 type DeviceConfig struct {
-	ID         string                 `json:"id"`                    // Unique device ID (e.g., "tv1", "ps5")
-	Name       string                 `json:"name"`                  // Display name (e.g., "Living Room TV")
-	Type       string                 `json:"type"`                  // Device type (e.g., "tv", "ps5") - for display/stats
-	Driver     string                 `json:"driver"`                // Driver name (e.g., "aqara") - for control
-	Parameters map[string]interface{} `json:"parameters,omitempty"`  // Driver-specific parameters (overrides defaults)
+	ID         string                 `json:"id"`                   // Unique device ID (e.g., "tv1", "ps5")
+	Name       string                 `json:"name"`                 // Display name (e.g., "Living Room TV")
+	Type       string                 `json:"type"`                 // Device type (e.g., "tv", "ps5") - for display/stats
+	Driver     string                 `json:"driver"`               // Driver name (e.g., "aqara") - for control
+	Parameters map[string]interface{} `json:"parameters,omitempty"` // Driver-specific parameters (overrides defaults)
 }
 
 // ServerConfig contains HTTP server settings
@@ -78,32 +78,107 @@ type KidsloxConfig struct {
 	ProfileID string `json:"profile_id,omitempty"` // Default Kidslox profile ID
 }
 
-// DayScheduleConfig defines start/end times for a day type (weekday or weekend)
+// DayScheduleConfig defines start/end times for a day
 type DayScheduleConfig struct {
 	StartTime string `json:"start_time"` // HH:MM format (e.g., "22:00")
 	EndTime   string `json:"end_time"`   // HH:MM format (e.g., "10:00")
 }
 
 // DowntimeConfig defines the global downtime schedule
-// Supports two formats:
-// 1. Legacy flat format: {"start_time": "22:00", "end_time": "10:00"} - applies to all days
-// 2. New nested format: {"weekday": {...}, "weekend": {...}} - separate schedules
+// Supports three formats (in order of priority):
+// 1. Per-day format: {"sunday": {...}, "monday": {...}, ...} - explicit per-day schedules
+// 2. Weekday/weekend format: {"weekday": {...}, "weekend": {...}} - grouped schedules
+// 3. Legacy flat format: {"start_time": "22:00", "end_time": "10:00"} - applies to all days
 type DowntimeConfig struct {
 	// Legacy flat fields (for backward compatibility)
 	StartTime string `json:"start_time,omitempty"` // HH:MM format (e.g., "22:00")
 	EndTime   string `json:"end_time,omitempty"`   // HH:MM format (e.g., "10:00")
 
-	// New day-specific schedules
-	Weekday *DayScheduleConfig `json:"weekday,omitempty"` // Mon-Fri schedule
-	Weekend *DayScheduleConfig `json:"weekend,omitempty"` // Sat-Sun schedule
+	// Grouped schedules (weekday/weekend)
+	Weekday *DayScheduleConfig `json:"weekday,omitempty"` // Default for Mon-Fri (if per-day not set)
+	Weekend *DayScheduleConfig `json:"weekend,omitempty"` // Default for Sat-Sun (if per-day not set)
+
+	// Explicit per-day schedules (highest priority)
+	Sunday    *DayScheduleConfig `json:"sunday,omitempty"`
+	Monday    *DayScheduleConfig `json:"monday,omitempty"`
+	Tuesday   *DayScheduleConfig `json:"tuesday,omitempty"`
+	Wednesday *DayScheduleConfig `json:"wednesday,omitempty"`
+	Thursday  *DayScheduleConfig `json:"thursday,omitempty"`
+	Friday    *DayScheduleConfig `json:"friday,omitempty"`
+	Saturday  *DayScheduleConfig `json:"saturday,omitempty"`
 }
 
 // IsLegacyFormat returns true if using old flat start_time/end_time format
 func (d *DowntimeConfig) IsLegacyFormat() bool {
-	return d.StartTime != "" && d.EndTime != "" && d.Weekday == nil && d.Weekend == nil
+	return d.StartTime != "" && d.EndTime != "" &&
+		d.Weekday == nil && d.Weekend == nil &&
+		d.Sunday == nil && d.Monday == nil && d.Tuesday == nil &&
+		d.Wednesday == nil && d.Thursday == nil && d.Friday == nil && d.Saturday == nil
+}
+
+// HasPerDayConfig returns true if any per-day schedule is configured
+func (d *DowntimeConfig) HasPerDayConfig() bool {
+	return d.Sunday != nil || d.Monday != nil || d.Tuesday != nil ||
+		d.Wednesday != nil || d.Thursday != nil || d.Friday != nil || d.Saturday != nil
+}
+
+// GetScheduleForDay returns the schedule for a specific day of the week
+// Priority: per-day > weekday/weekend > legacy
+func (d *DowntimeConfig) GetScheduleForDay(dayName string) *DayScheduleConfig {
+	// First check explicit per-day config
+	switch dayName {
+	case "sunday":
+		if d.Sunday != nil {
+			return d.Sunday
+		}
+	case "monday":
+		if d.Monday != nil {
+			return d.Monday
+		}
+	case "tuesday":
+		if d.Tuesday != nil {
+			return d.Tuesday
+		}
+	case "wednesday":
+		if d.Wednesday != nil {
+			return d.Wednesday
+		}
+	case "thursday":
+		if d.Thursday != nil {
+			return d.Thursday
+		}
+	case "friday":
+		if d.Friday != nil {
+			return d.Friday
+		}
+	case "saturday":
+		if d.Saturday != nil {
+			return d.Saturday
+		}
+	}
+
+	// Fall back to weekday/weekend
+	switch dayName {
+	case "saturday", "sunday":
+		if d.Weekend != nil {
+			return d.Weekend
+		}
+	default:
+		if d.Weekday != nil {
+			return d.Weekday
+		}
+	}
+
+	// Fall back to legacy format
+	if d.IsLegacyFormat() {
+		return &DayScheduleConfig{StartTime: d.StartTime, EndTime: d.EndTime}
+	}
+
+	return nil
 }
 
 // GetWeekdaySchedule returns the weekday schedule, falling back to legacy format
+// Deprecated: Use GetScheduleForDay instead
 func (d *DowntimeConfig) GetWeekdaySchedule() *DayScheduleConfig {
 	if d.Weekday != nil {
 		return d.Weekday
@@ -115,6 +190,7 @@ func (d *DowntimeConfig) GetWeekdaySchedule() *DayScheduleConfig {
 }
 
 // GetWeekendSchedule returns the weekend schedule, falling back to legacy format
+// Deprecated: Use GetScheduleForDay instead
 func (d *DowntimeConfig) GetWeekendSchedule() *DayScheduleConfig {
 	if d.Weekend != nil {
 		return d.Weekend
@@ -127,45 +203,55 @@ func (d *DowntimeConfig) GetWeekendSchedule() *DayScheduleConfig {
 
 // Validate validates the downtime configuration
 func (d *DowntimeConfig) Validate() error {
-	// Check if using legacy format
-	if d.IsLegacyFormat() {
+	// Helper to validate a single schedule
+	validateSchedule := func(name string, sched *DayScheduleConfig) error {
+		if sched == nil {
+			return nil
+		}
+		if _, _, err := parseTimeOfDay(sched.StartTime); err != nil {
+			return fmt.Errorf("invalid %s downtime start_time '%s': %v", name, sched.StartTime, err)
+		}
+		if _, _, err := parseTimeOfDay(sched.EndTime); err != nil {
+			return fmt.Errorf("invalid %s downtime end_time '%s': %v", name, sched.EndTime, err)
+		}
+		return nil
+	}
+
+	// Validate per-day schedules
+	perDaySchedules := map[string]*DayScheduleConfig{
+		"sunday":    d.Sunday,
+		"monday":    d.Monday,
+		"tuesday":   d.Tuesday,
+		"wednesday": d.Wednesday,
+		"thursday":  d.Thursday,
+		"friday":    d.Friday,
+		"saturday":  d.Saturday,
+	}
+	for name, sched := range perDaySchedules {
+		if err := validateSchedule(name, sched); err != nil {
+			return err
+		}
+	}
+
+	// Validate weekday/weekend schedules
+	if err := validateSchedule("weekday", d.Weekday); err != nil {
+		return err
+	}
+	if err := validateSchedule("weekend", d.Weekend); err != nil {
+		return err
+	}
+
+	// Validate legacy format
+	if d.StartTime != "" || d.EndTime != "" {
+		if d.StartTime == "" || d.EndTime == "" {
+			return fmt.Errorf("both start_time and end_time must be set for legacy downtime format")
+		}
 		if _, _, err := parseTimeOfDay(d.StartTime); err != nil {
 			return fmt.Errorf("invalid downtime start_time '%s': %v", d.StartTime, err)
 		}
 		if _, _, err := parseTimeOfDay(d.EndTime); err != nil {
 			return fmt.Errorf("invalid downtime end_time '%s': %v", d.EndTime, err)
 		}
-		return nil
-	}
-
-	// Check if using new nested format
-	if d.Weekday != nil || d.Weekend != nil {
-		// At least one of weekday/weekend must be set
-		if d.Weekday == nil && d.Weekend == nil {
-			return fmt.Errorf("downtime config must have at least weekday or weekend schedule")
-		}
-
-		// Validate weekday schedule if present
-		if d.Weekday != nil {
-			if _, _, err := parseTimeOfDay(d.Weekday.StartTime); err != nil {
-				return fmt.Errorf("invalid weekday downtime start_time '%s': %v", d.Weekday.StartTime, err)
-			}
-			if _, _, err := parseTimeOfDay(d.Weekday.EndTime); err != nil {
-				return fmt.Errorf("invalid weekday downtime end_time '%s': %v", d.Weekday.EndTime, err)
-			}
-		}
-
-		// Validate weekend schedule if present
-		if d.Weekend != nil {
-			if _, _, err := parseTimeOfDay(d.Weekend.StartTime); err != nil {
-				return fmt.Errorf("invalid weekend downtime start_time '%s': %v", d.Weekend.StartTime, err)
-			}
-			if _, _, err := parseTimeOfDay(d.Weekend.EndTime); err != nil {
-				return fmt.Errorf("invalid weekend downtime end_time '%s': %v", d.Weekend.EndTime, err)
-			}
-		}
-
-		return nil
 	}
 
 	// Empty config is valid (downtime disabled)

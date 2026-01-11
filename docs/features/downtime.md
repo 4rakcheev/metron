@@ -6,28 +6,50 @@ Downtime is a scheduled period when device access is restricted for children. Th
 
 Downtime is configured in `config.json` under the `downtime` key.
 
-### Weekday/Weekend Schedules
+### Per-Day Schedules (Recommended)
 
-Different schedules can be set for weekdays (Monday-Friday) and weekends (Saturday-Sunday):
+Set explicit schedules for each day of the week. This gives you full control:
 
 ```json
 {
   "downtime": {
-    "weekday": {
-      "start_time": "21:00",
-      "end_time": "10:00"
-    },
-    "weekend": {
-      "start_time": "22:00",
-      "end_time": "10:00"
-    }
+    "sunday": { "start_time": "21:00", "end_time": "10:00" },
+    "monday": { "start_time": "21:00", "end_time": "10:00" },
+    "tuesday": { "start_time": "21:00", "end_time": "10:00" },
+    "wednesday": { "start_time": "21:00", "end_time": "10:00" },
+    "thursday": { "start_time": "21:00", "end_time": "10:00" },
+    "friday": { "start_time": "22:00", "end_time": "10:00" },
+    "saturday": { "start_time": "22:00", "end_time": "10:00" }
   }
 }
 ```
 
+This configuration means:
+- **Sun-Thu nights**: Downtime starts at 21:00 (school nights - early wake up tomorrow)
+- **Fri-Sat nights**: Downtime starts at 22:00 (can stay up later - no school tomorrow)
+
 **Fields:**
 - `start_time` - When downtime begins (HH:MM format, 24-hour)
 - `end_time` - When downtime ends (HH:MM format, 24-hour)
+
+### Weekday/Weekend Schedules (Alternative)
+
+You can also use grouped schedules as a simpler alternative:
+
+```json
+{
+  "downtime": {
+    "weekday": { "start_time": "21:00", "end_time": "10:00" },
+    "weekend": { "start_time": "22:00", "end_time": "10:00" }
+  }
+}
+```
+
+With this format:
+- **weekday** applies to Monday through Friday
+- **weekend** applies to Saturday and Sunday
+
+**Note:** Per-day schedules take priority over weekday/weekend if both are specified.
 
 ### Overnight Downtime
 
@@ -115,9 +137,10 @@ The skip automatically expires at midnight (in the configured timezone). No manu
 
 2. **Active Sessions**: Sessions already in progress are not affected when downtime begins
 
-3. **Day-of-Week Logic**: The system checks the current day:
-   - Monday-Friday: Uses `weekday` schedule
-   - Saturday-Sunday: Uses `weekend` schedule
+3. **Day-of-Week Logic**: The system selects the schedule based on the current day:
+   - **Per-day schedules** (e.g., `friday`, `saturday`) have highest priority
+   - **Grouped schedules** (`weekday`, `weekend`) are used as fallback
+   - With grouped schedules: Mon-Fri = weekday, Sat-Sun = weekend
 
 ## Storage
 

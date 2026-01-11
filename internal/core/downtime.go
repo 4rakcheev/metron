@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// DaySchedule defines start/end times for a specific day type
+// DaySchedule defines start/end times for a specific day
 type DaySchedule struct {
 	StartHour   int
 	StartMinute int
@@ -14,10 +14,23 @@ type DaySchedule struct {
 }
 
 // DowntimeSchedule defines the time periods when downtime is active
-// Supports separate schedules for weekdays (Mon-Fri) and weekends (Sat-Sun)
+// Supports three levels of configuration (in order of priority):
+// 1. Per-day schedules (Sunday, Monday, etc.) - most specific
+// 2. Weekday/Weekend schedules - grouped defaults
+// 3. All fields nil = downtime disabled
 type DowntimeSchedule struct {
-	Weekday *DaySchedule // Mon-Fri schedule
-	Weekend *DaySchedule // Sat-Sun schedule
+	// Grouped schedules (fallback if per-day not set)
+	Weekday *DaySchedule // Default for Mon-Fri
+	Weekend *DaySchedule // Default for Sat-Sun
+
+	// Explicit per-day schedules (highest priority)
+	Sunday    *DaySchedule
+	Monday    *DaySchedule
+	Tuesday   *DaySchedule
+	Wednesday *DaySchedule
+	Thursday  *DaySchedule
+	Friday    *DaySchedule
+	Saturday  *DaySchedule
 }
 
 // DowntimeSkipStorage defines the interface for skip date persistence
@@ -48,12 +61,47 @@ func (d *DowntimeService) SetSkipStorage(storage DowntimeSkipStorage) {
 }
 
 // getScheduleForDay returns the appropriate schedule for the given day
+// Priority: per-day schedule > weekday/weekend schedule
 func (d *DowntimeService) getScheduleForDay(t time.Time) *DaySchedule {
 	if d.schedule == nil {
 		return nil
 	}
 
 	weekday := t.In(d.timezone).Weekday()
+
+	// First check explicit per-day schedule
+	switch weekday {
+	case time.Sunday:
+		if d.schedule.Sunday != nil {
+			return d.schedule.Sunday
+		}
+	case time.Monday:
+		if d.schedule.Monday != nil {
+			return d.schedule.Monday
+		}
+	case time.Tuesday:
+		if d.schedule.Tuesday != nil {
+			return d.schedule.Tuesday
+		}
+	case time.Wednesday:
+		if d.schedule.Wednesday != nil {
+			return d.schedule.Wednesday
+		}
+	case time.Thursday:
+		if d.schedule.Thursday != nil {
+			return d.schedule.Thursday
+		}
+	case time.Friday:
+		if d.schedule.Friday != nil {
+			return d.schedule.Friday
+		}
+	case time.Saturday:
+		if d.schedule.Saturday != nil {
+			return d.schedule.Saturday
+		}
+	}
+
+	// Fall back to weekday/weekend schedule
 	if weekday == time.Saturday || weekday == time.Sunday {
 		return d.schedule.Weekend
 	}
@@ -62,7 +110,15 @@ func (d *DowntimeService) getScheduleForDay(t time.Time) *DaySchedule {
 
 // IsEnabled returns true if downtime schedule is configured
 func (d *DowntimeService) IsEnabled() bool {
-	return d.schedule != nil && (d.schedule.Weekday != nil || d.schedule.Weekend != nil)
+	if d.schedule == nil {
+		return false
+	}
+	// Check if any schedule is configured
+	return d.schedule.Weekday != nil || d.schedule.Weekend != nil ||
+		d.schedule.Sunday != nil || d.schedule.Monday != nil ||
+		d.schedule.Tuesday != nil || d.schedule.Wednesday != nil ||
+		d.schedule.Thursday != nil || d.schedule.Friday != nil ||
+		d.schedule.Saturday != nil
 }
 
 // IsDowntimeSkippedToday checks if downtime has been skipped for today
