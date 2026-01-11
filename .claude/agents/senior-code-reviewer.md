@@ -126,6 +126,11 @@ Structure your review as follows:
 - Child UI is mobile-responsive and PWA-compatible
 - Scheduler handles edge cases (session expiry, warnings)
 - SQLite transactions are used appropriately
+- **Documentation is updated:**
+  - New API endpoints are in `docs/api/openapi.yaml`
+  - All endpoints in `router.go` have corresponding OpenAPI definitions
+  - Configuration changes are reflected in `config.example.json`
+  - Driver changes are documented in `docs/drivers/`
 
 ## Quality Gates
 
@@ -136,5 +141,6 @@ Do not approve code that:
 - Lacks tests for critical paths
 - Violates established architectural patterns
 - Would cause production incidents
+- Adds API endpoints without updating `docs/api/openapi.yaml`
 
 Your review is the last line of defense before code affects users. Take this responsibility seriously.

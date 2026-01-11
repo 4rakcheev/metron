@@ -174,11 +174,12 @@ Currently deployed to Ubuntu virtual server via GitHub Actions (`.github/workflo
 ## Configuration
 
 Two config files:
-- `config.json` - Main API: server, database, security (including agent_tokens), devices array, aqara settings
+- `config.json` - Main API: server, database, security, devices array, aqara settings
 - `bot-config.json` - Bot: server port, telegram token/webhook, metron API connection
 
 Key configuration sections:
-- `security.agent_tokens`: Per-device Bearer tokens for agent authentication
+- `devices[].parameters.agent_token`: Per-device Bearer tokens for agent authentication
+- `devices[].parameters.agent_enabled`: Set to `false` to disable agent without removing token
 - `devices[].driver`: Use "passive" for agent-controlled devices, "aqara" for push-controlled
 
 Device IDs must be ≤15 characters (Telegram callback data limit).
@@ -191,3 +192,27 @@ Device IDs must be ≤15 characters (Telegram callback data limit).
 - `docs/drivers/aqara-tokens.md` - Aqara token management details
 - `docs/drivers/windows-agent.md` - Windows agent installation and configuration
 - `deploy/systemd/` - Production deployment with systemd
+
+### Documentation Maintenance Rules
+
+**IMPORTANT:** When making code changes, always keep documentation in sync:
+
+1. **API Changes** - When adding, modifying, or removing API endpoints:
+   - Update `docs/api/openapi.yaml` with the endpoint definition, request/response schemas
+   - Update `docs/api/v1.md` with usage examples
+   - Include all HTTP methods, parameters, request bodies, and response codes
+
+2. **Configuration Changes** - When modifying config structures:
+   - Update `config.example.json` with examples
+   - Update relevant documentation (CLAUDE.md, driver docs)
+
+3. **New Features** - When adding significant new features:
+   - Update `docs/ARCHITECTURE.md` if it affects system design
+   - Create new documentation files in `docs/` if needed
+   - Update `CLAUDE.md` project overview section
+
+4. **Driver Changes** - When adding or modifying drivers:
+   - Create/update driver-specific docs in `docs/drivers/`
+   - Update `docs/ARCHITECTURE.md` driver section
+
+**Verification:** After API changes, the OpenAPI spec should include all endpoints from `internal/api/router.go`.

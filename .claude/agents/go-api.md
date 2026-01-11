@@ -168,8 +168,16 @@ When creating or modifying API endpoints:
 4. **Register the route** in `router.go` with correct middleware chain
 5. **Implement proper status codes** per TMForum guidelines
 6. **Use TMForum error format** for all error responses
-7. **Update OpenAPI spec** in `docs/api/openapi.yaml`
-8. **Run tests** with `go test ./internal/api/... -v`
+7. **Update OpenAPI spec** in `docs/api/openapi.yaml`:
+   - Add path definition with all HTTP methods
+   - Define request body schema (if applicable)
+   - Define response schemas for all status codes
+   - Add examples for request/response bodies
+   - Create new schema definitions if needed
+8. **Update API documentation** in `docs/api/v1.md` with usage examples
+9. **Run tests** with `go test ./internal/api/... -v`
+
+**IMPORTANT:** API changes are NOT complete until both `openapi.yaml` and `v1.md` are updated.
 
 ## Quality Checklist
 
@@ -182,4 +190,6 @@ Before completing any API work, verify:
 - [ ] Request validation with proper error messages
 - [ ] Handler follows Metron patterns (closure with storage)
 - [ ] Code passes `make lint` and `make test`
-- [ ] OpenAPI documentation updated
+- [ ] `docs/api/openapi.yaml` updated with endpoint, schemas, examples
+- [ ] `docs/api/v1.md` updated with usage documentation
+- [ ] All endpoints in `router.go` are documented in OpenAPI spec

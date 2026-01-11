@@ -54,11 +54,19 @@ When reviewing documentation:
 - [ ] Clear: Easy to understand for new developers
 
 ## OpenAPI Maintenance
-Keep `docs/api/openapi.yaml` synchronized:
-- All endpoints documented
-- Request/response schemas accurate
-- Error responses defined
+Keep `docs/api/openapi.yaml` synchronized with `internal/api/router.go`:
+- All endpoints documented with correct HTTP methods
+- Request/response schemas accurate and complete
+- Error responses defined for each status code
 - Examples provided for complex operations
+- New schemas added for new request/response types
+- Tags defined for logical endpoint grouping
+
+**Verification command:**
+```bash
+# List all endpoints from router and compare with OpenAPI
+grep -E 'v1\.(GET|POST|PUT|PATCH|DELETE)' internal/api/router.go
+```
 
 ## CHANGELOG Format
 ```markdown
