@@ -156,7 +156,11 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			mainLogger.Error("Failed to close database", "error", err)
+		}
+	}()
 
 	// Initialize device registry first (needed by drivers)
 	mainLogger.Info("Initializing device registry")
@@ -184,7 +188,9 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	}
 	aqaraLogger := logger.With("component", "driver.aqara")
 	aqaraDriver := aqara.NewDriver(aqaraConfig, db, aqaraLogger)
-	driverRegistry.Register(aqaraDriver)
+	if err := driverRegistry.Register(aqaraDriver); err != nil {
+		return fmt.Errorf("failed to register aqara driver: %w", err)
+	}
 
 	// Register Kidslox driver if configured
 	if cfg.Kidslox != nil {
@@ -198,7 +204,9 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		}
 		kidsloxLogger := logger.With("component", "driver.kidslox")
 		kidsloxDriver := kidslox.NewDriver(kidsloxConfig, deviceRegistry, kidsloxLogger)
-		driverRegistry.Register(kidsloxDriver)
+		if err := driverRegistry.Register(kidsloxDriver); err != nil {
+			return fmt.Errorf("failed to register kidslox driver: %w", err)
+		}
 	}
 
 	// Register devices from configuration
@@ -276,8 +284,19 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		schedule.Saturday = parseDaySchedule("saturday", cfg.Downtime.Saturday)
 
 		// Parse weekday/weekend schedules (fallback)
-		schedule.Weekday = parseDaySchedule("weekday", cfg.Downtime.GetWeekdaySchedule())
-		schedule.Weekend = parseDaySchedule("weekend", cfg.Downtime.GetWeekendSchedule())
+		// Use direct field access with legacy format fallback
+		weekdayCfg := cfg.Downtime.Weekday
+		weekendCfg := cfg.Downtime.Weekend
+		if cfg.Downtime.IsLegacyFormat() {
+			legacyCfg := &config.DayScheduleConfig{
+				StartTime: cfg.Downtime.StartTime,
+				EndTime:   cfg.Downtime.EndTime,
+			}
+			weekdayCfg = legacyCfg
+			weekendCfg = legacyCfg
+		}
+		schedule.Weekday = parseDaySchedule("weekday", weekdayCfg)
+		schedule.Weekend = parseDaySchedule("weekend", weekendCfg)
 
 		downtimeService = core.NewDowntimeService(schedule, timezone)
 		// Wire up skip storage

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -398,8 +399,10 @@ func getEnv(key, defaultValue string) string {
 
 func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
-		var intVal int
-		fmt.Sscanf(value, "%d", &intVal)
+		intVal, err := strconv.Atoi(value)
+		if err != nil {
+			return defaultValue
+		}
 		return intVal
 	}
 	return defaultValue
