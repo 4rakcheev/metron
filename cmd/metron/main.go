@@ -18,6 +18,7 @@ import (
 	"metron/internal/drivers"
 	"metron/internal/drivers/aqara"
 	"metron/internal/drivers/kidslox"
+	"metron/internal/drivers/passive"
 	"metron/internal/logging"
 	"metron/internal/scheduler"
 	"metron/internal/storage/sqlite"
@@ -209,6 +210,14 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		}
 	}
 
+	// Register passive driver (for agent-controlled devices like Windows PCs)
+	mainLogger.Info("Registering passive driver for agent-controlled devices")
+	passiveLogger := logger.With("component", "driver.passive")
+	passiveDriver := passive.NewDriver(passiveLogger)
+	if err := driverRegistry.Register(passiveDriver); err != nil {
+		return fmt.Errorf("failed to register passive driver: %w", err)
+	}
+
 	// Register devices from configuration
 	mainLogger.Info("Registering devices", "count", len(cfg.Devices))
 	for _, deviceCfg := range cfg.Devices {
@@ -329,7 +338,8 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		DowntimeSkipStorage: db, // SQLite storage also implements core.DowntimeSkipStorage
 		APIKey:              cfg.Security.APIKey,
 		Logger:              apiLogger,
-		AqaraTokenStorage:   db, // SQLite storage also implements aqara.AqaraTokenStorage
+		AqaraTokenStorage:   db,         // SQLite storage also implements aqara.AqaraTokenStorage
+		Devices:             cfg.Devices, // For agent auth (tokens in device parameters)
 	})
 
 	server := &http.Server{

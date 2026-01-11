@@ -42,6 +42,12 @@ type Storage interface {
 	// Session Usage Records - stores session history
 	ListActiveSessionRecords(ctx context.Context) ([]*core.SessionUsageRecord, error)
 
+	// Device Bypass - stores bypass mode for agent-controlled devices
+	GetDeviceBypass(ctx context.Context, deviceID string) (*core.DeviceBypass, error)
+	SetDeviceBypass(ctx context.Context, bypass *core.DeviceBypass) error
+	ClearDeviceBypass(ctx context.Context, deviceID string) error
+	ListActiveBypassDevices(ctx context.Context) ([]*core.DeviceBypass, error)
+
 	// Lifecycle
 	Close() error
 }

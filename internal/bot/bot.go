@@ -133,6 +133,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *tgbotapi.Message) erro
 		return b.handleChildren(ctx, message)
 	case "devices":
 		return b.handleDevices(ctx, message)
+	case "bypass":
+		return b.handleBypass(ctx, message)
 	default:
 		return b.sendMessage(message.Chat.ID,
 			"Unknown command. Use /start to see available commands.", nil)
@@ -206,6 +208,8 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		return b.handleManageFlow(ctx, callback.Message, data)
 	case "downtime":
 		return b.handleDowntimeFlow(ctx, callback.Message, data)
+	case "bypass":
+		return b.handleBypassFlow(ctx, callback.Message, data)
 	case "sessions_menu":
 		return b.handleSessionsMenu(ctx, callback.Message)
 	case "more_menu":

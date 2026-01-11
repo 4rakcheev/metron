@@ -17,6 +17,7 @@ I help you manage your children's screen time across all devices.
 📊 /today - View today's screen time summary
 👶 /children - List all children and toggle downtime
 📺 /devices - List available devices
+🔓 /bypass - Enable/disable bypass mode for devices
 
 *Quick Actions:*`
 
@@ -203,5 +204,39 @@ func (b *Bot) handleFine(ctx context.Context, message *tgbotapi.Message) error {
 	text := "*Apply Fine*\n\nStep 1/2: Select child"
 	keyboard := BuildChildrenButtons(children, "fine", 1)
 
+	return b.sendMessage(message.Chat.ID, text, keyboard)
+}
+
+// handleBypass handles the /bypass command - shows devices with bypass status
+func (b *Bot) handleBypass(ctx context.Context, message *tgbotapi.Message) error {
+	// Get all devices
+	devices, err := b.client.ListDevices(ctx)
+	if err != nil {
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
+	}
+
+	if len(devices) == 0 {
+		return b.sendMessage(message.Chat.ID,
+			"❌ No devices configured.", BuildQuickActionsButtons())
+	}
+
+	// Get bypass status for each device
+	var devicesWithBypass []DeviceWithBypass
+	for _, device := range devices {
+		bypass, _ := b.client.GetDeviceBypass(ctx, device.ID)
+		dw := DeviceWithBypass{
+			Device:        device,
+			BypassEnabled: bypass != nil && bypass.Enabled,
+		}
+		devicesWithBypass = append(devicesWithBypass, dw)
+	}
+
+	text := "🔓 *Bypass Mode*\n\n" +
+		"Bypass mode temporarily disables screen-time enforcement for a device.\n\n" +
+		"✅ = Bypass enabled (no limits)\n" +
+		"🔒 = Normal enforcement\n\n" +
+		"Select a device:"
+
+	keyboard := BuildBypassDevicesButtons(devicesWithBypass)
 	return b.sendMessage(message.Chat.ID, text, keyboard)
 }

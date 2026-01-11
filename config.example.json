@@ -48,6 +48,15 @@
         "device_id": "your-kidslox-device-id",
         "profile_id": "your-kidslox-profile-id"
       }
+    },
+    {
+      "id": "win-pc1",
+      "name": "Kids Windows PC",
+      "type": "computer",
+      "driver": "passive",
+      "parameters": {
+        "agent_token": "your-agent-secret-token-here"
+      }
     }
   ],
   "aqara": {

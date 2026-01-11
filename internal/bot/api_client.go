@@ -288,6 +288,46 @@ func (a *MetronAPI) IsDowntimeSkippedToday(ctx context.Context) (bool, error) {
 	return status.SkippedToday, nil
 }
 
+// DeviceBypass represents a device bypass status
+type DeviceBypass struct {
+	DeviceID  string  `json:"device_id"`
+	Enabled   bool    `json:"enabled"`
+	Reason    string  `json:"reason,omitempty"`
+	EnabledAt string  `json:"enabled_at,omitempty"`
+	EnabledBy string  `json:"enabled_by,omitempty"`
+	ExpiresAt *string `json:"expires_at,omitempty"`
+}
+
+// SetDeviceBypassRequest represents a request to enable bypass mode
+type SetDeviceBypassRequest struct {
+	Enabled          bool   `json:"enabled"`
+	Reason           string `json:"reason,omitempty"`
+	ExpiresInMinutes *int   `json:"expires_in_minutes,omitempty"`
+}
+
+// GetDeviceBypass gets the bypass status for a device
+func (a *MetronAPI) GetDeviceBypass(ctx context.Context, deviceID string) (*DeviceBypass, error) {
+	var bypass DeviceBypass
+	if err := a.doRequest(ctx, "GET", "/v1/devices/"+deviceID+"/bypass", nil, &bypass); err != nil {
+		return nil, err
+	}
+	return &bypass, nil
+}
+
+// SetDeviceBypass enables bypass mode for a device
+func (a *MetronAPI) SetDeviceBypass(ctx context.Context, deviceID string, req SetDeviceBypassRequest) (*DeviceBypass, error) {
+	var bypass DeviceBypass
+	if err := a.doRequest(ctx, "POST", "/v1/devices/"+deviceID+"/bypass", req, &bypass); err != nil {
+		return nil, err
+	}
+	return &bypass, nil
+}
+
+// ClearDeviceBypass disables bypass mode for a device
+func (a *MetronAPI) ClearDeviceBypass(ctx context.Context, deviceID string) error {
+	return a.doRequest(ctx, "DELETE", "/v1/devices/"+deviceID+"/bypass", nil, nil)
+}
+
 // doRequest performs an HTTP request to the Metron API
 func (a *MetronAPI) doRequest(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	url := a.baseURL + path

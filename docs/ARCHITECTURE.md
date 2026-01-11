@@ -14,20 +14,30 @@ This document describes the modular architecture of Metron and the separation of
 ```
 metron/
 ├── internal/
-│   ├── core/              # Core domain models (Child, Session, etc.)
+│   ├── core/              # Core domain models (Child, Session, DeviceBypass, etc.)
 │   ├── storage/           # Core storage interface
 │   │   └── sqlite/        # SQLite implementation
 │   ├── devices/           # Device driver interface
 │   ├── drivers/           # Driver implementations
-│   │   ├── aqara/         # Aqara Cloud driver
+│   │   ├── aqara/         # Aqara Cloud driver (push-based)
 │   │   │   ├── aqara.go   # Driver implementation
 │   │   │   └── tokens.go  # Aqara-specific models & storage interface
+│   │   ├── passive/       # Passive driver (for agent-controlled devices)
+│   │   │   └── passive.go # No-op driver, agent handles control
 │   │   └── registry.go    # Driver registry
+│   ├── winagent/          # Windows agent implementation
+│   │   ├── config.go      # Agent configuration
+│   │   ├── client.go      # HTTP client for Metron API
+│   │   ├── enforcer.go    # Enforcement loop logic
+│   │   └── platform.go    # Platform-specific operations
 │   ├── api/               # REST API
-│   │   ├── handlers/      # HTTP handlers
-│   │   └── middleware/    # HTTP middleware
+│   │   ├── handlers/      # HTTP handlers (including agent API)
+│   │   └── middleware/    # HTTP middleware (including agent auth)
 │   └── scheduler/         # Session scheduler
 └── cmd/                   # Application entry points
+    ├── metron/            # Main API server
+    ├── metron-bot/        # Telegram bot
+    └── metron-win-agent/  # Windows agent
 ```
 
 ## Storage Architecture
@@ -191,9 +201,9 @@ type DeviceDriver interface {
 5. Passes device parameters to driver (if any)
 6. Driver uses device-specific or default parameters
 
-### Aqara Driver Example
+### Aqara Driver Example (Push-Based)
 
-The Aqara driver is initialized with its specific dependencies:
+The Aqara driver is a **push-based** driver that actively controls devices:
 
 ```go
 // cmd/metron/main.go
@@ -208,6 +218,85 @@ driverRegistry.Register(aqaraDriver)
 - Driver receives `aqara.AqaraTokenStorage` interface, not concrete type
 - SQLite storage satisfies this interface
 - Driver doesn't know or care about core Storage interface
+- Backend pushes commands to device (StartSession, StopSession, ApplyWarning)
+
+### Passive Driver (Pull-Based / Agent-Controlled)
+
+The passive driver is for devices controlled by external agents. The backend does not push commands; instead, agents poll the backend for session status.
+
+```go
+// cmd/metron/main.go
+passiveDriver := passive.NewDriver(logger)
+driverRegistry.Register(passiveDriver)
+```
+
+**Key Points**:
+- Driver logs actions but performs no actual device control
+- External agents (e.g., Windows agent) poll `/v1/agent/session` endpoint
+- Agent is responsible for enforcement (locking, warnings)
+- Fail-closed security: agent locks if it cannot reach backend
+
+**Use Cases**:
+- Windows computers with the Windows agent
+- Future macOS agent
+- Any device where an agent can run
+
+## Windows Agent Architecture
+
+The Windows agent (`cmd/metron-win-agent`) runs on Windows workstations and enforces screen-time sessions.
+
+### Agent Flow
+
+```
+┌──────────────────┐         ┌──────────────────┐
+│  Windows Agent   │  poll   │  Metron Backend  │
+│                  │ ──────> │                  │
+│  - Enforcer      │         │  /v1/agent/      │
+│  - Platform      │ <────── │    session       │
+│  - Client        │  status │                  │
+└──────────────────┘         └──────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│  Windows API     │
+│  - LockWorkstation()
+│  - Toast notifications
+└──────────────────┘
+```
+
+### Components
+
+1. **Enforcer**: Main loop that polls backend, processes session status, triggers lock/warning
+2. **MetronClient**: HTTP client for communicating with backend
+3. **Platform**: Windows-specific operations (lock workstation, show notifications)
+4. **Clock**: Time abstraction for testing
+
+### Security Model
+
+- **Fail-closed**: If agent cannot reach backend, it locks after grace period
+- **Per-device tokens**: Each agent has its own Bearer token, tied to a specific device
+- **Token validation**: Backend validates token and checks device authorization
+- **Grace period**: Configurable time before locking on network errors (default: 30s)
+
+### Bypass Mode
+
+Parents can temporarily disable enforcement via Telegram bot or API:
+
+```go
+// DeviceBypass in core/bypass.go
+type DeviceBypass struct {
+    DeviceID  string
+    Enabled   bool
+    Reason    string      // Optional reason (homework, special occasion)
+    EnabledAt time.Time
+    ExpiresAt *time.Time  // nil = indefinite
+}
+```
+
+When bypass is active:
+- Agent receives `bypass_mode: true` in poll response
+- Agent skips enforcement (no locking)
+- Bypass can have expiration (1 hour, 2 hours, until bedtime, indefinite)
 
 ## API Architecture
 

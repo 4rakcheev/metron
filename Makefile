@@ -1,9 +1,10 @@
-.PHONY: all build test clean install-deps fmt vet lint test-coverage build-metron build-aqara-test build-bot run-aqara-test help
+.PHONY: all build test clean install-deps fmt vet lint test-coverage build-metron build-aqara-test build-bot build-win-agent run-aqara-test help
 
 # Variables
 BINARY_NAME=metron
 AQARA_TEST_BINARY=aqara-test
 BOT_BINARY=metron-bot
+WIN_AGENT_BINARY=metron-win-agent.exe
 BUILD_DIR=bin
 COVERAGE_FILE=coverage.out
 COVERAGE_HTML=coverage.html
@@ -26,6 +27,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make build              - Build all binaries"
 	@echo "  make build-aqara-test   - Build Aqara test CLI"
+	@echo "  make build-win-agent    - Build Windows agent (cross-compile)"
 	@echo "  make test               - Run all tests"
 	@echo "  make test-coverage      - Run tests with coverage report"
 	@echo "  make clean              - Remove build artifacts"
@@ -60,6 +62,13 @@ build-bot:
 	@mkdir -p $(BUILD_DIR)
 	$(GOBUILD) -o $(BUILD_DIR)/$(BOT_BINARY) ./cmd/metron-bot
 	@echo "Built: $(BUILD_DIR)/$(BOT_BINARY)"
+
+## build-win-agent: Build Windows agent (cross-compile from macOS/Linux)
+build-win-agent:
+	@echo "Building $(WIN_AGENT_BINARY) for Windows amd64..."
+	@mkdir -p $(BUILD_DIR)
+	GOOS=windows GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(WIN_AGENT_BINARY) ./cmd/metron-win-agent
+	@echo "Built: $(BUILD_DIR)/$(WIN_AGENT_BINARY)"
 
 ## test: Run all tests
 test:

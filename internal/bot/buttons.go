@@ -15,6 +15,7 @@ type CallbackData struct {
 	ChildID      string `json:"c,omitempty"`   // Child ID (resolved from index)
 	ChildIndex   int    `json:"ci,omitempty"`  // Child index in list (for compact callback)
 	Device       string `json:"d,omitempty"`   // Device ID
+	DeviceIndex  int    `json:"di,omitempty"`  // Device index in list (for bypass flow)
 	Duration     int    `json:"m,omitempty"`   // Duration in minutes
 	Session      string `json:"ses,omitempty"` // Session ID (resolved from index)
 	SessionIndex int    `json:"si,omitempty"`  // Session index in list (for compact callback)
@@ -442,6 +443,10 @@ func BuildMoreMenuButtons(skipDowntimeActive bool) tgbotapi.InlineKeyboardMarkup
 				MarshalCallback(CallbackData{Action: "skip_downtime"})),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔓 Bypass Mode",
+				MarshalCallback(CallbackData{Action: "bypass", Step: 0})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
 				MarshalCallback(CallbackData{Action: "main_menu"})),
 		),
@@ -557,6 +562,104 @@ func BuildDowntimeToggleButtons(children []Child) tgbotapi.InlineKeyboardMarkup 
 		MarshalCallback(CallbackData{Action: "cancel"}),
 	)
 	rows = append(rows, []tgbotapi.InlineKeyboardButton{cancelBtn})
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// DeviceWithBypass represents a device with its bypass status
+type DeviceWithBypass struct {
+	Device        Device
+	BypassEnabled bool
+}
+
+// BuildBypassDevicesButtons creates buttons for selecting devices for bypass
+func BuildBypassDevicesButtons(devices []DeviceWithBypass) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	for i, dw := range devices {
+		emoji := getDeviceEmoji(dw.Device.Type)
+		var statusEmoji string
+		if dw.BypassEnabled {
+			statusEmoji = "✅"
+		} else {
+			statusEmoji = "🔒"
+		}
+
+		callback := MarshalCallback(CallbackData{
+			Action:      "bypass",
+			Step:        1,
+			DeviceIndex: i,
+		})
+
+		label := fmt.Sprintf("%s %s %s", emoji, dw.Device.Name, statusEmoji)
+		btn := tgbotapi.NewInlineKeyboardButtonData(label, callback)
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{btn})
+	}
+
+	// Cancel button
+	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"❌ Close",
+		MarshalCallback(CallbackData{Action: "cancel"}),
+	)
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{cancelBtn})
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// BuildBypassActionsButtons creates buttons for bypass actions (enable/disable)
+func BuildBypassActionsButtons(deviceIndex int, currentlyEnabled bool) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	if currentlyEnabled {
+		// Show disable option
+		disableBtn := tgbotapi.NewInlineKeyboardButtonData(
+			"🔒 Disable Bypass",
+			MarshalCallback(CallbackData{
+				Action:      "bypass",
+				SubAction:   "disable",
+				Step:        2,
+				DeviceIndex: deviceIndex,
+			}),
+		)
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{disableBtn})
+	} else {
+		// Show enable options with duration
+		durations := []struct {
+			minutes int
+			label   string
+		}{
+			{60, "1 hour"},
+			{120, "2 hours"},
+			{480, "Until bedtime"},
+			{0, "Indefinite"},
+		}
+
+		for _, d := range durations {
+			callback := MarshalCallback(CallbackData{
+				Action:      "bypass",
+				SubAction:   "enable",
+				Step:        2,
+				DeviceIndex: deviceIndex,
+				Duration:    d.minutes,
+			})
+			btn := tgbotapi.NewInlineKeyboardButtonData(
+				"✅ "+d.label,
+				callback,
+			)
+			rows = append(rows, []tgbotapi.InlineKeyboardButton{btn})
+		}
+	}
+
+	// Back and Cancel buttons
+	backBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"◀️ Back",
+		MarshalCallback(CallbackData{Action: "bypass", Step: 0}),
+	)
+	cancelBtn := tgbotapi.NewInlineKeyboardButtonData(
+		"❌ Cancel",
+		MarshalCallback(CallbackData{Action: "cancel"}),
+	)
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{backBtn, cancelBtn})
 
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }

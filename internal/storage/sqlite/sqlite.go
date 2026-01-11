@@ -335,6 +335,21 @@ func (s *SQLiteStorage) runMigrations() error {
 		return fmt.Errorf("failed to create downtime_skip table: %w", err)
 	}
 
+	// Create device_bypass table for agent-controlled devices
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS device_bypass (
+			device_id TEXT PRIMARY KEY,
+			enabled BOOLEAN NOT NULL DEFAULT 0,
+			reason TEXT,
+			enabled_at DATETIME NOT NULL,
+			enabled_by TEXT,
+			expires_at DATETIME
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create device_bypass table: %w", err)
+	}
+
 	return nil
 }
 
@@ -1185,4 +1200,109 @@ func (s *SQLiteStorage) SetDowntimeSkipDate(ctx context.Context, date time.Time)
 	}
 
 	return err
+}
+
+// ============================================================================
+// DEVICE BYPASS STORAGE - For agent-controlled devices
+// ============================================================================
+
+// GetDeviceBypass retrieves the bypass status for a device
+func (s *SQLiteStorage) GetDeviceBypass(ctx context.Context, deviceID string) (*core.DeviceBypass, error) {
+	var bypass core.DeviceBypass
+	var reason sql.NullString
+	var enabledBy sql.NullString
+	var expiresAt sql.NullTime
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT device_id, enabled, reason, enabled_at, enabled_by, expires_at
+		FROM device_bypass WHERE device_id = ?
+	`, deviceID).Scan(&bypass.DeviceID, &bypass.Enabled, &reason, &bypass.EnabledAt, &enabledBy, &expiresAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil // No bypass configured for this device
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if reason.Valid {
+		bypass.Reason = reason.String
+	}
+	if enabledBy.Valid {
+		bypass.EnabledBy = enabledBy.String
+	}
+	if expiresAt.Valid {
+		bypass.ExpiresAt = &expiresAt.Time
+	}
+
+	return &bypass, nil
+}
+
+// SetDeviceBypass sets or updates the bypass status for a device
+func (s *SQLiteStorage) SetDeviceBypass(ctx context.Context, bypass *core.DeviceBypass) error {
+	var expiresAt sql.NullTime
+	if bypass.ExpiresAt != nil {
+		expiresAt = sql.NullTime{Time: *bypass.ExpiresAt, Valid: true}
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO device_bypass (device_id, enabled, reason, enabled_at, enabled_by, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(device_id) DO UPDATE SET
+			enabled = excluded.enabled,
+			reason = excluded.reason,
+			enabled_at = excluded.enabled_at,
+			enabled_by = excluded.enabled_by,
+			expires_at = excluded.expires_at
+	`, bypass.DeviceID, bypass.Enabled, bypass.Reason, bypass.EnabledAt, bypass.EnabledBy, expiresAt)
+
+	return err
+}
+
+// ClearDeviceBypass removes the bypass for a device
+func (s *SQLiteStorage) ClearDeviceBypass(ctx context.Context, deviceID string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM device_bypass WHERE device_id = ?`, deviceID)
+	return err
+}
+
+// ListActiveBypassDevices retrieves all devices with active bypass (enabled and not expired)
+func (s *SQLiteStorage) ListActiveBypassDevices(ctx context.Context) ([]*core.DeviceBypass, error) {
+	now := time.Now()
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT device_id, enabled, reason, enabled_at, enabled_by, expires_at
+		FROM device_bypass
+		WHERE enabled = 1 AND (expires_at IS NULL OR expires_at > ?)
+		ORDER BY enabled_at DESC
+	`, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var bypasses []*core.DeviceBypass
+	for rows.Next() {
+		var bypass core.DeviceBypass
+		var reason sql.NullString
+		var enabledBy sql.NullString
+		var expiresAt sql.NullTime
+
+		if err := rows.Scan(&bypass.DeviceID, &bypass.Enabled, &reason, &bypass.EnabledAt, &enabledBy, &expiresAt); err != nil {
+			return nil, err
+		}
+
+		if reason.Valid {
+			bypass.Reason = reason.String
+		}
+		if enabledBy.Valid {
+			bypass.EnabledBy = enabledBy.String
+		}
+		if expiresAt.Valid {
+			bypass.ExpiresAt = &expiresAt.Time
+		}
+
+		bypasses = append(bypasses, &bypass)
+	}
+
+	return bypasses, rows.Err()
 }

@@ -36,7 +36,8 @@ docs/api/
 
 ```
 docs/drivers/
-└── aqara-tokens.md              # Aqara Cloud API token management guide
+├── aqara-tokens.md              # Aqara Cloud API token management guide
+└── windows-agent.md             # Windows agent installation and configuration
 ```
 
 ### Feature Documentation (`docs/features/`)
@@ -94,6 +95,9 @@ deploy/systemd/
 
 **...manage Aqara tokens**
 → [docs/drivers/aqara-tokens.md](drivers/aqara-tokens.md)
+
+**...set up Windows agent**
+→ [docs/drivers/windows-agent.md](drivers/windows-agent.md)
 
 **...run tests**
 → [docs/TESTING.md](TESTING.md)

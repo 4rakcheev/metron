@@ -45,6 +45,10 @@ tags:
     description: Manage screen-time sessions
   - name: Statistics
     description: View usage statistics
+  - name: Agent
+    description: Agent endpoints for external device agents (Windows agent, etc.)
+  - name: Bypass
+    description: Device bypass mode management
 
 paths:
   /health:
@@ -431,13 +435,192 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/agent/session:
+    get:
+      tags:
+        - Agent
+      summary: Get device session status
+      description: |
+        Returns the current session status for a device. Used by external agents
+        (e.g., Windows agent) to poll for active sessions and determine enforcement actions.
+
+        This endpoint uses Bearer token authentication instead of X-Metron-Key.
+        Each agent token is tied to a specific device and can only query that device.
+      operationId: getAgentSession
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          description: Device ID to query session status for
+          schema:
+            type: string
+            example: win-pc1
+      responses:
+        '200':
+          description: Session status returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentSessionStatus'
+              examples:
+                activeSession:
+                  summary: Active session
+                  value:
+                    active: true
+                    session_id: "770e8400-e29b-41d4-a716-446655440002"
+                    ends_at: "2025-12-09T16:00:45Z"
+                    warn_at: "2025-12-09T15:55:45Z"
+                    server_time: "2025-12-09T15:30:45Z"
+                    bypass_mode: false
+                noSession:
+                  summary: No active session
+                  value:
+                    active: false
+                    bypass_mode: false
+                    server_time: "2025-12-09T15:30:45Z"
+                bypassActive:
+                  summary: Bypass mode active
+                  value:
+                    active: false
+                    bypass_mode: true
+                    server_time: "2025-12-09T15:30:45Z"
+        '400':
+          description: Missing device_id parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: device_id query parameter required
+                code: DEVICE_ID_REQUIRED
+        '401':
+          description: Missing or invalid authorization token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                authRequired:
+                  value:
+                    error: Authorization header required
+                    code: AUTH_REQUIRED
+                invalidToken:
+                  value:
+                    error: Invalid token
+                    code: INVALID_TOKEN
+        '403':
+          description: Token not authorized for this device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Not authorized for this device
+                code: DEVICE_NOT_AUTHORIZED
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/devices/{id}/bypass:
+    post:
+      tags:
+        - Bypass
+      summary: Set device bypass mode
+      description: |
+        Enable or disable bypass mode for a device. When bypass is active,
+        agents will skip enforcement and allow unrestricted access.
+
+        Bypass can be set with an optional expiration time.
+      operationId: setDeviceBypass
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Device ID
+          schema:
+            type: string
+            example: win-pc1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetBypassRequest'
+            examples:
+              enableWithExpiry:
+                summary: Enable bypass for 1 hour
+                value:
+                  enabled: true
+                  reason: homework
+                  expires_in_minutes: 60
+              enableIndefinite:
+                summary: Enable indefinite bypass
+                value:
+                  enabled: true
+                  reason: special occasion
+              disable:
+                summary: Disable bypass
+                value:
+                  enabled: false
+      responses:
+        '200':
+          description: Bypass mode updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BypassStatus'
+              examples:
+                enabled:
+                  value:
+                    device_id: win-pc1
+                    enabled: true
+                    reason: homework
+                    enabled_at: "2025-12-09T15:30:45Z"
+                    expires_at: "2025-12-09T16:30:45Z"
+                disabled:
+                  value:
+                    device_id: win-pc1
+                    enabled: false
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+        - Bypass
+      summary: Clear device bypass mode
+      description: Remove bypass mode for a device, re-enabling normal enforcement.
+      operationId: clearDeviceBypass
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Device ID
+          schema:
+            type: string
+            example: win-pc1
+      responses:
+        '204':
+          description: Bypass cleared successfully (no content)
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
       in: header
       name: X-Metron-Key
-      description: API key for authentication
+      description: API key for admin authentication
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Bearer token for agent authentication. Each token is tied to a specific device.
 
   schemas:
     HealthResponse:
@@ -849,6 +1032,90 @@ components:
           type: string
           description: Additional error details (optional)
           example: Invalid JSON in request body
+
+    AgentSessionStatus:
+      type: object
+      required:
+        - active
+        - bypass_mode
+        - server_time
+      properties:
+        active:
+          type: boolean
+          description: Whether there is an active session for the device
+          example: true
+        session_id:
+          type: string
+          format: uuid
+          description: ID of the active session (only present if active)
+          example: "770e8400-e29b-41d4-a716-446655440002"
+        ends_at:
+          type: string
+          format: date-time
+          description: When the session ends (only present if active)
+          example: "2025-12-09T16:00:45Z"
+        warn_at:
+          type: string
+          format: date-time
+          description: When to show warning, 5 minutes before ends_at (only present if active)
+          example: "2025-12-09T15:55:45Z"
+        server_time:
+          type: string
+          format: date-time
+          description: Current server time for clock synchronization
+          example: "2025-12-09T15:30:45Z"
+        bypass_mode:
+          type: boolean
+          description: Whether bypass mode is active (agent should skip enforcement)
+          example: false
+
+    SetBypassRequest:
+      type: object
+      required:
+        - enabled
+      properties:
+        enabled:
+          type: boolean
+          description: Whether to enable or disable bypass
+          example: true
+        reason:
+          type: string
+          description: Optional reason for enabling bypass
+          example: homework
+        expires_in_minutes:
+          type: integer
+          description: Minutes until bypass expires. Omit for indefinite bypass.
+          minimum: 1
+          example: 60
+
+    BypassStatus:
+      type: object
+      required:
+        - device_id
+        - enabled
+      properties:
+        device_id:
+          type: string
+          description: Device ID
+          example: win-pc1
+        enabled:
+          type: boolean
+          description: Whether bypass is enabled
+          example: true
+        reason:
+          type: string
+          description: Reason for bypass (only present if enabled)
+          example: homework
+        enabled_at:
+          type: string
+          format: date-time
+          description: When bypass was enabled (only present if enabled)
+          example: "2025-12-09T15:30:45Z"
+        expires_at:
+          type: string
+          format: date-time
+          description: When bypass expires (only present if enabled with expiry)
+          example: "2025-12-09T16:30:45Z"
 
   responses:
     UnauthorizedError:

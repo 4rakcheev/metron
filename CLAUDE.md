@@ -4,10 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Metron is a unified screen-time orchestrator - a centralized backend system for managing children's daily screen-time quotas across devices. Features TV control through Aqara Cloud API with two main user interfaces:
+Metron is a unified screen-time orchestrator - a centralized backend system for managing children's daily screen-time quotas across devices. Features TV control through Aqara Cloud API and Windows PC control through a native agent, with two main user interfaces:
 
 - **Parent Interface**: Telegram Bot - primary management UI for parents to control sessions, view statistics, and manage children
 - **Child Interface**: React PWA (web/children-control) - child-facing web app for PIN-based authentication and session management
+- **Windows Agent**: Native agent for Windows PCs that enforces screen-time by locking the workstation
 
 ## Build Commands
 
@@ -15,6 +16,7 @@ Metron is a unified screen-time orchestrator - a centralized backend system for 
 make build              # Build all binaries (metron, metron-bot, aqara-test)
 make build-metron       # Build main REST API server
 make build-bot          # Build Telegram bot
+make build-win-agent    # Build Windows agent (cross-compile)
 make test               # Run all tests with -v
 make test-coverage      # Generate HTML coverage report
 make test-race          # Run with race detector
@@ -30,6 +32,7 @@ go test ./internal/core -v  # Run specific package tests
 ./bin/metron                    # Run API server (reads config.json)
 ./bin/metron-bot -config bot-config.json  # Run Telegram bot
 ./bin/aqara-test -action pin    # Test Aqara integration (pin/warn/off)
+./bin/metron-win-agent.exe -device-id win-pc1 -token xxx -url https://...  # Windows agent
 ```
 
 ## Architecture
@@ -37,19 +40,23 @@ go test ./internal/core -v  # Run specific package tests
 ### Device vs Driver Separation
 
 - **Device**: User-facing entity (e.g., "Living Room TV") - defined in config with ID, name, type
-- **Driver**: Control mechanism (e.g., Aqara Cloud) - implements `devices.DeviceDriver` interface
+- **Driver**: Control mechanism - implements `devices.DeviceDriver` interface
+  - **Push-based** (e.g., Aqara Cloud): Backend actively controls device
+  - **Pull-based** (e.g., Passive): Agent polls backend for session status
 - Multiple devices can use the same driver with different parameters
 
 ### Key Packages
 
 | Package | Purpose |
 |---------|---------|
-| `internal/core` | Domain models: Child, Session, BreakRule, DailyUsage, SessionManager |
+| `internal/core` | Domain models: Child, Session, BreakRule, DailyUsage, DeviceBypass, SessionManager |
 | `internal/devices` | DeviceDriver interface definition |
-| `internal/drivers/aqara` | Aqara Cloud API driver with token management |
-| `internal/api` | REST API: handlers, middleware (auth, requestid, recovery) |
+| `internal/drivers/aqara` | Aqara Cloud API driver with token management (push-based) |
+| `internal/drivers/passive` | No-op driver for agent-controlled devices (pull-based) |
+| `internal/winagent` | Windows agent: enforcer, HTTP client, platform operations |
+| `internal/api` | REST API: handlers, middleware (auth, agent_auth, requestid, recovery) |
 | `internal/bot` | Telegram bot: flows, buttons, message formatting |
-| `internal/storage/sqlite` | SQLite persistence for core models and driver tokens |
+| `internal/storage/sqlite` | SQLite persistence for core models, driver tokens, device bypass |
 | `internal/scheduler` | Session lifecycle: 1-minute interval checks, warnings, auto-expiry |
 
 ### Storage Pattern
@@ -79,7 +86,7 @@ Primary management interface for parents. Uses webhooks for real-time updates wi
 - `/children` - List all children with their limits
 - `/devices` - List available devices
 
-**Key features:** whitelist security (only authorized Telegram users), real-time usage stats, session management.
+**Key features:** whitelist security (only authorized Telegram users), real-time usage stats, session management, bypass mode control.
 
 ### Child UI: React PWA (`web/children-control`)
 
@@ -95,6 +102,27 @@ npm run lint    # ESLint
 
 **Tech stack:** React 18, TypeScript, Vite, Tailwind CSS, React Router
 **Key features:** 4-digit PIN login, real-time session status, 30-second auto-refresh, offline-capable PWA, mobile-responsive
+
+### Windows Agent (`cmd/metron-win-agent`)
+
+Native Windows agent that enforces screen-time by locking the workstation when no active session exists.
+
+**CLI flags:**
+- `-device-id` (required): Device ID registered in Metron
+- `-token` (required): Agent authentication token
+- `-url` (required): Metron API base URL
+- `-poll-interval` (default 15s): How often to poll backend
+- `-grace-period` (default 30s): Grace period before locking on network error
+- `-log-path`, `-log-level`, `-log-format`: Logging configuration
+
+**Key features:**
+- Polls `/v1/agent/session` endpoint for session status
+- Locks workstation when no active session
+- Shows warning notification at 5 minutes remaining
+- Fail-closed security: locks after grace period on network errors
+- Respects bypass mode for temporary enforcement suspension
+
+See `docs/drivers/windows-agent.md` for full documentation.
 
 ## Deployment
 
@@ -146,15 +174,20 @@ Currently deployed to Ubuntu virtual server via GitHub Actions (`.github/workflo
 ## Configuration
 
 Two config files:
-- `config.json` - Main API: server, database, security, devices array, aqara settings
+- `config.json` - Main API: server, database, security (including agent_tokens), devices array, aqara settings
 - `bot-config.json` - Bot: server port, telegram token/webhook, metron API connection
+
+Key configuration sections:
+- `security.agent_tokens`: Per-device Bearer tokens for agent authentication
+- `devices[].driver`: Use "passive" for agent-controlled devices, "aqara" for push-controlled
 
 Device IDs must be ≤15 characters (Telegram callback data limit).
 
 ## Documentation
 
-- `docs/ARCHITECTURE.md` - Detailed system design and storage patterns
-- `docs/api/v1.md` - Complete REST API reference
+- `docs/ARCHITECTURE.md` - Detailed system design, storage patterns, Windows agent architecture
+- `docs/api/v1.md` - Complete REST API reference (including agent and bypass endpoints)
 - `docs/api/openapi.yaml` - OpenAPI 3.0 specification
-- `docs/drivers/aqara-tokens.md` - Token management details
+- `docs/drivers/aqara-tokens.md` - Aqara token management details
+- `docs/drivers/windows-agent.md` - Windows agent installation and configuration
 - `deploy/systemd/` - Production deployment with systemd

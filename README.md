@@ -4,15 +4,17 @@ Metron is a centralized backend orchestrator that manages children's daily scree
 
 ## Features
 
-- ✅ **Multi-child support** with individual daily time limits
-- ✅ **Weekday/weekend scheduling** with different limits
-- ✅ **Shared sessions** - multiple children can watch together
-- ✅ **Break rules** - mandatory breaks after continuous usage
-- ✅ **Auto-expiry** - sessions stop automatically when time runs out
-- ✅ **Warnings** - notifications before session ends
-- ✅ **Aqara Cloud integration** - control smart home scenes
-- ✅ **REST API** - programmatic control with token authentication
-- ✅ **Telegram bot** - parent control interface with multi-step flows
+- **Multi-child support** with individual daily time limits
+- **Weekday/weekend scheduling** with different limits
+- **Shared sessions** - multiple children can watch together
+- **Break rules** - mandatory breaks after continuous usage
+- **Auto-expiry** - sessions stop automatically when time runs out
+- **Warnings** - notifications before session ends
+- **Aqara Cloud integration** - control smart home scenes
+- **Windows Agent** - lock Windows workstations when no active session
+- **Bypass mode** - temporarily disable enforcement for special occasions
+- **REST API** - programmatic control with token authentication
+- **Telegram bot** - parent control interface with multi-step flows
 
 ## Architecture
 
@@ -21,7 +23,8 @@ metron/
 ├── cmd/
 │   ├── aqara-test/      # CLI tool for testing Aqara integration
 │   ├── metron/          # Main REST API application
-│   └── metron-bot/      # Telegram bot application
+│   ├── metron-bot/      # Telegram bot application
+│   └── metron-win-agent/# Windows agent for workstation control
 ├── config/              # Configuration management
 ├── internal/
 │   ├── api/             # REST API handlers
@@ -29,9 +32,11 @@ metron/
 │   ├── core/            # Domain models and business logic
 │   ├── devices/         # Device driver interface
 │   ├── drivers/
-│   │   ├── aqara/       # Aqara Cloud driver
+│   │   ├── aqara/       # Aqara Cloud driver (push-based)
+│   │   ├── passive/     # Passive driver (for agent-controlled devices)
 │   │   └── registry.go  # Driver registry
 │   ├── scheduler/       # Generic session scheduler
+│   ├── winagent/        # Windows agent implementation
 │   └── storage/
 │       └── sqlite/      # SQLite persistence layer
 └── tests/               # Integration tests
@@ -106,11 +111,15 @@ go test ./internal/core -v
 ### 5. Build
 
 ```bash
-# Build all binaries
+# Build all binaries (metron, metron-bot, aqara-test)
 make build
 
 # Build specific binary
 go build -o bin/metron ./cmd/metron
+
+# Build Windows agent (cross-compile to Windows amd64)
+make build-win-agent
+# Produces: bin/metron-win-agent.exe
 ```
 
 ### 6. Run Application
@@ -148,7 +157,7 @@ make run-metron
 
 **What happens on startup:**
 - Initializes SQLite database
-- Registers device drivers (Aqara Cloud)
+- Registers device drivers (Aqara Cloud, Passive)
 - Starts session scheduler (1-minute intervals)
 - Starts REST API server
 - All logs written to **stdout** (not stderr)
@@ -321,6 +330,9 @@ curl -X PATCH http://localhost:8080/v1/sessions/{session-id} \
 - `GET /v1/sessions/:id` - Get session details
 - `PATCH /v1/sessions/:id` - Extend or stop session
 - `GET /v1/stats/today` - Today's statistics
+- `GET /v1/agent/session` - Agent session status (Bearer token auth)
+- `POST /v1/devices/:id/bypass` - Enable bypass mode (admin auth)
+- `DELETE /v1/devices/:id/bypass` - Disable bypass mode (admin auth)
 
 **View OpenAPI Spec:**
 ```bash
@@ -416,7 +428,7 @@ make vet
 - [ ] PS5 driver (presence detection + shutdown)
 - [ ] Android Family Link driver
 - [ ] iPad Kidslox driver
-- [ ] Web application for kids
+- [ ] macOS agent (similar to Windows agent)
 - [ ] Kids can request Extend time (push to telegram)
 - [ ] Docker deployment
 

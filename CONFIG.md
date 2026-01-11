@@ -29,7 +29,15 @@ Metron uses a JSON configuration file with the following main sections:
   "security": {
     "api_key": "your-secret-api-key-here",
     "allowed_ips": [],
-    "enable_ip_check": false
+    "enable_ip_check": false,
+    "agent_tokens": {
+      "win-pc1-token": {
+        "token": "secret-token-for-win-pc1",
+        "device_id": "win-pc1",
+        "enabled": true,
+        "name": "Windows PC 1"
+      }
+    }
   }
 }
 ```
@@ -74,8 +82,9 @@ Devices are defined in the global `devices` array. Each device represents a cont
   - Examples: "tv", "phone", "tablet", "ps5"
 
 - **driver** (required): Driver name for device control
-  - References a configured driver (e.g., "aqara", "kidslox")
+  - References a configured driver (e.g., "aqara", "passive")
   - Determines how the device is controlled
+  - Use "passive" for agent-controlled devices (Windows PC, etc.)
 
 - **parameters** (optional): Device-specific driver parameters
   - Override driver defaults for this specific device
@@ -131,6 +140,39 @@ This architecture allows:
 - `warning_scene_id`: Scene to trigger for time warnings
 - `off_scene_id`: Scene to trigger on session stop (power off)
 
+#### Example: Passive Driver (for Windows Agent)
+
+The passive driver is used for devices controlled by external agents. The backend does not push commands; instead, agents poll for session status.
+
+```json
+{
+  "devices": [
+    {
+      "id": "win-pc1",
+      "name": "Kids Windows PC",
+      "type": "computer",
+      "driver": "passive"
+    }
+  ],
+  "security": {
+    "agent_tokens": {
+      "win-pc1-token": {
+        "token": "secure-random-token-here",
+        "device_id": "win-pc1",
+        "enabled": true,
+        "name": "Windows PC Agent"
+      }
+    }
+  }
+}
+```
+
+**Notes:**
+- No `parameters` needed for passive driver
+- Agent token must be configured in `security.agent_tokens`
+- Token's `device_id` must match the device ID
+- Agent uses this token to authenticate with `/v1/agent/session` endpoint
+
 #### Example: Future Kidslox Driver
 
 ```json
@@ -175,6 +217,56 @@ This architecture allows:
 **Bad IDs (too long):**
 - "living_room_television_main"
 - "alice_iphone_12_pro_max"
+
+## Agent Token Configuration
+
+Agent tokens authenticate external agents (like the Windows agent) that poll the backend for session status. Each token is tied to a specific device.
+
+```json
+{
+  "security": {
+    "agent_tokens": {
+      "token-key-1": {
+        "token": "secure-random-token-string",
+        "device_id": "win-pc1",
+        "enabled": true,
+        "name": "Kids PC Agent"
+      },
+      "token-key-2": {
+        "token": "another-secure-token",
+        "device_id": "win-pc2",
+        "enabled": true,
+        "name": "Guest PC Agent"
+      }
+    }
+  }
+}
+```
+
+### Agent Token Fields
+
+- **token** (required): The Bearer token string agents use for authentication
+  - Should be a cryptographically secure random string
+  - Minimum recommended length: 32 characters
+
+- **device_id** (required): The device ID this token authorizes access to
+  - Must match a device configured with `"driver": "passive"`
+  - Agent can only query session status for this device
+
+- **enabled** (required): Whether the token is currently active
+  - Set to `false` to temporarily disable an agent without deleting the token
+  - Disabled tokens receive 403 Forbidden responses
+
+- **name** (required): Human-readable name for identification
+  - Used in logs and admin interfaces
+  - Examples: "Kids PC Agent", "Guest Room PC"
+
+### Token Security Best Practices
+
+1. **Generate secure tokens**: Use `openssl rand -base64 32` or similar
+2. **One token per device**: Don't share tokens between devices
+3. **Disable before delete**: Set `enabled: false` before removing a token
+4. **Rotate periodically**: Consider rotating tokens periodically for security
 
 ## Telegram Bot Configuration
 

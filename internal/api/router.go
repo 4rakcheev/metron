@@ -2,6 +2,7 @@ package api
 
 import (
 	"log/slog"
+	"metron/config"
 	"metron/internal/api/handlers"
 	"metron/internal/api/middleware"
 	"metron/internal/core"
@@ -23,7 +24,8 @@ type RouterConfig struct {
 	DowntimeSkipStorage core.DowntimeSkipStorage // For skip downtime feature
 	APIKey              string
 	Logger              *slog.Logger
-	AqaraTokenStorage   aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
+	AqaraTokenStorage   aqara.AqaraTokenStorage  // Optional: only needed if Aqara driver is used
+	Devices             []config.DeviceConfig    // All devices (used for agent auth)
 }
 
 // NewRouter creates and configures the Gin router
@@ -165,6 +167,27 @@ func NewRouter(config RouterConfig) *gin.Engine {
 		protected.POST("/sessions", childHandler.CreateSession)
 		protected.POST("/sessions/:id/stop", childHandler.StopSession)
 		protected.POST("/sessions/:id/extend", childHandler.ExtendSession)
+	}
+
+	// Agent API routes (for external device agents like Windows agent)
+	// Only register if any devices have agent tokens configured
+	if middleware.HasAgentDevices(config.Devices) {
+		agentHandler := handlers.NewAgentHandler(
+			config.Storage,
+			config.Manager,
+			config.Logger,
+		)
+
+		agentGroup := router.Group("/v1/agent")
+		agentGroup.Use(middleware.AgentAuth(config.Devices))
+		{
+			agentGroup.GET("/session", agentHandler.GetDeviceSession)
+		}
+
+		// Device bypass endpoints (admin auth, not agent auth)
+		// These are managed by admin, not by agents themselves
+		v1.POST("/devices/:id/bypass", agentHandler.SetDeviceBypass)
+		v1.DELETE("/devices/:id/bypass", agentHandler.ClearDeviceBypass)
 	}
 
 	return router
