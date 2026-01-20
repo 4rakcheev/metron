@@ -8,9 +8,13 @@ The Windows agent (`metron-win-agent.exe`) enforces screen-time sessions on Wind
 2. Backend returns session status (active/inactive, time remaining, bypass mode)
 3. Agent enforces based on status:
    - **No active session** → lock workstation
-   - **Active session** → allow usage, show warning at 5 minutes remaining
+   - **Active session** → allow usage, play warning sound at 5 minutes remaining
    - **Bypass mode** → skip enforcement entirely
 4. **Network errors** → lock after grace period (fail-closed security)
+
+### Warning Melody
+
+At 5 minutes remaining, the agent plays a gentle ~4.5 second melody to alert the user without interrupting their activity. The melody uses musical notes (C major scale) and sounds like a friendly "time to wrap up" chime. The agent also attempts to trigger the motherboard PC speaker as a backup (availability depends on hardware/Windows settings).
 
 ## Installation
 
@@ -34,7 +38,7 @@ make release-win-agent
 1. Copy `metron-win-agent.zip` to the Windows PC
 2. Extract the zip file
 3. Edit `config.txt` if needed (production values are pre-filled if config.json exists)
-4. Double-click `install.bat`
+4. Double-click `INSTALL.bat`
 5. Click "Yes" when prompted for administrator access
 
 Done! The agent starts immediately and auto-starts at every user login.
@@ -45,8 +49,8 @@ Done! The agent starts immediately and auto-starts at every user login.
 |------|-------------|
 | `metron-win-agent.exe` | Agent binary (runs hidden) |
 | `config.txt` | Configuration (edit before install) |
-| `install.bat` | Double-click to install |
-| `install.ps1` | Installation script |
+| `INSTALL.bat` | **Double-click to install** |
+| `_setup.ps1` | Internal setup script (do not run directly) |
 | `README.txt` | Quick reference |
 
 ## Configuration
@@ -186,6 +190,12 @@ Then reinstall or restart the agent.
 1. Verify token matches exactly between agent config and backend
 2. Check `agent_enabled` is not `false` in backend device config
 3. Ensure device ID matches
+
+### Warning Sound Not Playing
+
+1. Check PC speakers/headphones are not muted
+2. Check Windows sound settings allow system sounds
+3. Verify agent logs show "warning sound played" at 5 minutes remaining
 
 ## Security
 

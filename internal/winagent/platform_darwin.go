@@ -30,13 +30,14 @@ func (p *DarwinPlatform) LockWorkstation() error {
 }
 
 // ShowWarningNotification logs a warning notification for debugging purposes
+// On Windows, this would play a 3-beep warning sound pattern
 func (p *DarwinPlatform) ShowWarningNotification(title, message string) error {
-	p.logger.Warn("WARNING_NOTIFICATION",
+	p.logger.Warn("WARNING_SOUND",
 		"action", "warn",
 		"platform", "darwin",
 		"title", title,
 		"message", message,
-		"note", "debug mode - no actual notification shown",
+		"note", "debug mode - on Windows would play 3-beep warning sound",
 	)
 	return nil
 }

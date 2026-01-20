@@ -19,9 +19,9 @@ echo Running as Administrator: OK
 echo Current directory: %~dp0
 echo.
 
-:: Run PowerShell installer with bypass execution policy
+:: Run PowerShell setup script with bypass execution policy
 cd /d "%~dp0"
-powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0install.ps1"
+powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0_setup.ps1"
 
 echo.
 echo ========================================

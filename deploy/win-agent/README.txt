@@ -20,7 +20,7 @@ Installation
    - LOG_LEVEL: debug, info, warn, error (default: info)
    - LOG_FORMAT: json or text (default: json)
 
-2. Double-click install.bat
+2. Double-click INSTALL.bat
    - If prompted by UAC, click "Yes" to allow administrator access
    - The script will install and start the agent
 

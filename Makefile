@@ -85,8 +85,8 @@ release-win-agent: build-win-agent
 	@echo "Creating Windows agent release package..."
 	@mkdir -p $(BUILD_DIR)/metron-win-agent
 	@cp $(BUILD_DIR)/$(WIN_AGENT_BINARY) $(BUILD_DIR)/metron-win-agent/
-	@cp deploy/win-agent/install.ps1 $(BUILD_DIR)/metron-win-agent/
-	@cp deploy/win-agent/install.bat $(BUILD_DIR)/metron-win-agent/
+	@cp deploy/win-agent/_setup.ps1 $(BUILD_DIR)/metron-win-agent/
+	@cp deploy/win-agent/INSTALL.bat $(BUILD_DIR)/metron-win-agent/
 	@cp deploy/win-agent/README.txt $(BUILD_DIR)/metron-win-agent/
 	@# Generate config.txt from config.json and bot-config.json if they exist
 	@if [ -f config.json ] && [ -f bot-config.json ]; then \
