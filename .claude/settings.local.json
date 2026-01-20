@@ -41,7 +41,9 @@
       "Bash(git -C /Users/tema/Pr/go/src/metron log --format=\"%h %ad %s\" --date=short --all)",
       "Bash(git -C /Users/tema/Pr/go/src/metron show 52e9678 --stat)",
       "Bash(git -C /Users/tema/Pr/go/src/metron show 52e9678 -- cmd/metron/main.go)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(./bin/metron-agent:*)",
+      "Bash(unzip:*)"
     ],
     "deny": [],
     "ask": []

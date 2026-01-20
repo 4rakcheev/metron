@@ -1,10 +1,11 @@
-.PHONY: all build test clean install-deps fmt vet lint test-coverage build-metron build-aqara-test build-bot build-win-agent run-aqara-test help
+.PHONY: all build test clean install-deps fmt vet lint test-coverage build-metron build-aqara-test build-bot build-win-agent build-mac-agent release-win-agent run-aqara-test help
 
 # Variables
 BINARY_NAME=metron
 AQARA_TEST_BINARY=aqara-test
 BOT_BINARY=metron-bot
 WIN_AGENT_BINARY=metron-win-agent.exe
+MAC_AGENT_BINARY=metron-agent
 BUILD_DIR=bin
 COVERAGE_FILE=coverage.out
 COVERAGE_HTML=coverage.html
@@ -28,6 +29,8 @@ help:
 	@echo "  make build              - Build all binaries"
 	@echo "  make build-aqara-test   - Build Aqara test CLI"
 	@echo "  make build-win-agent    - Build Windows agent (cross-compile)"
+	@echo "  make build-mac-agent    - Build macOS agent (debug, logging-only)"
+	@echo "  make release-win-agent  - Build Windows agent release package (zip)"
 	@echo "  make test               - Run all tests"
 	@echo "  make test-coverage      - Run tests with coverage report"
 	@echo "  make clean              - Remove build artifacts"
@@ -67,8 +70,50 @@ build-bot:
 build-win-agent:
 	@echo "Building $(WIN_AGENT_BINARY) for Windows amd64..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=windows GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(WIN_AGENT_BINARY) ./cmd/metron-win-agent
+	GOOS=windows GOARCH=amd64 $(GOBUILD) -ldflags "-H windowsgui" -o $(BUILD_DIR)/$(WIN_AGENT_BINARY) ./cmd/metron-win-agent
 	@echo "Built: $(BUILD_DIR)/$(WIN_AGENT_BINARY)"
+
+## build-mac-agent: Build macOS agent (debug, logging-only enforcement)
+build-mac-agent:
+	@echo "Building $(MAC_AGENT_BINARY) for macOS (debug)..."
+	@mkdir -p $(BUILD_DIR)
+	$(GOBUILD) -o $(BUILD_DIR)/$(MAC_AGENT_BINARY) ./cmd/metron-win-agent
+	@echo "Built: $(BUILD_DIR)/$(MAC_AGENT_BINARY)"
+
+## release-win-agent: Build Windows agent release package (zip)
+release-win-agent: build-win-agent
+	@echo "Creating Windows agent release package..."
+	@mkdir -p $(BUILD_DIR)/metron-win-agent
+	@cp $(BUILD_DIR)/$(WIN_AGENT_BINARY) $(BUILD_DIR)/metron-win-agent/
+	@cp deploy/win-agent/install.ps1 $(BUILD_DIR)/metron-win-agent/
+	@cp deploy/win-agent/install.bat $(BUILD_DIR)/metron-win-agent/
+	@cp deploy/win-agent/README.txt $(BUILD_DIR)/metron-win-agent/
+	@# Generate config.txt from config.json and bot-config.json if they exist
+	@if [ -f config.json ] && [ -f bot-config.json ]; then \
+		DEVICE_ID=$$(jq -r '.devices[] | select(.driver == "passive") | .id' config.json | head -1); \
+		TOKEN=$$(jq -r '.devices[] | select(.driver == "passive") | .parameters.agent_token' config.json | head -1); \
+		URL=$$(jq -r '.metron.base_url' bot-config.json); \
+		echo "# Metron Windows Agent Configuration" > $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "# Generated from config.json and bot-config.json" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "# Required settings" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "DEVICE_ID=$$DEVICE_ID" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "TOKEN=$$TOKEN" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "URL=$$URL" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "# Optional settings (uncomment to change defaults)" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "# POLL_INTERVAL=15" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "# GRACE_PERIOD=30" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "# LOG_LEVEL=info" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "# LOG_FORMAT=json" >> $(BUILD_DIR)/metron-win-agent/config.txt; \
+		echo "Config generated from production config files"; \
+	else \
+		cp deploy/win-agent/config.txt $(BUILD_DIR)/metron-win-agent/; \
+		echo "Using template config (no config.json/bot-config.json found)"; \
+	fi
+	@cd $(BUILD_DIR) && zip -r metron-win-agent.zip metron-win-agent/
+	@rm -rf $(BUILD_DIR)/metron-win-agent
+	@echo "Built: $(BUILD_DIR)/metron-win-agent.zip"
 
 ## test: Run all tests
 test:

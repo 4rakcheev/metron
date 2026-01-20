@@ -1,0 +1,38 @@
+# Metron Windows Agent Configuration
+# Edit these values before running install.bat
+
+# ===================
+# Required settings
+# ===================
+
+# Device ID as registered in Metron (e.g., win-pc1, kids-pc)
+DEVICE_ID=win-pc1
+
+# Agent authentication token (from device parameters.agent_token in Metron config)
+TOKEN=your-agent-token-here
+
+# Metron server URL (include https:// prefix)
+URL=https://metron.example.com
+
+# ===================
+# Optional settings
+# ===================
+# Uncomment and modify to override defaults
+
+# How often to check the server for session status (in seconds)
+# Default: 15
+# POLL_INTERVAL=15
+
+# Grace period before locking when network errors occur (in seconds)
+# If the agent can't reach the server, it will wait this long before locking
+# Default: 30
+# GRACE_PERIOD=30
+
+# Log level: debug, info, warn, error
+# Use "debug" for troubleshooting, "info" for normal operation
+# Default: info
+# LOG_LEVEL=info
+
+# Log format: json or text
+# Default: json
+# LOG_FORMAT=json
