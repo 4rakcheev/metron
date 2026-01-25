@@ -10,6 +10,8 @@ import type {
   LoginResponse,
   CreateSessionRequest,
   APIError,
+  MovieTimeAvailability,
+  StartMovieTimeRequest,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
@@ -122,11 +124,10 @@ class MetronAPI {
     return this.request<Session[]>('/child/sessions');
   }
 
-  async createSession(deviceId: string, minutes: number, shared?: boolean): Promise<Session> {
+  async createSession(deviceId: string, minutes: number): Promise<Session> {
     const request: CreateSessionRequest = {
       device_id: deviceId,
       minutes,
-      shared: shared || false,
     };
     return this.request<Session>('/child/sessions', {
       method: 'POST',
@@ -144,6 +145,25 @@ class MetronAPI {
     return this.request<Session>(`/child/sessions/${sessionId}/extend`, {
       method: 'POST',
       body: JSON.stringify({ additional_minutes: additionalMinutes }),
+    });
+  }
+
+  // Movie Time methods
+
+  async getMovieTimeAvailability(): Promise<MovieTimeAvailability | null> {
+    try {
+      return await this.request<MovieTimeAvailability>('/child/movie-time');
+    } catch {
+      // Movie time feature not enabled - return null
+      return null;
+    }
+  }
+
+  async startMovieTime(deviceId: string): Promise<Session> {
+    const request: StartMovieTimeRequest = { device_id: deviceId };
+    return this.request<Session>('/child/movie-time', {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
   }
 }

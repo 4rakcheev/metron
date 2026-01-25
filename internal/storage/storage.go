@@ -48,6 +48,17 @@ type Storage interface {
 	ClearDeviceBypass(ctx context.Context, deviceID string) error
 	ListActiveBypassDevices(ctx context.Context) ([]*core.DeviceBypass, error)
 
+	// Movie Time Usage - stores weekend shared movie time usage
+	GetMovieTimeUsage(ctx context.Context, date time.Time) (*core.MovieTimeUsage, error)
+	SaveMovieTimeUsage(ctx context.Context, usage *core.MovieTimeUsage) error
+
+	// Movie Time Bypass - stores bypass periods for holidays/vacations
+	CreateMovieTimeBypass(ctx context.Context, bypass *core.MovieTimeBypass) error
+	GetMovieTimeBypass(ctx context.Context, id string) (*core.MovieTimeBypass, error)
+	ListMovieTimeBypasses(ctx context.Context) ([]*core.MovieTimeBypass, error)
+	ListActiveMovieTimeBypasses(ctx context.Context, date time.Time) ([]*core.MovieTimeBypass, error)
+	DeleteMovieTimeBypass(ctx context.Context, id string) error
+
 	// Lifecycle
 	Close() error
 }

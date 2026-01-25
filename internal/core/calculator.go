@@ -105,6 +105,10 @@ func (s *TimeCalculationService) GetConsumedTime(ctx context.Context, childID st
 
 	activeMinutes := 0
 	for _, session := range activeSessions {
+		// Skip movie sessions - they don't count against individual quotas
+		if session.IsMovieSession {
+			continue
+		}
 		// Check if this session includes the child
 		for _, sid := range session.ChildIDs {
 			if sid == childID {
@@ -186,6 +190,10 @@ func (s *TimeCalculationService) GetRemainingTimeForExtension(
 
 	activeMinutes := 0
 	for _, session := range activeSessions {
+		// Skip movie sessions - they don't count against individual quotas
+		if session.IsMovieSession {
+			continue
+		}
 		// Check if this session includes the child
 		for _, sid := range session.ChildIDs {
 			if sid == childID {

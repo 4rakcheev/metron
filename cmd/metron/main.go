@@ -315,6 +315,25 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		downtimeService = core.NewDowntimeService(nil, timezone)
 	}
 
+	// Initialize movie time service (for weekend shared movie time)
+	var movieTimeService *core.MovieTimeService
+	if cfg.MovieTime != nil && cfg.MovieTime.Enabled {
+		mainLogger.Info("Initializing movie time service",
+			"duration_minutes", cfg.MovieTime.GetDuration(),
+			"break_minutes", cfg.MovieTime.GetBreakMinutes(),
+			"allowed_devices", cfg.MovieTime.AllowedDeviceIDs)
+		movieTimeService = core.NewMovieTimeService(
+			db,
+			&coreDeviceRegistry{deviceRegistry},
+			&coreDriverRegistry{driverRegistry},
+			cfg.MovieTime,
+			timezone,
+			logger.With("component", "movie-time"),
+		)
+	} else {
+		mainLogger.Info("Movie time service disabled (no configuration or disabled)")
+	}
+
 	// Initialize session manager
 	mainLogger.Info("Initializing session manager")
 	baseManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, calculator, downtimeService, timezone, managerLogger)
@@ -335,6 +354,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		DriverRegistry:      driverRegistry,
 		DeviceRegistry:      deviceRegistry,
 		Downtime:            downtimeService,
+		MovieTime:           movieTimeService,
 		DowntimeSkipStorage: db, // SQLite storage also implements core.DowntimeSkipStorage
 		APIKey:              cfg.Security.APIKey,
 		Logger:              apiLogger,

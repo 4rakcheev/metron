@@ -48,6 +48,7 @@ type Session struct {
 	BreakEndsAt      *time.Time
 	WarningSentAt    *time.Time // tracks when time-remaining warning was sent
 	LastExtendedAt   *time.Time // tracks when session was last extended (for rate limiting)
+	IsMovieSession   bool       // If true, does not count against individual quotas
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -79,6 +80,16 @@ var (
 	ErrChildNotFound       = errors.New("child not found")
 	ErrExtensionTooSoon    = errors.New("extension request too soon after previous extension")
 	ErrDowntimeActive      = errors.New("session cannot be started during downtime period")
+)
+
+// Movie time errors
+var (
+	ErrNotWeekend           = errors.New("movie time is only available on weekends")
+	ErrMovieTimeAlreadyUsed = errors.New("movie time already used today")
+	ErrBreakNotMet          = errors.New("must wait for break period after last personal session")
+	ErrMovieSessionActive   = errors.New("a movie session is already active")
+	ErrMovieTimeDisabled    = errors.New("movie time feature is not enabled")
+	ErrInvalidMovieDevice   = errors.New("device is not allowed for movie time")
 )
 
 // Validate validates a Child
@@ -209,6 +220,7 @@ type SessionUsageRecord struct {
 	LastBreakAt      *time.Time
 	BreakEndsAt      *time.Time
 	WarningSentAt    *time.Time
+	IsMovieSession   bool // If true, does not count against individual quotas
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -271,4 +283,38 @@ type DailyUsageSummary struct {
 	SessionCount int       // Number of completed sessions
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
+}
+
+// MovieTimeUsage tracks movie time usage for a specific weekend day
+// This model answers: "Has movie time been used today?"
+// Responsibilities:
+// - Tracks whether movie time is available/active/used for a specific day
+// - Links to the session once movie time starts
+// - Records who initiated the movie session
+type MovieTimeUsage struct {
+	Date      time.Time  // Normalized to start of day (weekend only)
+	SessionID string     // Linked session ID (set once started)
+	StartedAt *time.Time // When movie time was started
+	StartedBy string     // Child ID who initiated
+	Status    string     // "available", "active", "used"
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// MovieTimeUsage status constants
+const (
+	MovieTimeStatusAvailable = "available"
+	MovieTimeStatusActive    = "active"
+	MovieTimeStatusUsed      = "used"
+)
+
+// MovieTimeBypass represents a bypass period for movie time (allows on non-weekends)
+// Used for holidays, school vacations, etc.
+type MovieTimeBypass struct {
+	ID        string    // Unique identifier
+	Reason    string    // Human-readable reason (e.g., "School vacation", "Public holiday")
+	StartDate time.Time // When bypass starts (inclusive, date only)
+	EndDate   time.Time // When bypass ends (inclusive, date only)
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }

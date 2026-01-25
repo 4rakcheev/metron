@@ -53,6 +53,8 @@ tags:
     description: Agent endpoints for external device agents (Windows agent, etc.)
   - name: Bypass
     description: Device bypass mode management
+  - name: Movie Time
+    description: Weekend shared movie time feature (child API)
 
 paths:
   /health:
@@ -838,6 +840,365 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /child/movie-time:
+    get:
+      tags:
+        - Movie Time
+      summary: Get movie time availability
+      description: |
+        Returns the current movie time availability status for weekends.
+        Movie time is a shared session that does not count against individual quotas.
+
+        Requires child session authentication (cookie or Bearer token).
+      operationId: getMovieTimeAvailability
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Movie time availability retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieTimeAvailability'
+              examples:
+                available:
+                  summary: Movie time available
+                  value:
+                    is_weekend: true
+                    is_available: true
+                    is_used_today: false
+                    break_required: false
+                    break_minutes_left: 0
+                    can_start: true
+                    allowed_devices: ["tv1"]
+                    duration_minutes: 120
+                breakRequired:
+                  summary: Break period not yet complete
+                  value:
+                    is_weekend: true
+                    is_available: false
+                    is_used_today: false
+                    break_required: true
+                    break_minutes_left: 25
+                    last_session_end: "2025-12-09T14:30:00Z"
+                    can_start: false
+                    reason: "Break period not yet completed"
+                    allowed_devices: ["tv1"]
+                    duration_minutes: 120
+                alreadyUsed:
+                  summary: Movie time already used today
+                  value:
+                    is_weekend: true
+                    is_available: false
+                    is_used_today: true
+                    break_required: false
+                    break_minutes_left: 0
+                    can_start: false
+                    reason: "Movie time already used today"
+                    allowed_devices: ["tv1"]
+                    duration_minutes: 120
+                notWeekend:
+                  summary: Not a weekend
+                  value:
+                    is_weekend: false
+                    is_available: false
+                    is_used_today: false
+                    break_required: false
+                    break_minutes_left: 0
+                    can_start: false
+                    reason: "Movie time is only available on weekends"
+                    allowed_devices: ["tv1"]
+                    duration_minutes: 120
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Movie time feature not enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Movie time feature is not enabled
+                code: MOVIE_TIME_DISABLED
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - Movie Time
+      summary: Start movie time session
+      description: |
+        Starts a new movie time session on the specified device.
+        Movie time sessions are shared between all children and do not count
+        against individual screen-time quotas.
+
+        Requirements:
+        - Must be a weekend (Saturday or Sunday)
+        - Movie time must not have been used today
+        - Break period after last personal session must be complete (default: 60 minutes)
+        - Device must be in the allowed devices list
+
+        Requires child session authentication (cookie or Bearer token).
+      operationId: startMovieTime
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartMovieTimeRequest'
+            example:
+              device_id: tv1
+      responses:
+        '201':
+          description: Movie time session started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+              example:
+                id: "770e8400-e29b-41d4-a716-446655440003"
+                device_id: tv1
+                device_type: tv
+                start_time: "2025-12-09T15:30:45Z"
+                remaining_minutes: 120
+                status: active
+                is_movie_session: true
+        '400':
+          description: Cannot start movie time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notWeekend:
+                  summary: Not a weekend
+                  value:
+                    error: Movie time is only available on weekends
+                    code: NOT_WEEKEND
+                alreadyUsed:
+                  summary: Already used today
+                  value:
+                    error: Movie time already used today
+                    code: ALREADY_USED
+                breakNotMet:
+                  summary: Break period not complete
+                  value:
+                    error: Break period after last session not yet completed
+                    code: BREAK_NOT_MET
+                invalidDevice:
+                  summary: Device not allowed
+                  value:
+                    error: Device is not allowed for movie time
+                    code: INVALID_DEVICE
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Movie time feature not enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Movie time feature is not enabled
+                code: MOVIE_TIME_DISABLED
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/movie-time/bypasses:
+    get:
+      tags:
+        - Admin
+        - Movie Time
+      summary: List movie time bypass periods
+      description: |
+        Returns a list of all configured movie time bypass periods.
+        Bypass periods allow movie time on non-weekend days (holidays, vacations, etc.).
+      operationId: listMovieTimeBypasses
+      responses:
+        '200':
+          description: List of bypass periods retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bypasses:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MovieTimeBypass'
+              example:
+                bypasses:
+                  - id: "byp_550e8400-e29b-41d4-a716-446655440001"
+                    reason: "Winter vacation"
+                    start_date: "2025-12-20"
+                    end_date: "2026-01-05"
+                    created_at: "2025-12-15T10:00:00Z"
+                  - id: "byp_550e8400-e29b-41d4-a716-446655440002"
+                    reason: "Public holiday"
+                    start_date: "2025-12-25"
+                    end_date: "2025-12-25"
+                    created_at: "2025-12-20T08:00:00Z"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - Admin
+        - Movie Time
+      summary: Create movie time bypass period
+      description: |
+        Creates a new movie time bypass period.
+        During bypass periods, movie time is available even on non-weekend days.
+        Use this for holidays, school vacations, or special occasions.
+      operationId: createMovieTimeBypass
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+                - start_date
+                - end_date
+              properties:
+                reason:
+                  type: string
+                  description: Human-readable reason for the bypass
+                  example: "Winter vacation"
+                start_date:
+                  type: string
+                  format: date
+                  description: Start date of the bypass period (YYYY-MM-DD)
+                  example: "2025-12-20"
+                end_date:
+                  type: string
+                  format: date
+                  description: End date of the bypass period (YYYY-MM-DD, inclusive)
+                  example: "2026-01-05"
+            example:
+              reason: "Winter vacation"
+              start_date: "2025-12-20"
+              end_date: "2026-01-05"
+      responses:
+        '201':
+          description: Bypass period created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieTimeBypass'
+              example:
+                id: "byp_550e8400-e29b-41d4-a716-446655440001"
+                reason: "Winter vacation"
+                start_date: "2025-12-20"
+                end_date: "2026-01-05"
+                created_at: "2025-12-15T10:00:00Z"
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalidDate:
+                  summary: Invalid date format
+                  value:
+                    error: Invalid start_date format, expected YYYY-MM-DD
+                    code: INVALID_DATE
+                invalidRange:
+                  summary: Invalid date range
+                  value:
+                    error: end_date must be on or after start_date
+                    code: INVALID_DATE_RANGE
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/admin/movie-time/bypasses/{id}:
+    get:
+      tags:
+        - Admin
+        - Movie Time
+      summary: Get movie time bypass by ID
+      description: Returns a specific movie time bypass period
+      operationId: getMovieTimeBypass
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Bypass period ID
+          schema:
+            type: string
+          example: "byp_550e8400-e29b-41d4-a716-446655440001"
+      responses:
+        '200':
+          description: Bypass period retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovieTimeBypass'
+              example:
+                id: "byp_550e8400-e29b-41d4-a716-446655440001"
+                reason: "Winter vacation"
+                start_date: "2025-12-20"
+                end_date: "2026-01-05"
+                created_at: "2025-12-15T10:00:00Z"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Bypass period not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Bypass not found
+                code: NOT_FOUND
+        '500':
+          $ref: '#/components/responses/InternalError'
+    delete:
+      tags:
+        - Admin
+        - Movie Time
+      summary: Delete movie time bypass period
+      description: Deletes a movie time bypass period
+      operationId: deleteMovieTimeBypass
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Bypass period ID
+          schema:
+            type: string
+          example: "byp_550e8400-e29b-41d4-a716-446655440001"
+      responses:
+        '200':
+          description: Bypass period deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Bypass deleted successfully"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Bypass period not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: Bypass not found
+                code: NOT_FOUND
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 components:
   securitySchemes:
     ApiKeyAuth:
@@ -1471,6 +1832,116 @@ components:
           format: date-time
           description: When bypass expires (only present if enabled with expiry)
           example: "2025-12-09T16:30:45Z"
+
+    MovieTimeAvailability:
+      type: object
+      required:
+        - is_weekend
+        - is_bypass_active
+        - is_available
+        - is_used_today
+        - break_required
+        - break_minutes_left
+        - can_start
+        - allowed_devices
+        - duration_minutes
+      properties:
+        is_weekend:
+          type: boolean
+          description: Whether today is a weekend (Saturday or Sunday)
+          example: true
+        is_bypass_active:
+          type: boolean
+          description: Whether a bypass period is active (allows movie time on non-weekends)
+          example: false
+        bypass_reason:
+          type: string
+          description: Reason for the active bypass period (if applicable)
+          example: "School vacation"
+        is_available:
+          type: boolean
+          description: Overall availability of movie time
+          example: true
+        is_used_today:
+          type: boolean
+          description: Whether movie time has already been used today
+          example: false
+        break_required:
+          type: boolean
+          description: Whether still in break period after last personal session
+          example: false
+        break_minutes_left:
+          type: integer
+          description: Minutes until break ends (0 if break requirement is met)
+          minimum: 0
+          example: 0
+        last_session_end:
+          type: string
+          format: date-time
+          description: When the last personal session ended (if applicable)
+          example: "2025-12-09T14:30:00Z"
+        can_start:
+          type: boolean
+          description: Final decision - whether movie time can be started now
+          example: true
+        reason:
+          type: string
+          description: Human-readable reason if movie time cannot start
+          example: "Break period not yet completed"
+        allowed_devices:
+          type: array
+          items:
+            type: string
+          description: Device IDs allowed for movie time
+          example: ["tv1"]
+        duration_minutes:
+          type: integer
+          description: Duration of movie time session in minutes
+          minimum: 1
+          example: 120
+
+    StartMovieTimeRequest:
+      type: object
+      required:
+        - device_id
+      properties:
+        device_id:
+          type: string
+          description: ID of the device to start movie time on (must be in allowed_devices)
+          example: tv1
+
+    MovieTimeBypass:
+      type: object
+      required:
+        - id
+        - reason
+        - start_date
+        - end_date
+        - created_at
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the bypass period
+          example: "byp_550e8400-e29b-41d4-a716-446655440001"
+        reason:
+          type: string
+          description: Human-readable reason for the bypass
+          example: "Winter vacation"
+        start_date:
+          type: string
+          format: date
+          description: Start date of the bypass period (YYYY-MM-DD)
+          example: "2025-12-20"
+        end_date:
+          type: string
+          format: date
+          description: End date of the bypass period (YYYY-MM-DD, inclusive)
+          example: "2026-01-05"
+        created_at:
+          type: string
+          format: date-time
+          description: When the bypass was created
+          example: "2025-12-15T10:00:00Z"
 
   responses:
     UnauthorizedError:

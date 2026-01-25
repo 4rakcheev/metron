@@ -350,6 +350,46 @@ func (s *SQLiteStorage) runMigrations() error {
 		return fmt.Errorf("failed to create device_bypass table: %w", err)
 	}
 
+	// Create movie_time_usage table for weekend shared movie time
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS movie_time_usage (
+			date DATE PRIMARY KEY,
+			session_id TEXT,
+			started_at DATETIME,
+			started_by TEXT,
+			status TEXT NOT NULL DEFAULT 'available',
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create movie_time_usage table: %w", err)
+	}
+
+	// Add is_movie_session column to sessions table
+	_, err = s.db.Exec(`
+		ALTER TABLE sessions ADD COLUMN is_movie_session INTEGER NOT NULL DEFAULT 0;
+	`)
+	// Ignore error if column already exists
+	if err != nil && err.Error() != "duplicate column name: is_movie_session" {
+		// Column might already exist, which is fine
+	}
+
+	// Create movie_time_bypass table for holiday/vacation bypass periods
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS movie_time_bypass (
+			id TEXT PRIMARY KEY,
+			reason TEXT NOT NULL,
+			start_date DATE NOT NULL,
+			end_date DATE NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create movie_time_bypass table: %w", err)
+	}
+
 	return nil
 }
 
@@ -532,10 +572,10 @@ func (s *SQLiteStorage) CreateSession(ctx context.Context, session *core.Session
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO sessions (id, device_type, device_id, start_time, expected_duration,
-			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, is_movie_session, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, session.ID, session.DeviceType, session.DeviceID, session.StartTime, session.ExpectedDuration,
-		session.Status, lastBreakAt, breakEndsAt, warningSentAt, lastExtendedAt, session.CreatedAt, session.UpdatedAt)
+		session.Status, lastBreakAt, breakEndsAt, warningSentAt, lastExtendedAt, session.IsMovieSession, session.CreatedAt, session.UpdatedAt)
 
 	if err != nil {
 		return err
@@ -561,11 +601,11 @@ func (s *SQLiteStorage) GetSession(ctx context.Context, id string) (*core.Sessio
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, device_type, device_id, start_time, expected_duration,
-			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, created_at, updated_at
+			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, is_movie_session, created_at, updated_at
 		FROM sessions WHERE id = ?
 	`, id).Scan(&session.ID, &session.DeviceType, &session.DeviceID, &session.StartTime,
 		&session.ExpectedDuration, &session.Status,
-		&lastBreakAt, &breakEndsAt, &warningSentAt, &lastExtendedAt, &session.CreatedAt, &session.UpdatedAt)
+		&lastBreakAt, &breakEndsAt, &warningSentAt, &lastExtendedAt, &session.IsMovieSession, &session.CreatedAt, &session.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, core.ErrSessionNotFound
@@ -621,7 +661,7 @@ func (s *SQLiteStorage) ListAllSessions(ctx context.Context) ([]*core.Session, e
 func (s *SQLiteStorage) ListSessionsByChild(ctx context.Context, childID string) ([]*core.Session, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id, s.device_type, s.device_id, s.start_time, s.expected_duration,
-			s.status, s.last_break_at, s.break_ends_at, s.warning_sent_at, s.last_extended_at, s.created_at, s.updated_at
+			s.status, s.last_break_at, s.break_ends_at, s.warning_sent_at, s.last_extended_at, s.is_movie_session, s.created_at, s.updated_at
 		FROM sessions s
 		JOIN session_children sc ON s.id = sc.session_id
 		WHERE sc.child_id = ?
@@ -953,7 +993,7 @@ func (s *SQLiteStorage) IncrementSessionCountSummary(ctx context.Context, childI
 func (s *SQLiteStorage) ListActiveSessionRecords(ctx context.Context) ([]*core.SessionUsageRecord, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, device_type, device_id, start_time, expected_duration, actual_duration, status,
-			last_break_at, break_ends_at, warning_sent_at, created_at, updated_at
+			last_break_at, break_ends_at, warning_sent_at, is_movie_session, created_at, updated_at
 		FROM sessions WHERE status = ?
 	`, core.SessionStatusActive)
 
@@ -969,7 +1009,7 @@ func (s *SQLiteStorage) ListActiveSessionRecords(ctx context.Context) ([]*core.S
 
 		err := rows.Scan(&session.ID, &session.DeviceType, &session.DeviceID, &session.StartTime,
 			&session.ExpectedDuration, &actualDuration, &session.Status, &session.LastBreakAt,
-			&session.BreakEndsAt, &session.WarningSentAt, &session.CreatedAt, &session.UpdatedAt)
+			&session.BreakEndsAt, &session.WarningSentAt, &session.IsMovieSession, &session.CreatedAt, &session.UpdatedAt)
 
 		if err != nil {
 			return nil, err
@@ -1017,7 +1057,7 @@ func (s *SQLiteStorage) Close() error {
 func (s *SQLiteStorage) listSessionsByCondition(ctx context.Context, condition string, args ...interface{}) ([]*core.Session, error) {
 	query := `
 		SELECT id, device_type, device_id, start_time, expected_duration,
-			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, created_at, updated_at
+			status, last_break_at, break_ends_at, warning_sent_at, last_extended_at, is_movie_session, created_at, updated_at
 		FROM sessions WHERE ` + condition + ` ORDER BY start_time DESC
 	`
 
@@ -1039,7 +1079,7 @@ func (s *SQLiteStorage) scanSessions(ctx context.Context, rows *sql.Rows) ([]*co
 
 		if err := rows.Scan(&session.ID, &session.DeviceType, &session.DeviceID, &session.StartTime,
 			&session.ExpectedDuration, &session.Status,
-			&lastBreakAt, &breakEndsAt, &warningSentAt, &lastExtendedAt, &session.CreatedAt, &session.UpdatedAt); err != nil {
+			&lastBreakAt, &breakEndsAt, &warningSentAt, &lastExtendedAt, &session.IsMovieSession, &session.CreatedAt, &session.UpdatedAt); err != nil {
 			return nil, err
 		}
 

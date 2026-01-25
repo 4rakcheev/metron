@@ -14,6 +14,9 @@ type Storage interface {
 	UpdateSession(ctx context.Context, session *core.Session) error
 	GetChild(ctx context.Context, id string) (*core.Child, error)
 	IncrementDailyUsageSummary(ctx context.Context, childID string, date time.Time, minutes int) error
+	// Movie time usage tracking
+	GetMovieTimeUsage(ctx context.Context, date time.Time) (*core.MovieTimeUsage, error)
+	SaveMovieTimeUsage(ctx context.Context, usage *core.MovieTimeUsage) error
 }
 
 // Device interface for accessing device information
@@ -269,10 +272,22 @@ func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error
 		return err
 	}
 
-	// Update daily usage summary for all children
 	elapsed := int(time.Since(session.StartTime).Minutes())
 	today := time.Now().In(s.timezone)
 
+	// Handle movie session - don't update individual quotas, just mark as used
+	if session.IsMovieSession {
+		s.logger.Info("Movie session ended", "session_id", session.ID, "duration_minutes", elapsed)
+		// Mark movie time as used
+		if err := s.markMovieTimeUsed(ctx, session.ID, today); err != nil {
+			s.logger.Error("Failed to mark movie time as used",
+				"session_id", session.ID,
+				"error", err)
+		}
+		return nil
+	}
+
+	// Update daily usage summary for all children (only for non-movie sessions)
 	for _, childID := range session.ChildIDs {
 		if err := s.storage.IncrementDailyUsageSummary(ctx, childID, today, elapsed); err != nil {
 			s.logger.Error("Failed to update daily usage summary", "child_id", childID, "error", err)
@@ -281,4 +296,22 @@ func (s *Scheduler) endSession(ctx context.Context, session *core.Session) error
 
 	s.logger.Info("Session ended", "session_id", session.ID, "duration_minutes", elapsed)
 	return nil
+}
+
+// markMovieTimeUsed updates the movie time usage status to "used"
+func (s *Scheduler) markMovieTimeUsed(ctx context.Context, sessionID string, date time.Time) error {
+	usage, err := s.storage.GetMovieTimeUsage(ctx, date)
+	if err != nil {
+		return err
+	}
+
+	if usage == nil || usage.SessionID != sessionID {
+		// No matching usage record
+		return nil
+	}
+
+	usage.Status = core.MovieTimeStatusUsed
+	usage.UpdatedAt = time.Now()
+
+	return s.storage.SaveMovieTimeUsage(ctx, usage)
 }

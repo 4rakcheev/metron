@@ -16,16 +16,18 @@ import (
 // Mock implementations
 
 type mockStorage struct {
-	sessions   map[string]*core.Session
-	children   map[string]*core.Child
-	dailyUsage map[string]int
+	sessions       map[string]*core.Session
+	children       map[string]*core.Child
+	dailyUsage     map[string]int
+	movieTimeUsage map[string]*core.MovieTimeUsage // keyed by date
 }
 
 func newMockStorage() *mockStorage {
 	return &mockStorage{
-		sessions:   make(map[string]*core.Session),
-		children:   make(map[string]*core.Child),
-		dailyUsage: make(map[string]int),
+		sessions:       make(map[string]*core.Session),
+		children:       make(map[string]*core.Child),
+		dailyUsage:     make(map[string]int),
+		movieTimeUsage: make(map[string]*core.MovieTimeUsage),
 	}
 }
 
@@ -73,6 +75,20 @@ func (m *mockStorage) IncrementDailyUsageSummary(ctx context.Context, childID st
 }
 
 func (m *mockStorage) IncrementSessionCount(ctx context.Context, childID string, date time.Time) error {
+	return nil
+}
+
+func (m *mockStorage) GetMovieTimeUsage(ctx context.Context, date time.Time) (*core.MovieTimeUsage, error) {
+	key := date.Format("2006-01-02")
+	if usage, ok := m.movieTimeUsage[key]; ok {
+		return usage, nil
+	}
+	return nil, nil
+}
+
+func (m *mockStorage) SaveMovieTimeUsage(ctx context.Context, usage *core.MovieTimeUsage) error {
+	key := usage.Date.Format("2006-01-02")
+	m.movieTimeUsage[key] = usage
 	return nil
 }
 

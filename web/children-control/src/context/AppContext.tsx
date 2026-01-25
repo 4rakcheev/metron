@@ -2,13 +2,14 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { api } from '../api/client';
-import type { Child, TodayStats, Device, Session } from '../api/types';
+import type { Child, TodayStats, Device, Session, MovieTimeAvailability } from '../api/types';
 
 interface AppState {
   child: Child | null;
   stats: TodayStats | null;
   devices: Device[];
   sessions: Session[];
+  movieTime: MovieTimeAvailability | null;
   loading: boolean;
   error: string | null;
   isAuthenticated: boolean;
@@ -18,9 +19,10 @@ interface AppContextValue extends AppState {
   login: (childId: string, pin: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
-  createSession: (deviceId: string, minutes: number, shared?: boolean) => Promise<void>;
+  createSession: (deviceId: string, minutes: number) => Promise<void>;
   stopSession: (sessionId: string) => Promise<void>;
   extendSession: (sessionId: string, additionalMinutes: number) => Promise<void>;
+  startMovieTime: (deviceId: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -34,6 +36,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     stats: null,
     devices: [],
     sessions: [],
+    movieTime: null,
     loading: false,
     error: null,
     isAuthenticated: api.isAuthenticated(),
@@ -49,6 +52,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         stats: null,
         devices: [],
         sessions: [],
+        movieTime: null,
       }));
       return;
     }
@@ -57,11 +61,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setState(prev => ({ ...prev, loading: true, error: null }));
 
       // Load all data in parallel
-      const [child, stats, devices, sessions] = await Promise.all([
+      const [child, stats, devices, sessions, movieTime] = await Promise.all([
         api.getMe(),
         api.getToday(),
         api.getDevices(),
         api.getSessions(),
+        api.getMovieTimeAvailability(),
       ]);
 
       setState(prev => ({
@@ -70,6 +75,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         stats,
         devices,
         sessions,
+        movieTime,
         loading: false,
         isAuthenticated: true,
       }));
@@ -122,6 +128,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         stats: null,
         devices: [],
         sessions: [],
+        movieTime: null,
         loading: false,
         error: null,
         isAuthenticated: false,
@@ -130,10 +137,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Create session function
-  const createSession = useCallback(async (deviceId: string, minutes: number, shared?: boolean) => {
+  const createSession = useCallback(async (deviceId: string, minutes: number) => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
-      await api.createSession(deviceId, minutes, shared);
+      await api.createSession(deviceId, minutes);
 
       // Reload data to get updated sessions and stats
       await loadData();
@@ -186,6 +193,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [loadData]);
 
+  // Start movie time function
+  const startMovieTime = useCallback(async (deviceId: string) => {
+    try {
+      setState(prev => ({ ...prev, loading: true, error: null }));
+      await api.startMovieTime(deviceId);
+
+      // Reload data to get updated sessions and movie time status
+      await loadData();
+    } catch (err) {
+      console.error('Failed to start movie time:', err);
+      setState(prev => ({
+        ...prev,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Failed to start movie time',
+      }));
+      throw err;
+    }
+  }, [loadData]);
+
   // Clear error function
   const clearError = useCallback(() => {
     setState(prev => ({ ...prev, error: null }));
@@ -212,6 +238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     createSession,
     stopSession,
     extendSession,
+    startMovieTime,
     clearError,
   };
 

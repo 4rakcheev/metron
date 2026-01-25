@@ -16,14 +16,23 @@ var (
 
 // Config represents the application configuration
 type Config struct {
-	Server   ServerConfig    `json:"server"`
-	Database DatabaseConfig  `json:"database"`
-	Security SecurityConfig  `json:"security"`
-	Timezone string          `json:"timezone"` // IANA timezone string (e.g., "Europe/Riga")
-	Devices  []DeviceConfig  `json:"devices"`  // Global device registry
-	Aqara    AqaraConfig     `json:"aqara"`
-	Kidslox  *KidsloxConfig  `json:"kidslox,omitempty"`
-	Downtime *DowntimeConfig `json:"downtime,omitempty"`
+	Server    ServerConfig     `json:"server"`
+	Database  DatabaseConfig   `json:"database"`
+	Security  SecurityConfig   `json:"security"`
+	Timezone  string           `json:"timezone"` // IANA timezone string (e.g., "Europe/Riga")
+	Devices   []DeviceConfig   `json:"devices"`  // Global device registry
+	Aqara     AqaraConfig      `json:"aqara"`
+	Kidslox   *KidsloxConfig   `json:"kidslox,omitempty"`
+	Downtime  *DowntimeConfig  `json:"downtime,omitempty"`
+	MovieTime *MovieTimeConfig `json:"movie_time,omitempty"`
+}
+
+// MovieTimeConfig contains settings for weekend shared movie time feature
+type MovieTimeConfig struct {
+	Enabled          bool     `json:"enabled"`            // Whether movie time feature is enabled
+	DurationMinutes  int      `json:"duration_minutes"`   // Movie session duration (default: 120)
+	BreakMinutes     int      `json:"break_minutes"`      // Required break after last personal session (default: 60)
+	AllowedDeviceIDs []string `json:"allowed_device_ids"` // Devices where movie time can be used (e.g., ["tv1"])
 }
 
 // DeviceConfig represents a device configuration
@@ -202,6 +211,40 @@ func (d *DowntimeConfig) GetWeekendSchedule() *DayScheduleConfig {
 	return nil
 }
 
+// Validate validates the movie time configuration
+func (m *MovieTimeConfig) Validate() error {
+	if !m.Enabled {
+		return nil // No validation needed if disabled
+	}
+
+	if m.DurationMinutes <= 0 {
+		return fmt.Errorf("movie time duration_minutes must be positive")
+	}
+	if m.BreakMinutes < 0 {
+		return fmt.Errorf("movie time break_minutes cannot be negative")
+	}
+	if len(m.AllowedDeviceIDs) == 0 {
+		return fmt.Errorf("movie time allowed_device_ids must not be empty when enabled")
+	}
+	return nil
+}
+
+// GetDuration returns the movie time duration, with default fallback
+func (m *MovieTimeConfig) GetDuration() int {
+	if m.DurationMinutes <= 0 {
+		return 120 // Default: 2 hours
+	}
+	return m.DurationMinutes
+}
+
+// GetBreakMinutes returns the required break minutes, with default fallback
+func (m *MovieTimeConfig) GetBreakMinutes() int {
+	if m.BreakMinutes <= 0 {
+		return 60 // Default: 1 hour
+	}
+	return m.BreakMinutes
+}
+
 // Validate validates the downtime configuration
 func (d *DowntimeConfig) Validate() error {
 	// Helper to validate a single schedule
@@ -307,6 +350,13 @@ func (c *Config) Validate() error {
 	// Validate downtime config if present
 	if c.Downtime != nil {
 		if err := c.Downtime.Validate(); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+		}
+	}
+
+	// Validate movie time config if present
+	if c.MovieTime != nil {
+		if err := c.MovieTime.Validate(); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 		}
 	}

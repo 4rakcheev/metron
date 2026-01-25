@@ -52,11 +52,29 @@ export interface LoginResponse {
 export interface CreateSessionRequest {
   device_id: string;
   minutes: number;
-  shared?: boolean; // Optional: create session for all children
 }
 
 export interface APIError {
   error: string;
   code: string;
   details?: string;
+}
+
+export interface MovieTimeAvailability {
+  is_weekend: boolean;
+  is_bypass_active: boolean;
+  bypass_reason?: string;
+  is_available: boolean;
+  is_used_today: boolean;
+  break_required: boolean;
+  break_minutes_left: number;
+  last_session_end?: string;
+  can_start: boolean;
+  reason?: string;
+  allowed_devices: string[];
+  duration_minutes: number;
+}
+
+export interface StartMovieTimeRequest {
+  device_id: string;
 }

@@ -21,6 +21,7 @@ type RouterConfig struct {
 	DriverRegistry      *drivers.Registry
 	DeviceRegistry      *devices.Registry
 	Downtime            *core.DowntimeService
+	MovieTime           *core.MovieTimeService   // Optional: for weekend movie time feature
 	DowntimeSkipStorage core.DowntimeSkipStorage // For skip downtime feature
 	APIKey              string
 	Logger              *slog.Logger
@@ -135,6 +136,18 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			v1.POST("/downtime/skip-today", downtimeHandler.SkipDowntimeToday)
 			v1.GET("/downtime/skip-status", downtimeHandler.GetSkipStatus)
 		}
+
+		// Movie time bypass endpoints (for holiday/vacation periods)
+		if config.MovieTime != nil {
+			bypassHandler := handlers.NewMovieTimeBypassHandler(
+				config.Storage,
+				config.Logger,
+			)
+			v1.GET("/admin/movie-time/bypasses", bypassHandler.ListBypasses)
+			v1.POST("/admin/movie-time/bypasses", bypassHandler.CreateBypass)
+			v1.GET("/admin/movie-time/bypasses/:id", bypassHandler.GetBypass)
+			v1.DELETE("/admin/movie-time/bypasses/:id", bypassHandler.DeleteBypass)
+		}
 	}
 
 	// Child API routes (for child-facing web app)
@@ -148,6 +161,7 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			config.DeviceRegistry,
 			sessionManager,
 			config.Downtime,
+			config.MovieTime,
 			config.Logger,
 		)
 
@@ -167,6 +181,10 @@ func NewRouter(config RouterConfig) *gin.Engine {
 		protected.POST("/sessions", childHandler.CreateSession)
 		protected.POST("/sessions/:id/stop", childHandler.StopSession)
 		protected.POST("/sessions/:id/extend", childHandler.ExtendSession)
+
+		// Movie time routes (for weekend shared movie time)
+		protected.GET("/movie-time", childHandler.GetMovieTimeAvailability)
+		protected.POST("/movie-time", childHandler.StartMovieTime)
 	}
 
 	// Agent API routes (for external device agents like Windows agent)

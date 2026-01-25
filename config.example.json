@@ -74,5 +74,11 @@
     "base_url": "https://admin.kdlparentalcontrol.com",
     "api_key": "your-kidslox-api-key",
     "account_id": "your-kidslox-account-id"
+  },
+  "movie_time": {
+    "enabled": true,
+    "duration_minutes": 120,
+    "break_minutes": 60,
+    "allowed_device_ids": ["tv1"]
   }
 }

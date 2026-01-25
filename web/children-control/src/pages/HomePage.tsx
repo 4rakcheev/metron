@@ -8,6 +8,7 @@ import { TimeDisplay } from '../components/TimeDisplay';
 import { ActiveSession } from '../components/ActiveSession';
 import { DeviceButton } from '../components/DeviceButton';
 import { DurationPicker } from '../components/DurationPicker';
+import { MovieTimeCard } from '../components/MovieTimeCard';
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -17,14 +18,15 @@ export function HomePage() {
     stats,
     devices,
     sessions,
+    movieTime,
     logout,
     createSession,
     stopSession,
     extendSession,
+    startMovieTime,
   } = useApp();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const [isSharedSession, setIsSharedSession] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   // Redirect if not authenticated
@@ -49,9 +51,8 @@ export function HomePage() {
 
     try {
       setActionLoading(true);
-      await createSession(selectedDeviceId, minutes, isSharedSession);
+      await createSession(selectedDeviceId, minutes);
       setSelectedDeviceId(null);
-      setIsSharedSession(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start session');
     } finally {
@@ -82,6 +83,18 @@ export function HomePage() {
       await extendSession(activeSession.id, minutes);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to extend session');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Handle movie time start
+  const handleStartMovieTime = async (deviceId: string) => {
+    try {
+      setActionLoading(true);
+      await startMovieTime(deviceId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to start movie time');
     } finally {
       setActionLoading(false);
     }
@@ -187,6 +200,21 @@ export function HomePage() {
           </div>
         )}
 
+        {/* Weekend Movie Time (or bypass mode) */}
+        {movieTime && (movieTime.is_weekend || movieTime.is_bypass_active) && !activeSession && (
+          <div>
+            <h2 className="text-xl font-bold text-gray-800 mb-4">
+              🎬 Movie Time
+            </h2>
+            <MovieTimeCard
+              movieTime={movieTime}
+              devices={devices.filter(d => movieTime.allowed_devices.includes(d.id))}
+              onStart={handleStartMovieTime}
+              loading={actionLoading}
+            />
+          </div>
+        )}
+
         {/* Device Selection (only if no active session, has time, and not in downtime) */}
         {!activeSession && !hasNoTime && !isInDowntime && (
           <div>
@@ -205,23 +233,6 @@ export function HomePage() {
                 ))}
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Shared Session Toggle (only when device is selected) */}
-        {!activeSession && !hasNoTime && !isInDowntime && selectedDeviceId && (
-          <div className="card bg-gradient-to-br from-blue-50 to-cyan-50">
-            <label className="flex items-center justify-center gap-3 cursor-pointer p-2">
-              <input
-                type="checkbox"
-                checked={isSharedSession}
-                onChange={(e) => setIsSharedSession(e.target.checked)}
-                className="w-6 h-6 text-purple-600 rounded focus:ring-2 focus:ring-purple-500"
-              />
-              <span className="text-lg font-bold text-gray-800">
-                👥 Make this a shared session (for all children)
-              </span>
-            </label>
           </div>
         )}
 
