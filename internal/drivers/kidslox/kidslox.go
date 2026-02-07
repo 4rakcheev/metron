@@ -18,6 +18,13 @@ import (
 const (
 	// LockProfileID is the special Kidslox profile ID for locking devices
 	LockProfileID = "aaaaaaaa-bbbb-cccc-dddd-000000000001"
+
+	// HTTP headers to mimic native Kidslox web application
+	headerAppVersion   = "10.9.1"
+	headerBrand        = "kidslox"
+	headerApp          = "kidslox"
+	headerClient       = "webapp"
+	headerKidsloxAgent = "Kidslox/8.2.0 (Desktop;Web; Mac/mac-os-x-15)"
 )
 
 // Config contains Kidslox API configuration
@@ -328,8 +335,17 @@ func (d *Driver) newRequest(ctx context.Context, method, url string, body interf
 		return nil, err
 	}
 
-	req.Header.Set("x-api-key", d.config.APIKey)
+	// Standard headers
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+
+	// Kidslox-specific headers to mimic native web application
+	req.Header.Set("x-api-key", d.config.APIKey)
+	req.Header.Set("x-app-version", headerAppVersion)
+	req.Header.Set("x-brand", headerBrand)
+	req.Header.Set("x-app", headerApp)
+	req.Header.Set("x-client", headerClient)
+	req.Header.Set("x-kidslox-agent", headerKidsloxAgent)
 
 	return req, nil
 }
