@@ -966,7 +966,7 @@ func (b *Bot) bypassStep1(ctx context.Context, message *tgbotapi.Message, device
 	bypass, _ := b.client.GetDeviceBypass(ctx, device.ID)
 	currentlyEnabled := bypass != nil && bypass.Enabled
 
-	emoji := getDeviceEmoji(device.Type)
+	emoji := resolveDeviceEmoji(device)
 	var text string
 	if currentlyEnabled {
 		text = fmt.Sprintf("🔓 *Bypass Mode*\n\n%s *%s*\n\n✅ Bypass is currently *ENABLED*\n\n"+
@@ -1012,7 +1012,7 @@ func (b *Bot) bypassEnable(ctx context.Context, message *tgbotapi.Message, devic
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
-	emoji := getDeviceEmoji(device.Type)
+	emoji := resolveDeviceEmoji(device)
 	var durationText string
 	switch durationMinutes {
 	case 0:
@@ -1056,7 +1056,7 @@ func (b *Bot) bypassDisable(ctx context.Context, message *tgbotapi.Message, devi
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
-	emoji := getDeviceEmoji(device.Type)
+	emoji := resolveDeviceEmoji(device)
 	text := fmt.Sprintf("🔒 *Bypass Disabled*\n\n%s *%s*\n\n"+
 		"Screen-time enforcement is now *resumed*.\n\n"+
 		"Normal session rules will apply.",

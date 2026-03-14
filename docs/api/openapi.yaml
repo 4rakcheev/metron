@@ -1333,6 +1333,10 @@ components:
           type: string
           description: Human-readable device name
           example: aqara
+        emoji:
+          type: string
+          description: Optional emoji override (if not set, derived from device type)
+          example: "🎮"
         capabilities:
           $ref: '#/components/schemas/DeviceCapabilities'
 

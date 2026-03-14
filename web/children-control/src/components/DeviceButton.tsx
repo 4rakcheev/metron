@@ -46,7 +46,7 @@ export function DeviceButton({ device, selected, onClick }: DeviceButtonProps) {
         flex flex-col items-center justify-center gap-2 text-white
       `}
     >
-      <div className="text-4xl">{getDeviceEmoji(device.type)}</div>
+      <div className="text-4xl">{device.emoji || getDeviceEmoji(device.type)}</div>
       <div className="text-sm font-bold text-center px-2">{device.name}</div>
     </button>
   );

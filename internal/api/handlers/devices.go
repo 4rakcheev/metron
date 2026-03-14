@@ -42,6 +42,9 @@ func (h *DevicesHandler) ListDevices(c *gin.Context) {
 			"name": device.Name,
 			"type": device.Type,
 		}
+		if device.Emoji != "" {
+			deviceInfo["emoji"] = device.Emoji
+		}
 
 		// Get driver capabilities
 		driver, err := h.driverRegistry.Get(device.Driver)

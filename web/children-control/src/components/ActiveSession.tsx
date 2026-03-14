@@ -52,7 +52,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading }: Ac
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="text-5xl">{getDeviceEmoji(session.device_type)}</div>
+            <div className="text-5xl">{device?.emoji || getDeviceEmoji(session.device_type)}</div>
             <div>
               <div className="text-sm opacity-90">Currently playing on</div>
               <div className="text-2xl font-bold">{device?.name || session.device_id}</div>

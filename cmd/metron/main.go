@@ -225,6 +225,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 			ID:         deviceCfg.ID,
 			Name:       deviceCfg.Name,
 			Type:       deviceCfg.Type,
+			Emoji:      deviceCfg.Emoji,
 			Driver:     deviceCfg.Driver,
 			Parameters: deviceCfg.Parameters,
 		}

@@ -297,11 +297,15 @@ func (h *ChildHandler) ListDevices(c *gin.Context) {
 
 	response := make([]gin.H, 0, len(deviceList))
 	for _, device := range deviceList {
-		response = append(response, gin.H{
+		d := gin.H{
 			"id":   device.ID,
 			"name": device.Name,
 			"type": device.Type,
-		})
+		}
+		if device.Emoji != "" {
+			d["emoji"] = device.Emoji
+		}
+		response = append(response, d)
 	}
 
 	c.JSON(http.StatusOK, response)

@@ -87,7 +87,7 @@ func BuildDevicesButtons(devices []Device, action string, step int, childIndex i
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	for _, device := range devices {
-		emoji := getDeviceEmoji(device.Type)
+		emoji := resolveDeviceEmoji(device)
 		callback := MarshalCallback(CallbackData{
 			Action:     action,
 			Step:       step,
@@ -577,7 +577,7 @@ func BuildBypassDevicesButtons(devices []DeviceWithBypass) tgbotapi.InlineKeyboa
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	for i, dw := range devices {
-		emoji := getDeviceEmoji(dw.Device.Type)
+		emoji := resolveDeviceEmoji(dw.Device)
 		var statusEmoji string
 		if dw.BypassEnabled {
 			statusEmoji = "✅"

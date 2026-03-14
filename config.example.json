@@ -53,6 +53,7 @@
       "id": "win-pc1",
       "name": "Kids Windows PC",
       "type": "computer",
+      "emoji": "🖥️",
       "driver": "passive",
       "parameters": {
         "agent_token": "your-agent-secret-token-here"

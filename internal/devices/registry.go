@@ -10,6 +10,7 @@ type Device struct {
 	ID         string                 // Unique device identifier (e.g., "tv1", "ps5")
 	Name       string                 // User-friendly name (e.g., "Living Room TV", "PlayStation 5")
 	Type       string                 // Device type for display/stats (e.g., "tv", "ps5", "ipad")
+	Emoji      string                 // Optional emoji override (default derived from type)
 	Driver     string                 // Driver to use for control (e.g., "aqara", "mock")
 	Parameters map[string]interface{} // Driver-specific parameters (optional overrides)
 }

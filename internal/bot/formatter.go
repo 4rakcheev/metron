@@ -142,7 +142,7 @@ func FormatDevices(devices []Device) string {
 	}
 
 	for _, device := range devices {
-		emoji := getDeviceEmoji(device.Type)
+		emoji := resolveDeviceEmoji(device)
 		displayName := getDeviceDisplayName(device.Type)
 		sb.WriteString(fmt.Sprintf("%s *%s*\n", emoji, displayName))
 		sb.WriteString(fmt.Sprintf("   Driver: `%s`\n", device.Type))
@@ -379,6 +379,14 @@ func calculateSessionEnd(session Session) (time.Time, int) {
 	}
 
 	return endTime, remaining
+}
+
+// resolveDeviceEmoji returns the device's custom emoji if set, otherwise falls back to type-based default
+func resolveDeviceEmoji(device Device) string {
+	if device.Emoji != "" {
+		return device.Emoji
+	}
+	return getDeviceEmoji(device.Type)
 }
 
 // getDeviceEmoji returns an emoji for a device type

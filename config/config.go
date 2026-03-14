@@ -40,6 +40,7 @@ type DeviceConfig struct {
 	ID         string                 `json:"id"`                   // Unique device ID (e.g., "tv1", "ps5")
 	Name       string                 `json:"name"`                 // Display name (e.g., "Living Room TV")
 	Type       string                 `json:"type"`                 // Device type (e.g., "tv", "ps5") - for display/stats
+	Emoji      string                 `json:"emoji,omitempty"`      // Optional emoji override (default derived from type)
 	Driver     string                 `json:"driver"`               // Driver name (e.g., "aqara") - for control
 	Parameters map[string]interface{} `json:"parameters,omitempty"` // Driver-specific parameters (overrides defaults)
 }
