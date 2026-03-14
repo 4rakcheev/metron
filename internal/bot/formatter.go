@@ -399,7 +399,7 @@ func getDeviceEmoji(deviceType string) string {
 	case strings.Contains(lowerType, "ps5") || strings.Contains(lowerType, "playstation"):
 		return "🎮"
 	case strings.Contains(lowerType, "ipad") || strings.Contains(lowerType, "tablet"):
-		return "📱"
+		return "⬛"
 	case strings.Contains(lowerType, "phone"):
 		return "📱"
 	case strings.Contains(lowerType, "aqara"):

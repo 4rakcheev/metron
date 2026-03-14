@@ -1,6 +1,7 @@
 // Device Selection Button Component
 
 import type { Device } from '../api/types';
+import { resolveDeviceEmoji } from '../utils/deviceEmoji';
 
 interface DeviceButtonProps {
   device: Device;
@@ -9,28 +10,17 @@ interface DeviceButtonProps {
 }
 
 export function DeviceButton({ device, selected, onClick }: DeviceButtonProps) {
-  // Get device emoji based on type
-  const getDeviceEmoji = (type: string): string => {
-    const emojiMap: Record<string, string> = {
-      tv: '📺',
-      ipad: '📱',
-      ps5: '🎮',
-      xbox: '🎮',
-      computer: '💻',
-      tablet: '📱',
-    };
-    return emojiMap[type.toLowerCase()] || '🖥️';
-  };
-
   // Get color gradient based on type
   const getGradient = (type: string): string => {
     const gradientMap: Record<string, string> = {
       tv: 'from-blue-500 to-cyan-500',
       ipad: 'from-purple-500 to-pink-500',
+      tablet: 'from-pink-500 to-rose-500',
+      phone: 'from-teal-500 to-cyan-500',
+      iphone: 'from-teal-500 to-cyan-500',
       ps5: 'from-indigo-500 to-purple-500',
       xbox: 'from-green-500 to-emerald-500',
       computer: 'from-orange-500 to-red-500',
-      tablet: 'from-pink-500 to-rose-500',
     };
     return gradientMap[type.toLowerCase()] || 'from-gray-500 to-gray-600';
   };
@@ -46,7 +36,7 @@ export function DeviceButton({ device, selected, onClick }: DeviceButtonProps) {
         flex flex-col items-center justify-center gap-2 text-white
       `}
     >
-      <div className="text-4xl">{device.emoji || getDeviceEmoji(device.type)}</div>
+      <div className="text-4xl">{resolveDeviceEmoji(device, device.type)}</div>
       <div className="text-sm font-bold text-center px-2">{device.name}</div>
     </button>
   );

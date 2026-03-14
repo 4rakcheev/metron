@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { formatMinutes } from '../utils/timeFormat';
+import { resolveDeviceEmoji } from '../utils/deviceEmoji';
 import type { Session, Device } from '../api/types';
 
 interface ActiveSessionProps {
@@ -27,18 +28,6 @@ export function ActiveSession({ session, device, onStop, onExtend, loading }: Ac
     return () => clearInterval(interval);
   }, [session.remaining_minutes]);
 
-  // Get device emoji based on type
-  const getDeviceEmoji = (type: string): string => {
-    const emojiMap: Record<string, string> = {
-      tv: '📺',
-      ipad: '📱',
-      ps5: '🎮',
-      xbox: '🎮',
-      computer: '💻',
-    };
-    return emojiMap[type.toLowerCase()] || '🖥️';
-  };
-
   const extendOptions = [5, 15, 30, 60];
 
   const handleExtend = (minutes: number) => {
@@ -52,7 +41,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading }: Ac
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="text-5xl">{device?.emoji || getDeviceEmoji(session.device_type)}</div>
+            <div className="text-5xl">{resolveDeviceEmoji(device, session.device_type)}</div>
             <div>
               <div className="text-sm opacity-90">Currently playing on</div>
               <div className="text-2xl font-bold">{device?.name || session.device_id}</div>
