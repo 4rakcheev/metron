@@ -53,6 +53,7 @@ go test ./internal/core -v  # Run specific package tests
 | `internal/devices` | DeviceDriver interface definition |
 | `internal/drivers/aqara` | Aqara Cloud API driver with token management (push-based) |
 | `internal/drivers/passive` | No-op driver for agent-controlled devices (pull-based) |
+| `internal/drivers/notify` | Notify driver: Telegram notifications for manual-enforcement devices (e.g., Family Link) |
 | `internal/winagent` | Windows agent: enforcer, HTTP client, platform operations |
 | `internal/api` | REST API: handlers, middleware (auth, agent_auth, requestid, recovery) |
 | `internal/bot` | Telegram bot: flows, buttons, message formatting |

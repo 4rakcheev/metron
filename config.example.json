@@ -58,6 +58,17 @@
       "parameters": {
         "agent_token": "your-agent-secret-token-here"
       }
+    },
+    {
+      "id": "phone1",
+      "name": "Android Phone",
+      "type": "phone",
+      "emoji": "📱",
+      "driver": "notify",
+      "parameters": {
+        "app_url": "https://familylink.google.com",
+        "app_name": "Family Link"
+      }
     }
   ],
   "aqara": {
@@ -70,6 +81,10 @@
       "tv_warning": "default-scene-id-for-warning",
       "tv_power_off": "default-scene-id-for-power-off"
     }
+  },
+  "notify": {
+    "telegram_token": "your-bot-token",
+    "chat_ids": [123456789]
   },
   "kidslox": {
     "base_url": "https://admin.kdlparentalcontrol.com",

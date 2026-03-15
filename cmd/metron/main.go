@@ -18,6 +18,7 @@ import (
 	"metron/internal/drivers"
 	"metron/internal/drivers/aqara"
 	"metron/internal/drivers/kidslox"
+	"metron/internal/drivers/notify"
 	"metron/internal/drivers/passive"
 	"metron/internal/logging"
 	"metron/internal/scheduler"
@@ -207,6 +208,20 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		kidsloxDriver := kidslox.NewDriver(kidsloxConfig, deviceRegistry, kidsloxLogger)
 		if err := driverRegistry.Register(kidsloxDriver); err != nil {
 			return fmt.Errorf("failed to register kidslox driver: %w", err)
+		}
+	}
+
+	// Register notify driver if configured (for manual-enforcement devices like Family Link)
+	if cfg.Notify != nil {
+		mainLogger.Info("Registering notify driver")
+		notifyConfig := notify.Config{
+			TelegramToken: cfg.Notify.TelegramToken,
+			ChatIDs:       cfg.Notify.ChatIDs,
+		}
+		notifyLogger := logger.With("component", "driver.notify")
+		notifyDriver := notify.NewDriver(notifyConfig, db, deviceRegistry, notifyLogger)
+		if err := driverRegistry.Register(notifyDriver); err != nil {
+			return fmt.Errorf("failed to register notify driver: %w", err)
 		}
 	}
 

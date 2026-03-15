@@ -23,6 +23,7 @@ type Config struct {
 	Devices   []DeviceConfig   `json:"devices"`  // Global device registry
 	Aqara     AqaraConfig      `json:"aqara"`
 	Kidslox   *KidsloxConfig   `json:"kidslox,omitempty"`
+	Notify    *NotifyConfig    `json:"notify,omitempty"`
 	Downtime  *DowntimeConfig  `json:"downtime,omitempty"`
 	MovieTime *MovieTimeConfig `json:"movie_time,omitempty"`
 }
@@ -87,6 +88,12 @@ type KidsloxConfig struct {
 	// Default device parameters (can be overridden by device-specific parameters)
 	DeviceID  string `json:"device_id,omitempty"`  // Default Kidslox device ID
 	ProfileID string `json:"profile_id,omitempty"` // Default Kidslox profile ID
+}
+
+// NotifyConfig contains settings for the notify driver (Telegram notifications for manual enforcement)
+type NotifyConfig struct {
+	TelegramToken string  `json:"telegram_token"`
+	ChatIDs       []int64 `json:"chat_ids"`
 }
 
 // DayScheduleConfig defines start/end times for a day
@@ -345,6 +352,16 @@ func (c *Config) Validate() error {
 
 		if c.Kidslox.BaseURL == "" {
 			c.Kidslox.BaseURL = "https://admin.kdlparentalcontrol.com" // default
+		}
+	}
+
+	// Validate notify config if present
+	if c.Notify != nil {
+		if c.Notify.TelegramToken == "" {
+			return fmt.Errorf("%w: notify telegram_token is required when notify is configured", ErrInvalidConfig)
+		}
+		if len(c.Notify.ChatIDs) == 0 {
+			return fmt.Errorf("%w: notify chat_ids must not be empty when notify is configured", ErrInvalidConfig)
 		}
 	}
 

@@ -37,6 +37,7 @@ docs/api/
 ```
 docs/drivers/
 ├── aqara-tokens.md              # Aqara Cloud API token management guide
+├── notify.md                    # Notify driver for manual-enforcement devices
 └── windows-agent.md             # Windows agent installation and configuration
 ```
 
@@ -95,6 +96,9 @@ deploy/systemd/
 
 **...manage Aqara tokens**
 → [docs/drivers/aqara-tokens.md](drivers/aqara-tokens.md)
+
+**...set up notify driver for Family Link / Screen Time**
+→ [docs/drivers/notify.md](drivers/notify.md)
 
 **...set up Windows agent**
 → [docs/drivers/windows-agent.md](drivers/windows-agent.md)

@@ -24,6 +24,9 @@ metron/
 │   │   │   └── tokens.go  # Aqara-specific models & storage interface
 │   │   ├── passive/       # Passive driver (for agent-controlled devices)
 │   │   │   └── passive.go # No-op driver, agent handles control
+│   │   ├── notify/        # Notify driver (Telegram notifications for manual enforcement)
+│   │   │   ├── notify.go  # Driver implementation
+│   │   │   └── telegram.go # HTTP Telegram sender
 │   │   └── registry.go    # Driver registry
 │   ├── winagent/          # Windows agent implementation
 │   │   ├── config.go      # Agent configuration
@@ -240,6 +243,28 @@ driverRegistry.Register(passiveDriver)
 - Windows computers with the Windows agent
 - Future macOS agent
 - Any device where an agent can run
+
+### Notify Driver (Notification-Based / Manual Enforcement)
+
+The notify driver sends Telegram notifications when sessions start, stop, or warn. It is designed for devices managed by external apps (e.g., Google Family Link) where enforcement is manual -- a parent receives a notification and then grants or revokes time in the external app.
+
+```go
+// cmd/metron/main.go
+notifyDriver := notify.NewDriver(config, db, deviceRegistry, logger)
+driverRegistry.Register(notifyDriver)
+```
+
+**Key Points**:
+- Sends Telegram messages on `StartSession`, `StopSession`, and `ApplyWarning`
+- All notification failures return `nil` -- a session must never fail because Telegram is unavailable
+- Uses `ChildLookup` interface (satisfied by SQLite storage) to resolve child names for display
+- Device parameters `app_url` and `app_name` customize notification text and inline buttons
+- Can reuse the same Telegram bot token as `metron-bot`
+
+**Use Cases**:
+- Android phones/tablets managed by Google Family Link
+- iOS devices managed by Apple Screen Time
+- Any device where enforcement is handled by an external parental control app
 
 ## Windows Agent Architecture
 
