@@ -8,7 +8,6 @@ import { TimeDisplay } from '../components/TimeDisplay';
 import { ActiveSession } from '../components/ActiveSession';
 import { DeviceButton } from '../components/DeviceButton';
 import { DurationPicker } from '../components/DurationPicker';
-import { MovieTimeCard } from '../components/MovieTimeCard';
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -18,12 +17,10 @@ export function HomePage() {
     stats,
     devices,
     sessions,
-    movieTime,
     logout,
     createSession,
     stopSession,
     extendSession,
-    startMovieTime,
   } = useApp();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -83,18 +80,6 @@ export function HomePage() {
       await extendSession(activeSession.id, minutes);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to extend session');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // Handle movie time start
-  const handleStartMovieTime = async (deviceId: string) => {
-    try {
-      setActionLoading(true);
-      await startMovieTime(deviceId);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to start movie time');
     } finally {
       setActionLoading(false);
     }
@@ -197,21 +182,6 @@ export function HomePage() {
                 You've used all your screen time for today. Come back tomorrow!
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Weekend Movie Time (or bypass mode) */}
-        {movieTime && (movieTime.is_weekend || movieTime.is_bypass_active) && !activeSession && (
-          <div>
-            <h2 className="text-xl font-bold text-gray-800 mb-4">
-              🎬 Movie Time
-            </h2>
-            <MovieTimeCard
-              movieTime={movieTime}
-              devices={devices.filter(d => movieTime.allowed_devices.includes(d.id))}
-              onStart={handleStartMovieTime}
-              loading={actionLoading}
-            />
           </div>
         )}
 

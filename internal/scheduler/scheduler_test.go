@@ -16,18 +16,16 @@ import (
 // Mock implementations
 
 type mockStorage struct {
-	sessions       map[string]*core.Session
-	children       map[string]*core.Child
-	dailyUsage     map[string]int
-	movieTimeUsage map[string]*core.MovieTimeUsage // keyed by date
+	sessions   map[string]*core.Session
+	children   map[string]*core.Child
+	dailyUsage map[string]int
 }
 
 func newMockStorage() *mockStorage {
 	return &mockStorage{
-		sessions:       make(map[string]*core.Session),
-		children:       make(map[string]*core.Child),
-		dailyUsage:     make(map[string]int),
-		movieTimeUsage: make(map[string]*core.MovieTimeUsage),
+		sessions:   make(map[string]*core.Session),
+		children:   make(map[string]*core.Child),
+		dailyUsage: make(map[string]int),
 	}
 }
 
@@ -78,20 +76,6 @@ func (m *mockStorage) IncrementSessionCount(ctx context.Context, childID string,
 	return nil
 }
 
-func (m *mockStorage) GetMovieTimeUsage(ctx context.Context, date time.Time) (*core.MovieTimeUsage, error) {
-	key := date.Format("2006-01-02")
-	if usage, ok := m.movieTimeUsage[key]; ok {
-		return usage, nil
-	}
-	return nil, nil
-}
-
-func (m *mockStorage) SaveMovieTimeUsage(ctx context.Context, usage *core.MovieTimeUsage) error {
-	key := usage.Date.Format("2006-01-02")
-	m.movieTimeUsage[key] = usage
-	return nil
-}
-
 func (m *mockStorage) addSession(session *core.Session) {
 	m.sessions[session.ID] = session
 }
@@ -101,10 +85,10 @@ func (m *mockStorage) addChild(child *core.Child) {
 }
 
 type mockDriver struct {
-	stopCalls    []string
-	warnCalls    []string
-	failStop     bool
-	failWarn     bool
+	stopCalls []string
+	warnCalls []string
+	failStop  bool
+	failWarn  bool
 }
 
 func newMockDriver() *mockDriver {
@@ -336,7 +320,7 @@ func TestScheduler_ProcessSession_BreakRule(t *testing.T) {
 		WeekdayLimit: 60,
 		WeekendLimit: 120,
 		BreakRule: &core.BreakRule{
-			BreakAfterMinutes:   30,
+			BreakAfterMinutes:    30,
 			BreakDurationMinutes: 10,
 		},
 	}

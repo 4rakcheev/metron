@@ -20,7 +20,6 @@ type ChildHandler struct {
 	deviceRegistry *devices.Registry
 	sessionManager *middleware.SessionManager
 	downtime       *core.DowntimeService
-	movieTime      *core.MovieTimeService
 	logger         *slog.Logger
 }
 
@@ -31,7 +30,6 @@ func NewChildHandler(
 	deviceRegistry *devices.Registry,
 	sessionManager *middleware.SessionManager,
 	downtime *core.DowntimeService,
-	movieTime *core.MovieTimeService,
 	logger *slog.Logger,
 ) *ChildHandler {
 	return &ChildHandler{
@@ -40,7 +38,6 @@ func NewChildHandler(
 		deviceRegistry: deviceRegistry,
 		sessionManager: sessionManager,
 		downtime:       downtime,
-		movieTime:      movieTime,
 		logger:         logger,
 	}
 }
@@ -373,7 +370,7 @@ func (h *ChildHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	// Session only for this child (shared sessions are handled via MovieTime feature)
+	// Session only for this child
 	childIDs := []string{childID}
 
 	// Start session
@@ -563,109 +560,5 @@ func (h *ChildHandler) ExtendSession(c *gin.Context) {
 		"start_time":        extendedSession.StartTime.Format("2006-01-02T15:04:05Z07:00"),
 		"remaining_minutes": extendedSession.CalculateRemainingMinutes(),
 		"status":            string(extendedSession.Status),
-	})
-}
-
-// GetMovieTimeAvailability returns the current movie time availability status
-// GET /child/movie-time (PROTECTED)
-func (h *ChildHandler) GetMovieTimeAvailability(c *gin.Context) {
-	// Check if movie time feature is enabled
-	if h.movieTime == nil || !h.movieTime.IsEnabled() {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Movie time feature is not enabled",
-			"code":  "MOVIE_TIME_DISABLED",
-		})
-		return
-	}
-
-	availability, err := h.movieTime.GetAvailability(c.Request.Context())
-	if err != nil {
-		h.logger.Error("Failed to get movie time availability",
-			"error", err,
-		)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to retrieve movie time availability",
-			"code":  "INTERNAL_ERROR",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, availability)
-}
-
-// StartMovieTime starts a new movie time session
-// POST /child/movie-time (PROTECTED)
-func (h *ChildHandler) StartMovieTime(c *gin.Context) {
-	childID, _ := middleware.GetChildID(c)
-
-	// Check if movie time feature is enabled
-	if h.movieTime == nil || !h.movieTime.IsEnabled() {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "Movie time feature is not enabled",
-			"code":  "MOVIE_TIME_DISABLED",
-		})
-		return
-	}
-
-	var req struct {
-		DeviceID string `json:"device_id" binding:"required"`
-	}
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   "Invalid request body",
-			"code":    "INVALID_REQUEST",
-			"details": err.Error(),
-		})
-		return
-	}
-
-	session, err := h.movieTime.StartMovieTime(c.Request.Context(), req.DeviceID, childID)
-	if err != nil {
-		h.logger.Error("Failed to start movie time",
-			"child_id", childID,
-			"device_id", req.DeviceID,
-			"error", err,
-		)
-
-		// Map error to appropriate response
-		switch err {
-		case core.ErrNotWeekend:
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Movie time is only available on weekends",
-				"code":  "NOT_WEEKEND",
-			})
-		case core.ErrMovieTimeAlreadyUsed:
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Movie time already used today",
-				"code":  "ALREADY_USED",
-			})
-		case core.ErrBreakNotMet:
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Break period after last session not yet completed",
-				"code":  "BREAK_NOT_MET",
-			})
-		case core.ErrInvalidMovieDevice:
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Device is not allowed for movie time",
-				"code":  "INVALID_DEVICE",
-			})
-		default:
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": err.Error(),
-				"code":  "MOVIE_TIME_START_FAILED",
-			})
-		}
-		return
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"id":                session.ID,
-		"device_id":         session.DeviceID,
-		"device_type":       session.DeviceType,
-		"start_time":        session.StartTime.Format("2006-01-02T15:04:05Z07:00"),
-		"remaining_minutes": session.CalculateRemainingMinutes(),
-		"status":            string(session.Status),
-		"is_movie_session":  session.IsMovieSession,
 	})
 }

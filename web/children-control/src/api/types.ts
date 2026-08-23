@@ -60,22 +60,3 @@ export interface APIError {
   code: string;
   details?: string;
 }
-
-export interface MovieTimeAvailability {
-  is_weekend: boolean;
-  is_bypass_active: boolean;
-  bypass_reason?: string;
-  is_available: boolean;
-  is_used_today: boolean;
-  break_required: boolean;
-  break_minutes_left: number;
-  last_session_end?: string;
-  can_start: boolean;
-  reason?: string;
-  allowed_devices: string[];
-  duration_minutes: number;
-}
-
-export interface StartMovieTimeRequest {
-  device_id: string;
-}
