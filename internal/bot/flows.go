@@ -804,6 +804,16 @@ func (b *Bot) handleSessionsMenu(ctx context.Context, message *tgbotapi.Message)
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
+// lockdownActive checks the global lockdown state, treating errors as "not locked"
+func (b *Bot) lockdownActive(ctx context.Context) bool {
+	status, err := b.client.GetLockdownStatus(ctx)
+	if err != nil {
+		b.logger.Warn("Failed to check lockdown status", "error", err)
+		return false
+	}
+	return status.Enabled
+}
+
 // handleMoreMenu shows the additional features submenu
 func (b *Bot) handleMoreMenu(ctx context.Context, message *tgbotapi.Message) error {
 	// Check if downtime is already skipped today
@@ -813,21 +823,115 @@ func (b *Bot) handleMoreMenu(ctx context.Context, message *tgbotapi.Message) err
 		skipActive = false
 	}
 
+	lockdownOn := b.lockdownActive(ctx)
+
 	text := `⚙️ *Additional Features*
 
 • 🌙 Skip Downtime - Temporarily skip downtime for all children
+• 🔒 Lockdown - Block all sessions until manually unlocked
 • 🔓 Bypass Mode - Disable enforcement for specific devices`
 
-	keyboard := BuildMoreMenuButtons(skipActive)
+	if lockdownOn {
+		text = "🔒 *LOCKDOWN ACTIVE* - all sessions are blocked\n\n" + text
+	}
+
+	keyboard := BuildMoreMenuButtons(skipActive, lockdownOn)
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// handleLockdownFlow handles the lockdown toggle flow (confirm, then apply)
+func (b *Bot) handleLockdownFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	switch data.Step {
+	case 1:
+		return b.lockdownToggle(ctx, message, data)
+	default:
+		return b.lockdownConfirm(ctx, message)
+	}
+}
+
+// lockdownConfirm shows the confirmation screen before toggling lockdown.
+// The direction is decided here, from an error-checked read, and travels
+// inside the confirm button's callback data - never re-derived at apply time.
+func (b *Bot) lockdownConfirm(ctx context.Context, message *tgbotapi.Message) error {
+	status, err := b.client.GetLockdownStatus(ctx)
+	if err != nil {
+		b.logger.Error("Failed to get lockdown status", "error", err)
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
+					MarshalCallback(CallbackData{Action: "more_menu"})),
+			),
+		)
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), keyboard)
+	}
+
+	var text string
+	if status.Enabled {
+		text = `🔓 *Disable Lockdown?*
+
+Children will be able to start sessions again using their remaining time.`
+	} else {
+		text = `🔒 *Enable Lockdown?*
+
+This will *STOP all active sessions* and block ALL new sessions (child app, bot, API) until you manually unlock.
+
+Time quotas are kept - remaining minutes stay available after unlock.`
+	}
+
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildLockdownConfirmButtons(!status.Enabled))
+}
+
+// lockdownToggle applies the lockdown toggle after confirmation.
+// The direction comes from the callback data set by lockdownConfirm.
+func (b *Bot) lockdownToggle(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	skipActive, _ := b.client.IsDowntimeSkippedToday(ctx)
+
+	switch data.SubAction {
+	case "off":
+		if err := b.client.DisableLockdown(ctx); err != nil {
+			b.logger.Error("Failed to disable lockdown", "error", err)
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(skipActive, true))
+		}
+		text := `🔓 *Lockdown Disabled*
+
+Sessions can be started again.`
+		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(skipActive, false))
+
+	case "on":
+		result, err := b.client.EnableLockdown(ctx)
+		if err != nil {
+			b.logger.Error("Failed to enable lockdown", "error", err)
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(skipActive, b.lockdownActive(ctx)))
+		}
+
+		text := fmt.Sprintf(`🔒 *Lockdown Enabled*
+
+Stopped %d active session(s).
+
+All new sessions are blocked until you unlock. Time quotas are kept.`, result.StoppedSessions)
+		if result.FailedSessions > 0 {
+			text = fmt.Sprintf(`🔒 *Lockdown Enabled*
+
+Stopped %d active session(s), but %d could not be stopped - they will be ended automatically within a minute.
+
+All new sessions are blocked until you unlock. Time quotas are kept.`, result.StoppedSessions, result.FailedSessions)
+		}
+		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(skipActive, true))
+
+	default:
+		// Stale or malformed callback - show the confirmation screen again
+		return b.lockdownConfirm(ctx, message)
+	}
 }
 
 // handleSkipDowntime handles the skip downtime today action
 func (b *Bot) handleSkipDowntime(ctx context.Context, message *tgbotapi.Message) error {
+	lockdownOn := b.lockdownActive(ctx)
+
 	// Check if already skipped
 	alreadySkipped, err := b.client.IsDowntimeSkippedToday(ctx)
 	if err != nil {
-		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false))
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false, lockdownOn))
 	}
 
 	if alreadySkipped {
@@ -835,12 +939,12 @@ func (b *Bot) handleSkipDowntime(ctx context.Context, message *tgbotapi.Message)
 
 Downtime is already skipped for today.
 It will resume automatically tomorrow.`
-		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true))
+		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true, lockdownOn))
 	}
 
 	// Skip downtime for today
 	if err := b.client.SkipDowntimeToday(ctx); err != nil {
-		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false))
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false, lockdownOn))
 	}
 
 	text := `✅ *Downtime Skipped for Today!*
@@ -849,7 +953,7 @@ All children can now use screen time without downtime restrictions until midnigh
 
 Downtime will automatically resume tomorrow.`
 
-	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true))
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true, lockdownOn))
 }
 
 // handleStopAll stops all active sessions

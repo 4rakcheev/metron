@@ -84,6 +84,18 @@ type DowntimeSkipStorage interface {
 
 The SQLite storage implements this interface, and the `DowntimeService` receives it via `SetSkipStorage()`.
 
+**Example: Lockdown Storage**
+
+```go
+// internal/core/lockdown.go
+type LockdownStorage interface {
+    GetLockdown(ctx context.Context) (*LockdownState, error)
+    SetLockdown(ctx context.Context, enabled bool, enabledBy string) error
+}
+```
+
+The global lockdown flag (see `docs/features/lockdown.md`) blocks all session creation/extension until manually disabled. The SQLite storage implements this interface; `SessionManager` and the scheduler receive it via `SetLockdownStorage()`.
+
 ### Driver-Specific Storage
 
 Each driver defines its own storage interface for driver-specific data:

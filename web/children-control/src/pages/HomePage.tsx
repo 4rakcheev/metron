@@ -95,6 +95,7 @@ export function HomePage() {
 
   const hasNoTime = stats.remaining_minutes === 0;
   const isInDowntime = stats.downtime_enabled && stats.in_downtime;
+  const isLockdown = !!stats.lockdown;
 
   return (
     <div className="min-h-screen pb-8">
@@ -117,8 +118,26 @@ export function HomePage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8 space-y-8">
+        {/* Lockdown Notice - Show first when lockdown is active */}
+        {isLockdown && (
+          <div className="card" style={{
+            background: 'linear-gradient(135deg, #f87171 0%, #dc2626 100%)',
+            border: '3px solid #ef4444'
+          }}>
+            <div className="text-center py-10 px-6">
+              <div className="text-7xl mb-4">🔒</div>
+              <div className="text-3xl font-black mb-3 text-white">
+                Screen time is locked
+              </div>
+              <div className="text-lg font-semibold text-white max-w-md mx-auto">
+                Your parents have locked screen time. No sessions can be started right now. Your remaining time is saved.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Downtime Notice - Show first when in downtime */}
-        {stats.downtime_enabled && stats.in_downtime && !activeSession && (
+        {!isLockdown && stats.downtime_enabled && stats.in_downtime && !activeSession && (
           <div className="card" style={{
             background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
             border: '3px solid #9f7aea'
@@ -166,12 +185,13 @@ export function HomePage() {
               onStop={handleStopSession}
               onExtend={handleExtendSession}
               loading={actionLoading}
+              lockdown={isLockdown}
             />
           </div>
         )}
 
         {/* No Time Message */}
-        {hasNoTime && !activeSession && (
+        {hasNoTime && !activeSession && !isLockdown && (
           <div className="card bg-yellow-50 border-2 border-yellow-200">
             <div className="text-center py-8">
               <div className="text-6xl mb-4">⏰</div>
@@ -185,8 +205,8 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Device Selection (only if no active session, has time, and not in downtime) */}
-        {!activeSession && !hasNoTime && !isInDowntime && (
+        {/* Device Selection (only if no active session, has time, not in downtime, and not locked) */}
+        {!activeSession && !hasNoTime && !isInDowntime && !isLockdown && (
           <div>
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               📱 Choose a device
@@ -206,8 +226,8 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Duration Selection (only if device selected and not in downtime) */}
-        {!activeSession && !hasNoTime && !isInDowntime && selectedDeviceId && (
+        {/* Duration Selection (only if device selected, not in downtime, and not locked) */}
+        {!activeSession && !hasNoTime && !isInDowntime && !isLockdown && selectedDeviceId && (
           <div className="card bg-gradient-to-br from-purple-50 to-pink-50">
             <DurationPicker
               onSelect={handleCreateSession}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"metron/internal/core"
 	"metron/internal/storage"
@@ -159,6 +160,14 @@ func (h *SessionsHandler) CreateSession(c *gin.Context) {
 			return
 		}
 
+		if errors.Is(err, core.ErrLockdownActive) {
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "Lockdown is active - all sessions are blocked until manually unlocked",
+				"code":  "LOCKDOWN_ACTIVE",
+			})
+			return
+		}
+
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 			"code":  "SESSION_CREATE_FAILED",
@@ -250,6 +259,14 @@ func (h *SessionsHandler) UpdateSession(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{
 					"error": err.Error(),
 					"code":  "INSUFFICIENT_TIME",
+				})
+				return
+			}
+
+			if errors.Is(err, core.ErrLockdownActive) {
+				c.JSON(http.StatusConflict, gin.H{
+					"error": "Lockdown is active - all sessions are blocked until manually unlocked",
+					"code":  "LOCKDOWN_ACTIVE",
 				})
 				return
 			}

@@ -289,6 +289,47 @@ func (a *MetronAPI) IsDowntimeSkippedToday(ctx context.Context) (bool, error) {
 	return status.SkippedToday, nil
 }
 
+// LockdownStatus represents the global lockdown state
+type LockdownStatus struct {
+	Enabled   bool    `json:"enabled"`
+	EnabledAt *string `json:"enabled_at"`
+	EnabledBy *string `json:"enabled_by"`
+}
+
+// GetLockdownStatus returns the current global lockdown state
+func (a *MetronAPI) GetLockdownStatus(ctx context.Context) (*LockdownStatus, error) {
+	var status LockdownStatus
+	if err := a.doRequest(ctx, "GET", "/v1/lockdown", nil, &status); err != nil {
+		return nil, err
+	}
+	return &status, nil
+}
+
+// EnableLockdownResult reports the outcome of enabling lockdown
+type EnableLockdownResult struct {
+	Enabled         bool `json:"enabled"`
+	StoppedSessions int  `json:"stopped_sessions"`
+	FailedSessions  int  `json:"failed_sessions"`
+}
+
+// EnableLockdown enables the global lockdown, stopping all active sessions
+func (a *MetronAPI) EnableLockdown(ctx context.Context) (*EnableLockdownResult, error) {
+	req := struct {
+		EnabledBy string `json:"enabled_by"`
+	}{EnabledBy: "telegram"}
+
+	var resp EnableLockdownResult
+	if err := a.doRequest(ctx, "POST", "/v1/lockdown/enable", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// DisableLockdown disables the global lockdown
+func (a *MetronAPI) DisableLockdown(ctx context.Context) error {
+	return a.doRequest(ctx, "POST", "/v1/lockdown/disable", nil, nil)
+}
+
 // DeviceBypass represents a device bypass status
 type DeviceBypass struct {
 	DeviceID  string  `json:"device_id"`

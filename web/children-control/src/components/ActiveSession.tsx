@@ -11,9 +11,10 @@ interface ActiveSessionProps {
   onStop: () => void;
   onExtend: (minutes: number) => void;
   loading?: boolean;
+  lockdown?: boolean;
 }
 
-export function ActiveSession({ session, device, onStop, onExtend, loading }: ActiveSessionProps) {
+export function ActiveSession({ session, device, onStop, onExtend, loading, lockdown }: ActiveSessionProps) {
   const [localRemaining, setLocalRemaining] = useState(session.remaining_minutes);
   const [showExtendOptions, setShowExtendOptions] = useState(false);
 
@@ -55,16 +56,18 @@ export function ActiveSession({ session, device, onStop, onExtend, loading }: Ac
           <div className="text-base font-semibold opacity-95">remaining</div>
         </div>
 
-        {/* Action buttons */}
-        {!showExtendOptions ? (
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => setShowExtendOptions(true)}
-              disabled={loading}
-              className="bg-white/20 backdrop-blur-sm text-white font-bold py-4 px-6 rounded-2xl border-2 border-white/30 shadow-lg transform transition hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
-            >
-              ⏱️ Extend
-            </button>
+        {/* Action buttons (extending is blocked during lockdown, stopping stays available) */}
+        {!showExtendOptions || lockdown ? (
+          <div className={`grid ${lockdown ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+            {!lockdown && (
+              <button
+                onClick={() => setShowExtendOptions(true)}
+                disabled={loading}
+                className="bg-white/20 backdrop-blur-sm text-white font-bold py-4 px-6 rounded-2xl border-2 border-white/30 shadow-lg transform transition hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+              >
+                ⏱️ Extend
+              </button>
+            )}
             <button
               onClick={onStop}
               disabled={loading}

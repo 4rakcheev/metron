@@ -22,6 +22,7 @@ type RouterConfig struct {
 	DeviceRegistry      *devices.Registry
 	Downtime            *core.DowntimeService
 	DowntimeSkipStorage core.DowntimeSkipStorage // For skip downtime feature
+	LockdownStorage     core.LockdownStorage     // For global lockdown feature
 	APIKey              string
 	Logger              *slog.Logger
 	AqaraTokenStorage   aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
@@ -135,6 +136,18 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			v1.POST("/downtime/skip-today", downtimeHandler.SkipDowntimeToday)
 			v1.GET("/downtime/skip-status", downtimeHandler.GetSkipStatus)
 		}
+
+		// Lockdown endpoints (only register if lockdown storage is configured)
+		if config.LockdownStorage != nil {
+			lockdownHandler := handlers.NewLockdownHandler(
+				config.LockdownStorage,
+				config.Manager,
+				config.Logger,
+			)
+			v1.GET("/lockdown", lockdownHandler.GetLockdown)
+			v1.POST("/lockdown/enable", lockdownHandler.EnableLockdown)
+			v1.POST("/lockdown/disable", lockdownHandler.DisableLockdown)
+		}
 	}
 
 	// Child API routes (for child-facing web app)
@@ -148,6 +161,7 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			config.DeviceRegistry,
 			sessionManager,
 			config.Downtime,
+			config.LockdownStorage,
 			config.Logger,
 		)
 

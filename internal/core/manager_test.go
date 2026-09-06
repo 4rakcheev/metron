@@ -764,3 +764,128 @@ func TestSessionManager_MultipleChildren(t *testing.T) {
 	assert.GreaterOrEqual(t, usage2.MinutesUsed, 20)
 	assert.Equal(t, usage1.MinutesUsed, usage2.MinutesUsed)
 }
+
+// mockLockdownStorage implements LockdownStorage for tests
+type mockLockdownStorage struct {
+	enabled bool
+	err     error
+}
+
+func (m *mockLockdownStorage) GetLockdown(ctx context.Context) (*LockdownState, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &LockdownState{Enabled: m.enabled}, nil
+}
+
+func (m *mockLockdownStorage) SetLockdown(ctx context.Context, enabled bool, enabledBy string) error {
+	m.enabled = enabled
+	return nil
+}
+
+func setupLockdownTestManager(t *testing.T) (*SessionManager, *mockStorage) {
+	t.Helper()
+	storage := newMockStorage()
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := newMockDriverRegistry()
+	manager := NewSessionManager(storage, deviceRegistry, driverRegistry, nil, nil, nil, nil)
+
+	child := &Child{
+		ID:           "child1",
+		Name:         "Alice",
+		WeekdayLimit: 60,
+		WeekendLimit: 120,
+	}
+	storage.CreateChild(context.Background(), child)
+
+	driver := &mockDriver{name: "aqara"}
+	driverRegistry.addDriver(driver)
+	device := &mockDevice{id: "tv1", name: "TV", dtype: "tv", driver: "aqara"}
+	deviceRegistry.addDevice(device)
+
+	return manager, storage
+}
+
+func TestSessionManager_StartSession_BlockedByLockdown(t *testing.T) {
+	manager, _ := setupLockdownTestManager(t)
+	manager.SetLockdownStorage(&mockLockdownStorage{enabled: true})
+
+	_, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 30)
+	assert.ErrorIs(t, err, ErrLockdownActive)
+}
+
+// Guards against the lockdown check ever being moved below the parent_override
+// branch in StartSession - lockdown must be absolute, with no override.
+func TestSessionManager_StartSession_LockdownIgnoresParentOverride(t *testing.T) {
+	manager, _ := setupLockdownTestManager(t)
+	manager.SetLockdownStorage(&mockLockdownStorage{enabled: true})
+
+	ctx := context.WithValue(context.Background(), "parent_override", true) //nolint:staticcheck // matches production key
+	_, err := manager.StartSession(ctx, "tv1", []string{"child1"}, 30)
+	assert.ErrorIs(t, err, ErrLockdownActive)
+}
+
+func TestSessionManager_ExtendSession_BlockedByLockdown(t *testing.T) {
+	manager, _ := setupLockdownTestManager(t)
+	lockdown := &mockLockdownStorage{}
+	manager.SetLockdownStorage(lockdown)
+
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 20)
+	require.NoError(t, err)
+
+	lockdown.enabled = true
+	_, err = manager.ExtendSession(context.Background(), session.ID, 10)
+	assert.ErrorIs(t, err, ErrLockdownActive)
+}
+
+func TestSessionManager_StartSession_LockdownDisabled(t *testing.T) {
+	manager, _ := setupLockdownTestManager(t)
+	manager.SetLockdownStorage(&mockLockdownStorage{enabled: false})
+
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 30)
+	require.NoError(t, err)
+	assert.NotNil(t, session)
+}
+
+func TestSessionManager_StartSession_LockdownStorageErrorFailsOpen(t *testing.T) {
+	manager, _ := setupLockdownTestManager(t)
+	manager.SetLockdownStorage(&mockLockdownStorage{err: errors.New("db error")})
+
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 30)
+	require.NoError(t, err)
+	assert.NotNil(t, session)
+}
+
+// Guards the invariant EnableLockdown depends on: the enable handler sets the
+// flag FIRST and then stops active sessions - StopSession must never check lockdown,
+// otherwise enabling would deadlock (cannot stop, cannot start).
+func TestSessionManager_StopSession_NotBlockedByLockdown(t *testing.T) {
+	manager, _ := setupLockdownTestManager(t)
+	lockdown := &mockLockdownStorage{}
+	manager.SetLockdownStorage(lockdown)
+
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 30)
+	require.NoError(t, err)
+
+	lockdown.enabled = true
+	err = manager.StopSession(context.Background(), session.ID)
+	require.NoError(t, err)
+
+	stopped, err := manager.GetSession(context.Background(), session.ID)
+	require.NoError(t, err)
+	assert.Equal(t, SessionStatusCompleted, stopped.Status)
+}
+
+func TestSessionManager_ExtendSession_LockdownStorageErrorFailsOpen(t *testing.T) {
+	manager, _ := setupLockdownTestManager(t)
+	lockdown := &mockLockdownStorage{}
+	manager.SetLockdownStorage(lockdown)
+
+	session, err := manager.StartSession(context.Background(), "tv1", []string{"child1"}, 20)
+	require.NoError(t, err)
+
+	lockdown.err = errors.New("db error")
+	extended, err := manager.ExtendSession(context.Background(), session.ID, 10)
+	require.NoError(t, err)
+	assert.Equal(t, 30, extended.ExpectedDuration)
+}

@@ -216,6 +216,8 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		return b.handleMoreMenu(ctx, callback.Message)
 	case "skip_downtime":
 		return b.handleSkipDowntime(ctx, callback.Message)
+	case "lockdown":
+		return b.handleLockdownFlow(ctx, callback.Message, data)
 	case "stop_all":
 		return b.handleStopAll(ctx, callback.Message)
 	case "main_menu":

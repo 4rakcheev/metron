@@ -87,7 +87,7 @@ Primary management interface for parents. Uses webhooks for real-time updates wi
 - `/children` - List all children with their limits
 - `/devices` - List available devices
 
-**Key features:** whitelist security (only authorized Telegram users), real-time usage stats, session management, bypass mode control.
+**Key features:** whitelist security (only authorized Telegram users), real-time usage stats, session management, bypass mode control, global lockdown (block all sessions until manual unlock, see `docs/features/lockdown.md`).
 
 ### Child UI: React PWA (`web/children-control`)
 

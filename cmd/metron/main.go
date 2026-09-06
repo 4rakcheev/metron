@@ -334,6 +334,8 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	// Initialize session manager
 	mainLogger.Info("Initializing session manager")
 	baseManager := core.NewSessionManager(db, &coreDeviceRegistry{deviceRegistry}, &coreDriverRegistry{driverRegistry}, calculator, downtimeService, timezone, managerLogger)
+	// Wire up lockdown storage (SQLite storage also implements core.LockdownStorage)
+	baseManager.SetLockdownStorage(db)
 
 	// Wrap session manager with logging decorator
 	sessionManager := logging.NewSessionManagerLogger(baseManager, logger)
@@ -341,6 +343,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	// Start scheduler
 	mainLogger.Info("Starting session scheduler", "interval", "1m")
 	sched := scheduler.NewScheduler(db, &schedulerDeviceRegistry{deviceRegistry}, &schedulerDriverRegistry{driverRegistry}, downtimeService, 1*time.Minute, timezone, schedulerLogger)
+	sched.SetLockdownStorage(db)
 	go sched.Start()
 
 	// Initialize REST API with Gin
@@ -352,6 +355,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		DeviceRegistry:      deviceRegistry,
 		Downtime:            downtimeService,
 		DowntimeSkipStorage: db, // SQLite storage also implements core.DowntimeSkipStorage
+		LockdownStorage:     db, // SQLite storage also implements core.LockdownStorage
 		APIKey:              cfg.Security.APIKey,
 		Logger:              apiLogger,
 		AqaraTokenStorage:   db,          // SQLite storage also implements aqara.AqaraTokenStorage

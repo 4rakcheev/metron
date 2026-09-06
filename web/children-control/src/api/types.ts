@@ -22,6 +22,7 @@ export interface TodayStats {
   downtime_enabled: boolean;
   in_downtime: boolean;
   downtime_end?: string;
+  lockdown?: boolean;
 }
 
 export interface Device {

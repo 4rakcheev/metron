@@ -357,7 +357,12 @@ func FormatFineApplied(childName, childEmoji string, response *DeductFineRespons
 
 // FormatError formats an error message
 func FormatError(err error) string {
-	return fmt.Sprintf("❌ *Error*\n\n%s", err.Error())
+	// Escape Markdown control characters: an unbalanced _ or * in an error
+	// message (e.g. error codes like LOCKDOWN_ACTIVE) makes Telegram reject
+	// the whole message with a parse error, so the user would see nothing.
+	msg := err.Error()
+	replacer := strings.NewReplacer("_", "\\_", "*", "\\*", "`", "\\`", "[", "\\[")
+	return fmt.Sprintf("❌ *Error*\n\n%s", replacer.Replace(msg))
 }
 
 // calculateSessionEnd calculates when a session will end and how many minutes remain

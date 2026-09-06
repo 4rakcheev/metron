@@ -63,6 +63,7 @@ type SessionManager struct {
 	driverRegistry DriverRegistry
 	calculator     *TimeCalculationService
 	downtime       *DowntimeService
+	lockdown       LockdownStorage
 	timezone       *time.Location
 	logger         *slog.Logger
 }
@@ -93,6 +94,26 @@ func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverReg
 	}
 }
 
+// SetLockdownStorage sets the storage for the global lockdown flag.
+// Must be called during wiring, before the manager serves requests.
+func (m *SessionManager) SetLockdownStorage(storage LockdownStorage) {
+	m.lockdown = storage
+}
+
+// isLockdownActive reports whether the global lockdown is enabled.
+// Fails open on storage errors (consistent with skip-downtime handling).
+func (m *SessionManager) isLockdownActive(ctx context.Context) bool {
+	if m.lockdown == nil {
+		return false
+	}
+	state, err := m.lockdown.GetLockdown(ctx)
+	if err != nil {
+		m.logger.Error("Failed to read lockdown state, allowing session", "error", err)
+		return false
+	}
+	return state.Enabled
+}
+
 // StartSession starts a new session for one or more children
 func (m *SessionManager) StartSession(ctx context.Context, deviceID string, childIDs []string, durationMinutes int) (*Session, error) {
 	m.logger.Info("Starting new session",
@@ -113,6 +134,14 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		m.logger.Error("Session start failed: invalid duration",
 			"duration_minutes", durationMinutes)
 		return nil, ErrInvalidDuration
+	}
+
+	// Check global lockdown - blocks everyone, including parent override
+	if m.isLockdownActive(ctx) {
+		m.logger.Warn("Session start blocked by lockdown",
+			"device_id", deviceID,
+			"child_ids", childIDs)
+		return nil, ErrLockdownActive
 	}
 
 	// Look up device from device registry
@@ -378,6 +407,13 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		"session_id", sessionID,
 		"current_duration", session.ExpectedDuration,
 		"elapsed", int(time.Since(session.StartTime).Minutes()))
+
+	// Check global lockdown - extensions are blocked too
+	if m.isLockdownActive(ctx) {
+		m.logger.Warn("Session extension blocked by lockdown",
+			"session_id", sessionID)
+		return nil, ErrLockdownActive
+	}
 
 	// Calculate maximum extension allowed based on children's remaining time
 	// Cap the extension to what's actually available instead of rejecting it

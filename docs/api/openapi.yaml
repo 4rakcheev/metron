@@ -49,6 +49,8 @@ tags:
     description: Administrative endpoints for driver management
   - name: Downtime
     description: Downtime schedule management
+  - name: Lockdown
+    description: Global session lockdown management
   - name: Agent
     description: Agent endpoints for external device agents (Windows agent, etc.)
   - name: Bypass
@@ -429,6 +431,15 @@ paths:
           $ref: '#/components/responses/BadRequestError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '409':
+          description: Lockdown is active - session creation is blocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Lockdown is active - all sessions are blocked until manually unlocked"
+                code: "LOCKDOWN_ACTIVE"
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -505,6 +516,15 @@ paths:
           $ref: '#/components/responses/UnauthorizedError'
         '404':
           $ref: '#/components/responses/SessionNotFoundError'
+        '409':
+          description: Lockdown is active - session extension is blocked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: "Lockdown is active - all sessions are blocked until manually unlocked"
+                code: "LOCKDOWN_ACTIVE"
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -658,6 +678,103 @@ paths:
                   value:
                     skipped_today: false
                     skip_date: null
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/lockdown:
+    get:
+      tags:
+        - Lockdown
+      summary: Get lockdown state
+      description: |
+        Returns the current global lockdown state. When lockdown is enabled,
+        no session can be created or extended by anyone (child UI, bot, API)
+        until it is manually disabled. Daily time quotas are not affected.
+      operationId: getLockdown
+      responses:
+        '200':
+          description: Lockdown state retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LockdownState'
+              examples:
+                enabled:
+                  summary: Lockdown is enabled
+                  value:
+                    enabled: true
+                    enabled_at: "2026-09-06T18:30:00+03:00"
+                    enabled_by: "api"
+                disabled:
+                  summary: Lockdown is disabled
+                  value:
+                    enabled: false
+                    enabled_at: null
+                    enabled_by: null
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/lockdown/enable:
+    post:
+      tags:
+        - Lockdown
+      summary: Enable lockdown
+      description: |
+        Enables the global lockdown: stops all active sessions and blocks
+        creation/extension of any new session until lockdown is manually disabled.
+        Daily time quotas are preserved. Idempotent.
+      operationId: enableLockdown
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled_by:
+                  type: string
+                  description: Free-form audit label of who enabled the lockdown (defaults to "api")
+                  example: "telegram"
+      responses:
+        '200':
+          description: Lockdown enabled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EnableLockdownResponse'
+              example:
+                enabled: true
+                stopped_sessions: 2
+                failed_sessions: 0
+                message: "Lockdown enabled - all sessions are blocked until manually unlocked"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/lockdown/disable:
+    post:
+      tags:
+        - Lockdown
+      summary: Disable lockdown
+      description: |
+        Disables the global lockdown. Sessions can be started again using
+        the remaining daily time.
+      operationId: disableLockdown
+      responses:
+        '200':
+          description: Lockdown disabled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DisableLockdownResponse'
+              example:
+                enabled: false
+                message: "Lockdown disabled - sessions can be started again"
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '500':
@@ -1296,6 +1413,63 @@ components:
           description: The date of the last skip (null if never skipped)
           nullable: true
           example: "2025-12-09"
+
+    LockdownState:
+      type: object
+      required:
+        - enabled
+      properties:
+        enabled:
+          type: boolean
+          description: Whether lockdown is currently enabled
+          example: true
+        enabled_at:
+          type: string
+          format: date-time
+          description: When lockdown was enabled (null when disabled)
+          nullable: true
+          example: "2026-09-06T18:30:00+03:00"
+        enabled_by:
+          type: string
+          description: Who enabled the lockdown (null when disabled)
+          nullable: true
+          example: "api"
+
+    EnableLockdownResponse:
+      type: object
+      required:
+        - enabled
+        - stopped_sessions
+        - failed_sessions
+        - message
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        stopped_sessions:
+          type: integer
+          description: Number of active sessions stopped when enabling lockdown
+          example: 2
+        failed_sessions:
+          type: integer
+          description: Number of active sessions that could not be stopped (the scheduler ends them within a minute)
+          example: 0
+        message:
+          type: string
+          example: "Lockdown enabled - all sessions are blocked until manually unlocked"
+
+    DisableLockdownResponse:
+      type: object
+      required:
+        - enabled
+        - message
+      properties:
+        enabled:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: "Lockdown disabled - sessions can be started again"
 
     TodayStats:
       type: object

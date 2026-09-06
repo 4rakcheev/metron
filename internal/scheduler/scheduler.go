@@ -43,6 +43,7 @@ type Scheduler struct {
 	deviceRegistry DeviceRegistry
 	driverRegistry DriverRegistry
 	downtime       *core.DowntimeService
+	lockdown       core.LockdownStorage
 	interval       time.Duration
 	timezone       *time.Location
 	stopChan       chan struct{}
@@ -67,6 +68,12 @@ func NewScheduler(storage Storage, deviceRegistry DeviceRegistry, driverRegistry
 		stopChan:       make(chan struct{}),
 		logger:         logger,
 	}
+}
+
+// SetLockdownStorage sets the storage for the global lockdown flag.
+// Must be called before Start() - the field is not synchronized.
+func (s *Scheduler) SetLockdownStorage(storage core.LockdownStorage) {
+	s.lockdown = storage
 }
 
 // Start begins the scheduler loop
@@ -119,6 +126,20 @@ func (s *Scheduler) tick() {
 	s.logger.Debug("Scheduler tick",
 		"active_sessions", len(sessions))
 
+	// Safety net: if global lockdown is enabled, end any session that
+	// slipped past the lockdown stop-all (e.g. started during a race)
+	if s.isLockdownActive(ctx) {
+		for _, session := range sessions {
+			s.logger.Warn("Ending session due to lockdown",
+				"session_id", session.ID,
+				"device_id", session.DeviceID)
+			if err := s.endSession(ctx, session); err != nil {
+				s.logger.Error("Failed to end session during lockdown", "session_id", session.ID, "error", err)
+			}
+		}
+		return
+	}
+
 	for _, session := range sessions {
 		s.logger.Debug("Processing session",
 			"session_id", session.ID,
@@ -130,6 +151,20 @@ func (s *Scheduler) tick() {
 			s.logger.Error("Failed to process session", "session_id", session.ID, "error", err)
 		}
 	}
+}
+
+// isLockdownActive reports whether the global lockdown is enabled.
+// Fails open on storage errors so a broken flag never kills sessions.
+func (s *Scheduler) isLockdownActive(ctx context.Context) bool {
+	if s.lockdown == nil {
+		return false
+	}
+	state, err := s.lockdown.GetLockdown(ctx)
+	if err != nil {
+		s.logger.Error("Failed to read lockdown state", "error", err)
+		return false
+	}
+	return state.Enabled
 }
 
 // processSession processes a single session

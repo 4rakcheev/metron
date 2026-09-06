@@ -51,6 +51,9 @@ func (b *Bot) handleToday(ctx context.Context, message *tgbotapi.Message) error 
 	}
 
 	text := FormatTodayStats(stats, sessions, childrenMap)
+	if b.lockdownActive(ctx) {
+		text = "🔒 *LOCKDOWN ACTIVE* - all sessions blocked until unlocked\n\n" + text
+	}
 	return b.sendMessage(message.Chat.ID, text, BuildQuickActionsButtons())
 }
 
@@ -80,6 +83,12 @@ func (b *Bot) handleDevices(ctx context.Context, message *tgbotapi.Message) erro
 
 // handleNewSession handles the /newsession command (step 0)
 func (b *Bot) handleNewSession(ctx context.Context, message *tgbotapi.Message) error {
+	// Short-circuit under lockdown instead of letting the user walk the whole flow into a 409
+	if b.lockdownActive(ctx) {
+		return b.sendMessage(message.Chat.ID,
+			"🔒 *LOCKDOWN ACTIVE*\n\nAll sessions are blocked. Unlock first via ⚙️ More menu.", BuildQuickActionsButtons())
+	}
+
 	// Get children list
 	children, err := b.client.ListChildren(ctx)
 	if err != nil {

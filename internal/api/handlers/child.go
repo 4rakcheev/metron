@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"log/slog"
 	"metron/internal/api/middleware"
 	"metron/internal/core"
@@ -20,6 +21,7 @@ type ChildHandler struct {
 	deviceRegistry *devices.Registry
 	sessionManager *middleware.SessionManager
 	downtime       *core.DowntimeService
+	lockdown       core.LockdownStorage
 	logger         *slog.Logger
 }
 
@@ -30,6 +32,7 @@ func NewChildHandler(
 	deviceRegistry *devices.Registry,
 	sessionManager *middleware.SessionManager,
 	downtime *core.DowntimeService,
+	lockdown core.LockdownStorage,
 	logger *slog.Logger,
 ) *ChildHandler {
 	return &ChildHandler{
@@ -38,6 +41,7 @@ func NewChildHandler(
 		deviceRegistry: deviceRegistry,
 		sessionManager: sessionManager,
 		downtime:       downtime,
+		lockdown:       lockdown,
 		logger:         logger,
 	}
 }
@@ -284,6 +288,17 @@ func (h *ChildHandler) GetToday(c *gin.Context) {
 		response["in_downtime"] = false
 	}
 
+	// Add global lockdown status
+	response["lockdown"] = false
+	if h.lockdown != nil {
+		state, err := h.lockdown.GetLockdown(c.Request.Context())
+		if err != nil {
+			h.logger.Error("Failed to get lockdown state", "error", err)
+		} else {
+			response["lockdown"] = state.Enabled
+		}
+	}
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -387,6 +402,14 @@ func (h *ChildHandler) CreateSession(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": "Not enough time remaining",
 				"code":  "INSUFFICIENT_TIME",
+			})
+			return
+		}
+
+		if errors.Is(err, core.ErrLockdownActive) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Sessions are locked by your parents",
+				"code":  "LOCKDOWN_ACTIVE",
 			})
 			return
 		}
@@ -541,6 +564,14 @@ func (h *ChildHandler) ExtendSession(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 				"code":  "INSUFFICIENT_TIME",
+			})
+			return
+		}
+
+		if errors.Is(err, core.ErrLockdownActive) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "Sessions are locked by your parents",
+				"code":  "LOCKDOWN_ACTIVE",
 			})
 			return
 		}

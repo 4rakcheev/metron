@@ -79,6 +79,7 @@ var (
 	ErrChildNotFound       = errors.New("child not found")
 	ErrExtensionTooSoon    = errors.New("extension request too soon after previous extension")
 	ErrDowntimeActive      = errors.New("session cannot be started during downtime period")
+	ErrLockdownActive      = errors.New("lockdown active: all sessions are blocked until manually unlocked")
 )
 
 // Validate validates a Child

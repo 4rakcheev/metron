@@ -330,3 +330,45 @@ func TestSQLiteStorage_ForeignKeyConstraints(t *testing.T) {
 	assert.Len(t, retrieved.ChildIDs, 1)
 	assert.Equal(t, "child2", retrieved.ChildIDs[0])
 }
+
+func TestSQLiteStorage_Lockdown(t *testing.T) {
+	storage := setupTestDB(t)
+	ctx := context.Background()
+
+	// Default state: no row means disabled
+	state, err := storage.GetLockdown(ctx)
+	require.NoError(t, err)
+	assert.False(t, state.Enabled)
+	assert.Nil(t, state.EnabledAt)
+	assert.Empty(t, state.EnabledBy)
+
+	// Enable lockdown
+	err = storage.SetLockdown(ctx, true, "test")
+	require.NoError(t, err)
+
+	state, err = storage.GetLockdown(ctx)
+	require.NoError(t, err)
+	assert.True(t, state.Enabled)
+	require.NotNil(t, state.EnabledAt)
+	assert.WithinDuration(t, time.Now(), *state.EnabledAt, 5*time.Second)
+	assert.Equal(t, "test", state.EnabledBy)
+
+	// Re-enable is idempotent
+	err = storage.SetLockdown(ctx, true, "test2")
+	require.NoError(t, err)
+
+	state, err = storage.GetLockdown(ctx)
+	require.NoError(t, err)
+	assert.True(t, state.Enabled)
+	assert.Equal(t, "test2", state.EnabledBy)
+
+	// Disable lockdown clears audit fields
+	err = storage.SetLockdown(ctx, false, "test")
+	require.NoError(t, err)
+
+	state, err = storage.GetLockdown(ctx)
+	require.NoError(t, err)
+	assert.False(t, state.Enabled)
+	assert.Nil(t, state.EnabledAt)
+	assert.Empty(t, state.EnabledBy)
+}

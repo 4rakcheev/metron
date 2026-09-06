@@ -523,3 +523,121 @@ func TestScheduler_StartStop(t *testing.T) {
 	// Wait a bit to ensure it stopped
 	time.Sleep(100 * time.Millisecond)
 }
+
+// mockLockdownStorage implements core.LockdownStorage for tests
+type mockLockdownStorage struct {
+	enabled bool
+	err     error
+}
+
+func (m *mockLockdownStorage) GetLockdown(ctx context.Context) (*core.LockdownState, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &core.LockdownState{Enabled: m.enabled}, nil
+}
+
+func (m *mockLockdownStorage) SetLockdown(ctx context.Context, enabled bool, enabledBy string) error {
+	m.enabled = enabled
+	return nil
+}
+
+func TestScheduler_Tick_LockdownEndsSessions(t *testing.T) {
+	storage := newMockStorage()
+	driver := newMockDriver()
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
+	scheduler.SetLockdownStorage(&mockLockdownStorage{enabled: true})
+
+	child := &core.Child{ID: "child1", Name: "Alice", WeekdayLimit: 60, WeekendLimit: 120}
+	storage.addChild(child)
+
+	session := &core.Session{
+		ID:               "session1",
+		DeviceType:       "tv",
+		DeviceID:         "tv1",
+		ChildIDs:         []string{"child1"},
+		StartTime:        time.Now().Add(-5 * time.Minute),
+		ExpectedDuration: 30,
+		Status:           core.SessionStatusActive,
+	}
+	storage.addSession(session)
+
+	scheduler.tick()
+
+	assert.Contains(t, driver.stopCalls, "session1")
+	updated, err := storage.GetSession(context.Background(), "session1")
+	require.NoError(t, err)
+	assert.Equal(t, core.SessionStatusExpired, updated.Status)
+}
+
+func TestScheduler_Tick_NoLockdownLeavesSessions(t *testing.T) {
+	storage := newMockStorage()
+	driver := newMockDriver()
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
+	scheduler.SetLockdownStorage(&mockLockdownStorage{enabled: false})
+
+	child := &core.Child{ID: "child1", Name: "Alice", WeekdayLimit: 60, WeekendLimit: 120}
+	storage.addChild(child)
+
+	session := &core.Session{
+		ID:               "session1",
+		DeviceType:       "tv",
+		DeviceID:         "tv1",
+		ChildIDs:         []string{"child1"},
+		StartTime:        time.Now().Add(-5 * time.Minute),
+		ExpectedDuration: 30,
+		Status:           core.SessionStatusActive,
+	}
+	storage.addSession(session)
+
+	scheduler.tick()
+
+	assert.Empty(t, driver.stopCalls)
+	updated, err := storage.GetSession(context.Background(), "session1")
+	require.NoError(t, err)
+	assert.Equal(t, core.SessionStatusActive, updated.Status)
+}
+
+// A broken lockdown flag must never kill live sessions - the scheduler fails open.
+func TestScheduler_Tick_LockdownStorageErrorLeavesSessions(t *testing.T) {
+	storage := newMockStorage()
+	driver := newMockDriver()
+	deviceRegistry := newMockDeviceRegistry()
+	driverRegistry := &mockDriverRegistry{driver: driver}
+	deviceRegistry.addDevice(&mockDevice{id: "tv1", driver: "aqara"})
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	scheduler := NewScheduler(storage, deviceRegistry, driverRegistry, nil, time.Minute, nil, logger)
+	scheduler.SetLockdownStorage(&mockLockdownStorage{err: errors.New("db error")})
+
+	child := &core.Child{ID: "child1", Name: "Alice", WeekdayLimit: 60, WeekendLimit: 120}
+	storage.addChild(child)
+
+	session := &core.Session{
+		ID:               "session1",
+		DeviceType:       "tv",
+		DeviceID:         "tv1",
+		ChildIDs:         []string{"child1"},
+		StartTime:        time.Now().Add(-5 * time.Minute),
+		ExpectedDuration: 30,
+		Status:           core.SessionStatusActive,
+	}
+	storage.addSession(session)
+
+	scheduler.tick()
+
+	assert.Empty(t, driver.stopCalls)
+	updated, err := storage.GetSession(context.Background(), "session1")
+	require.NoError(t, err)
+	assert.Equal(t, core.SessionStatusActive, updated.Status)
+}

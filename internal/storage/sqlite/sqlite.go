@@ -350,6 +350,20 @@ func (s *SQLiteStorage) runMigrations() error {
 		return fmt.Errorf("failed to create device_bypass table: %w", err)
 	}
 
+	// Create lockdown table for the global session lockdown flag
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS lockdown (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			enabled BOOLEAN NOT NULL DEFAULT 0,
+			enabled_at DATETIME,
+			enabled_by TEXT,
+			updated_at DATETIME NOT NULL
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create lockdown table: %w", err)
+	}
+
 	return nil
 }
 
@@ -1198,6 +1212,63 @@ func (s *SQLiteStorage) SetDowntimeSkipDate(ctx context.Context, date time.Time)
 			VALUES (1, ?, ?)
 		`, normalizedDate, now)
 	}
+
+	return err
+}
+
+// ============================================================================
+// LOCKDOWN STORAGE - Global session lockdown flag
+// ============================================================================
+
+// GetLockdown retrieves the global lockdown state
+// A missing row means lockdown is disabled
+func (s *SQLiteStorage) GetLockdown(ctx context.Context) (*core.LockdownState, error) {
+	var enabled bool
+	var enabledAt sql.NullTime
+	var enabledBy sql.NullString
+
+	err := s.db.QueryRowContext(ctx, `
+		SELECT enabled, enabled_at, enabled_by FROM lockdown WHERE id = 1
+	`).Scan(&enabled, &enabledAt, &enabledBy)
+
+	if err == sql.ErrNoRows {
+		return &core.LockdownState{Enabled: false}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	state := &core.LockdownState{
+		Enabled:   enabled,
+		EnabledBy: enabledBy.String,
+	}
+	if enabledAt.Valid {
+		state.EnabledAt = &enabledAt.Time
+	}
+	return state, nil
+}
+
+// SetLockdown sets the global lockdown state
+// Uses upsert pattern for the single-row table
+func (s *SQLiteStorage) SetLockdown(ctx context.Context, enabled bool, enabledBy string) error {
+	now := time.Now()
+
+	var enabledAt *time.Time
+	var enabledByVal *string
+	if enabled {
+		enabledAt = &now
+		enabledByVal = &enabledBy
+	}
+
+	_, err := s.db.ExecContext(ctx, `
+		INSERT INTO lockdown (id, enabled, enabled_at, enabled_by, updated_at)
+		VALUES (1, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			enabled = excluded.enabled,
+			enabled_at = excluded.enabled_at,
+			enabled_by = excluded.enabled_by,
+			updated_at = excluded.updated_at
+	`, enabled, enabledAt, enabledByVal, now)
 
 	return err
 }

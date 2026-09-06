@@ -429,10 +429,15 @@ func BuildSessionsMenuButtons() tgbotapi.InlineKeyboardMarkup {
 }
 
 // BuildMoreMenuButtons creates the additional features submenu
-func BuildMoreMenuButtons(skipDowntimeActive bool) tgbotapi.InlineKeyboardMarkup {
+func BuildMoreMenuButtons(skipDowntimeActive, lockdownActive bool) tgbotapi.InlineKeyboardMarkup {
 	skipText := "🌙 Skip Downtime Today"
 	if skipDowntimeActive {
 		skipText = "✅ Downtime Skipped Today"
+	}
+
+	lockdownText := "🔒 Lock All Sessions"
+	if lockdownActive {
+		lockdownText = "🔓 Unlock Sessions (LOCKED)"
 	}
 
 	return tgbotapi.NewInlineKeyboardMarkup(
@@ -441,12 +446,35 @@ func BuildMoreMenuButtons(skipDowntimeActive bool) tgbotapi.InlineKeyboardMarkup
 				MarshalCallback(CallbackData{Action: "skip_downtime"})),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(lockdownText,
+				MarshalCallback(CallbackData{Action: "lockdown"})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔓 Bypass Mode",
 				MarshalCallback(CallbackData{Action: "bypass", Step: 0})),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
 				MarshalCallback(CallbackData{Action: "main_menu"})),
+		),
+	)
+}
+
+// BuildLockdownConfirmButtons creates the confirmation keyboard for the lockdown toggle.
+// The intended direction is encoded in the callback so the apply step never has to
+// re-read (and possibly misread) the current state to decide what to do.
+func BuildLockdownConfirmButtons(enable bool) tgbotapi.InlineKeyboardMarkup {
+	subAction := "off"
+	if enable {
+		subAction = "on"
+	}
+
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ Confirm",
+				MarshalCallback(CallbackData{Action: "lockdown", SubAction: subAction, Step: 1})),
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
+				MarshalCallback(CallbackData{Action: "more_menu"})),
 		),
 	)
 }
