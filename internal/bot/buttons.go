@@ -15,7 +15,6 @@ type CallbackData struct {
 	ChildID      string `json:"c,omitempty"`   // Child ID (resolved from index)
 	ChildIndex   int    `json:"ci,omitempty"`  // Child index in list (for compact callback)
 	Device       string `json:"d,omitempty"`   // Device ID
-	DeviceIndex  int    `json:"di,omitempty"`  // Device index in list (for bypass flow)
 	Duration     int    `json:"m,omitempty"`   // Duration in minutes
 	Session      string `json:"ses,omitempty"` // Session ID (resolved from index)
 	SessionIndex int    `json:"si,omitempty"`  // Session index in list (for compact callback)
@@ -125,8 +124,7 @@ func BuildDurationButtons(action string, step int, childIndex int, device string
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	// Create two rows: [5, 15, 30] and [60, 120]
-	row1 := []tgbotapi.InlineKeyboardButton{}
-	row2 := []tgbotapi.InlineKeyboardButton{}
+	var row1, row2 []tgbotapi.InlineKeyboardButton
 
 	for i, duration := range durations {
 		callback := MarshalCallback(CallbackData{
@@ -165,8 +163,9 @@ func BuildDurationButtons(action string, step int, childIndex int, device string
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
-// BuildSessionsButtons creates buttons for selecting an active session (legacy)
-// Deprecated: Use BuildSessionManagementButtons for better UX
+// BuildSessionsButtons creates buttons for selecting an active session for a
+// specific action (extend/stop flows). For the full sessions overview with
+// per-session action buttons, use BuildSessionManagementButtons instead.
 func BuildSessionsButtons(sessions []Session, action string) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
@@ -336,8 +335,7 @@ func BuildExtendDurationButtons(sessionIndex int) tgbotapi.InlineKeyboardMarkup 
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	// Create two rows
-	row1 := []tgbotapi.InlineKeyboardButton{}
-	row2 := []tgbotapi.InlineKeyboardButton{}
+	var row1, row2 []tgbotapi.InlineKeyboardButton
 
 	for i, duration := range durations {
 		callback := MarshalCallback(CallbackData{
@@ -459,7 +457,7 @@ func BuildRewardDurationButtons(childIndex int) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	// Create one row with all three reward options
-	row := []tgbotapi.InlineKeyboardButton{}
+	var row []tgbotapi.InlineKeyboardButton
 
 	for _, duration := range durations {
 		callback := MarshalCallback(CallbackData{
@@ -498,7 +496,7 @@ func BuildFineDurationButtons(childIndex int) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	// Create one row with all three fine options
-	row := []tgbotapi.InlineKeyboardButton{}
+	var row []tgbotapi.InlineKeyboardButton
 
 	for _, duration := range durations {
 		callback := MarshalCallback(CallbackData{
@@ -576,7 +574,7 @@ type DeviceWithBypass struct {
 func BuildBypassDevicesButtons(devices []DeviceWithBypass) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
-	for i, dw := range devices {
+	for _, dw := range devices {
 		emoji := resolveDeviceEmoji(dw.Device)
 		var statusEmoji string
 		if dw.BypassEnabled {
@@ -586,9 +584,9 @@ func BuildBypassDevicesButtons(devices []DeviceWithBypass) tgbotapi.InlineKeyboa
 		}
 
 		callback := MarshalCallback(CallbackData{
-			Action:      "bypass",
-			Step:        1,
-			DeviceIndex: i,
+			Action: "bypass",
+			Step:   1,
+			Device: dw.Device.ID,
 		})
 
 		label := fmt.Sprintf("%s %s %s", emoji, dw.Device.Name, statusEmoji)
@@ -607,7 +605,7 @@ func BuildBypassDevicesButtons(devices []DeviceWithBypass) tgbotapi.InlineKeyboa
 }
 
 // BuildBypassActionsButtons creates buttons for bypass actions (enable/disable)
-func BuildBypassActionsButtons(deviceIndex int, currentlyEnabled bool) tgbotapi.InlineKeyboardMarkup {
+func BuildBypassActionsButtons(deviceID string, currentlyEnabled bool) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	if currentlyEnabled {
@@ -615,10 +613,10 @@ func BuildBypassActionsButtons(deviceIndex int, currentlyEnabled bool) tgbotapi.
 		disableBtn := tgbotapi.NewInlineKeyboardButtonData(
 			"🔒 Disable Bypass",
 			MarshalCallback(CallbackData{
-				Action:      "bypass",
-				SubAction:   "disable",
-				Step:        2,
-				DeviceIndex: deviceIndex,
+				Action:    "bypass",
+				SubAction: "disable",
+				Step:      2,
+				Device:    deviceID,
 			}),
 		)
 		rows = append(rows, []tgbotapi.InlineKeyboardButton{disableBtn})
@@ -636,11 +634,11 @@ func BuildBypassActionsButtons(deviceIndex int, currentlyEnabled bool) tgbotapi.
 
 		for _, d := range durations {
 			callback := MarshalCallback(CallbackData{
-				Action:      "bypass",
-				SubAction:   "enable",
-				Step:        2,
-				DeviceIndex: deviceIndex,
-				Duration:    d.minutes,
+				Action:    "bypass",
+				SubAction: "enable",
+				Step:      2,
+				Device:    deviceID,
+				Duration:  d.minutes,
 			})
 			btn := tgbotapi.NewInlineKeyboardButtonData(
 				"✅ "+d.label,

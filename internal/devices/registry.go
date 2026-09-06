@@ -2,6 +2,7 @@ package devices
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -106,7 +107,9 @@ func (r *Registry) Get(id string) (*Device, error) {
 	return device, nil
 }
 
-// List returns all registered devices
+// List returns all registered devices in a stable order (sorted by ID).
+// Map iteration order is random in Go, so sorting keeps API responses
+// and UI listings deterministic across calls.
 func (r *Registry) List() []*Device {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -115,6 +118,9 @@ func (r *Registry) List() []*Device {
 	for _, device := range r.devices {
 		devices = append(devices, device)
 	}
+	sort.Slice(devices, func(i, j int) bool {
+		return devices[i].ID < devices[j].ID
+	})
 
 	return devices
 }

@@ -884,7 +884,7 @@ func (b *Bot) handleBypassFlow(ctx context.Context, message *tgbotapi.Message, d
 	b.logger.Info("Bypass flow",
 		"step", data.Step,
 		"sub_action", data.SubAction,
-		"device_index", data.DeviceIndex,
+		"device_id", data.Device,
 		"duration", data.Duration,
 	)
 
@@ -894,14 +894,14 @@ func (b *Bot) handleBypassFlow(ctx context.Context, message *tgbotapi.Message, d
 		return b.bypassStep0(ctx, message)
 	case 1:
 		// Step 1: Device selected, show enable/disable options
-		return b.bypassStep1(ctx, message, data.DeviceIndex)
+		return b.bypassStep1(ctx, message, data.Device)
 	case 2:
 		// Step 2: Action selected, execute
 		switch data.SubAction {
 		case "enable":
-			return b.bypassEnable(ctx, message, data.DeviceIndex, data.Duration)
+			return b.bypassEnable(ctx, message, data.Device, data.Duration)
 		case "disable":
-			return b.bypassDisable(ctx, message, data.DeviceIndex)
+			return b.bypassDisable(ctx, message, data.Device)
 		default:
 			return b.editMessage(message.Chat.ID, message.MessageID,
 				"❌ Unknown bypass action.", BuildQuickActionsButtons())
@@ -947,26 +947,37 @@ func (b *Bot) bypassStep0(ctx context.Context, message *tgbotapi.Message) error 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
-// bypassStep1 shows enable/disable options for a device
-func (b *Bot) bypassStep1(ctx context.Context, message *tgbotapi.Message, deviceIndex int) error {
-	// Get all devices to resolve index
+// resolveDevice fetches the device list and returns the device with the given ID,
+// or nil if no such device exists
+func (b *Bot) resolveDevice(ctx context.Context, deviceID string) (*Device, error) {
 	devices, err := b.client.ListDevices(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range devices {
+		if devices[i].ID == deviceID {
+			return &devices[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// bypassStep1 shows enable/disable options for a device
+func (b *Bot) bypassStep1(ctx context.Context, message *tgbotapi.Message, deviceID string) error {
+	device, err := b.resolveDevice(ctx, deviceID)
 	if err != nil {
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
-
-	if deviceIndex < 0 || deviceIndex >= len(devices) {
+	if device == nil {
 		return b.editMessage(message.Chat.ID, message.MessageID,
 			"❌ Invalid device selection.", BuildQuickActionsButtons())
 	}
-
-	device := devices[deviceIndex]
 
 	// Get current bypass status
 	bypass, _ := b.client.GetDeviceBypass(ctx, device.ID)
 	currentlyEnabled := bypass != nil && bypass.Enabled
 
-	emoji := resolveDeviceEmoji(device)
+	emoji := resolveDeviceEmoji(*device)
 	var text string
 	if currentlyEnabled {
 		text = fmt.Sprintf("🔓 *Bypass Mode*\n\n%s *%s*\n\n✅ Bypass is currently *ENABLED*\n\n"+
@@ -978,24 +989,20 @@ func (b *Bot) bypassStep1(ctx context.Context, message *tgbotapi.Message, device
 			emoji, device.Name)
 	}
 
-	keyboard := BuildBypassActionsButtons(deviceIndex, currentlyEnabled)
+	keyboard := BuildBypassActionsButtons(device.ID, currentlyEnabled)
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
 // bypassEnable enables bypass mode for a device
-func (b *Bot) bypassEnable(ctx context.Context, message *tgbotapi.Message, deviceIndex int, durationMinutes int) error {
-	// Get all devices to resolve index
-	devices, err := b.client.ListDevices(ctx)
+func (b *Bot) bypassEnable(ctx context.Context, message *tgbotapi.Message, deviceID string, durationMinutes int) error {
+	device, err := b.resolveDevice(ctx, deviceID)
 	if err != nil {
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
-
-	if deviceIndex < 0 || deviceIndex >= len(devices) {
+	if device == nil {
 		return b.editMessage(message.Chat.ID, message.MessageID,
 			"❌ Invalid device selection.", BuildQuickActionsButtons())
 	}
-
-	device := devices[deviceIndex]
 
 	// Prepare request
 	req := SetDeviceBypassRequest{
@@ -1012,7 +1019,7 @@ func (b *Bot) bypassEnable(ctx context.Context, message *tgbotapi.Message, devic
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
-	emoji := resolveDeviceEmoji(device)
+	emoji := resolveDeviceEmoji(*device)
 	var durationText string
 	switch durationMinutes {
 	case 0:
@@ -1036,19 +1043,15 @@ func (b *Bot) bypassEnable(ctx context.Context, message *tgbotapi.Message, devic
 }
 
 // bypassDisable disables bypass mode for a device
-func (b *Bot) bypassDisable(ctx context.Context, message *tgbotapi.Message, deviceIndex int) error {
-	// Get all devices to resolve index
-	devices, err := b.client.ListDevices(ctx)
+func (b *Bot) bypassDisable(ctx context.Context, message *tgbotapi.Message, deviceID string) error {
+	device, err := b.resolveDevice(ctx, deviceID)
 	if err != nil {
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
-
-	if deviceIndex < 0 || deviceIndex >= len(devices) {
+	if device == nil {
 		return b.editMessage(message.Chat.ID, message.MessageID,
 			"❌ Invalid device selection.", BuildQuickActionsButtons())
 	}
-
-	device := devices[deviceIndex]
 
 	// Clear bypass
 	err = b.client.ClearDeviceBypass(ctx, device.ID)
@@ -1056,7 +1059,7 @@ func (b *Bot) bypassDisable(ctx context.Context, message *tgbotapi.Message, devi
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
-	emoji := resolveDeviceEmoji(device)
+	emoji := resolveDeviceEmoji(*device)
 	text := fmt.Sprintf("🔒 *Bypass Disabled*\n\n%s *%s*\n\n"+
 		"Screen-time enforcement is now *resumed*.\n\n"+
 		"Normal session rules will apply.",
