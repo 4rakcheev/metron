@@ -11,6 +11,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          # Full history: the agent version is the last commit touching agent sources
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -31,6 +34,15 @@ jobs:
       - name: Build Telegram Bot binary
         run: |
           go build -o build/metron-bot ./cmd/metron-bot/main.go
+
+      - name: Build Windows agent and update manifest
+        env:
+          # Required once deploy/win-agent/update-public-key.txt holds a key
+          AGENT_SIGNING_KEY: ${{ secrets.AGENT_SIGNING_KEY }}
+        run: |
+          make build-win-agent BUILD_DIR=build
+          make publish-win-agent-manifest BUILD_DIR=build
+          cat build/manifest.json
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -59,6 +71,14 @@ jobs:
           name: metron-bot-binary
           path: build/metron-bot
 
+      - name: Upload Windows agent update artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-agent-update
+          path: |
+            build/metron-win-agent.exe
+            build/manifest.json
+
       - name: Upload child UI artifact
         uses: actions/upload-artifact@v4
         with:
@@ -80,6 +100,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: metron-bot-binary
+          path: .
+
+      - name: Download Windows agent update
+        uses: actions/download-artifact@v4
+        with:
+          name: win-agent-update
           path: .
 
       - name: Download child UI
@@ -106,6 +132,16 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           source: "metron-bot"
           target: "/opt/metron-bot/metron-bot_new"
+          overwrite: true
+
+      - name: Copy Windows agent update to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          source: "metron-win-agent.exe,manifest.json"
+          target: "/opt/metron/agent-updates_new"
           overwrite: true
 
       - name: Upload Metron config from secret
@@ -141,6 +177,11 @@ jobs:
             # Activate Bot binary
             mv /opt/metron-bot/metron-bot_new/metron-bot /opt/metron-bot/metron-bot
             sudo -n chmod +x /opt/metron-bot/metron-bot
+            # Publish Windows agent update (same filesystem, so each mv is an atomic rename).
+            # In the short window between the two renames an agent sees a hash mismatch and retries later.
+            mkdir -p /opt/metron/agent-updates
+            mv /opt/metron/agent-updates_new/metron-win-agent.exe /opt/metron/agent-updates/metron-win-agent.exe
+            mv /opt/metron/agent-updates_new/manifest.json /opt/metron/agent-updates/manifest.json
 
       - name: Copy child UI to server
         uses: appleboy/scp-action@v0.1.7

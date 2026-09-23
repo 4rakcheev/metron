@@ -1,0 +1,4 @@
+# Base64 ed25519 public key that must sign Windows agent updates.
+# Generate a pair with: go run ./cmd/metron-agent-sign -genkey
+# Put the public key on the line below and the private key into the GitHub secret AGENT_SIGNING_KEY.
+# While no key is set, agents accept updates by SHA256 only (integrity over HTTPS, no publisher check).

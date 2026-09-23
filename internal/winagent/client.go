@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"metron/internal/agentupdate"
 )
 
 // SessionStatus represents the response from the agent API
@@ -111,3 +113,88 @@ func (c *HTTPMetronClient) GetSessionStatus(ctx context.Context, deviceID string
 
 // Ensure HTTPMetronClient implements MetronClient
 var _ MetronClient = (*HTTPMetronClient)(nil)
+
+// maxUpdateSize caps the downloaded binary size to protect the disk from a broken server
+const maxUpdateSize = 200 << 20
+
+// GetUpdateManifest fetches the published agent manifest.
+// Returns (nil, nil) when the server has no update published.
+func (c *HTTPMetronClient) GetUpdateManifest(ctx context.Context, currentVersion string) (*agentupdate.Manifest, error) {
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid base URL: %w", err)
+	}
+	u.Path = "/v1/agent/update"
+	q := u.Query()
+	q.Set("version", currentVersion)
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var manifest agentupdate.Manifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		return nil, fmt.Errorf("failed to parse manifest: %w", err)
+	}
+	if err := manifest.Validate(); err != nil {
+		return nil, err
+	}
+	return &manifest, nil
+}
+
+// DownloadUpdate streams the published agent binary into w
+func (c *HTTPMetronClient) DownloadUpdate(ctx context.Context, w io.Writer) error {
+	u, err := url.Parse(c.baseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %w", err)
+	}
+	u.Path = "/v1/agent/update/download"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+
+	// Downloads can be slow; rely on ctx for the deadline instead of the short poll timeout
+	resp, err := (&http.Client{Transport: c.httpClient.Transport}).Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
+		return fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(body))
+	}
+
+	n, err := io.Copy(w, io.LimitReader(resp.Body, maxUpdateSize+1))
+	if err != nil {
+		return fmt.Errorf("download failed: %w", err)
+	}
+	if n > maxUpdateSize {
+		return fmt.Errorf("update exceeds %d bytes", maxUpdateSize)
+	}
+	return nil
+}

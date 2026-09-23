@@ -360,6 +360,7 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		Logger:              apiLogger,
 		AqaraTokenStorage:   db,          // SQLite storage also implements aqara.AqaraTokenStorage
 		Devices:             cfg.Devices, // For agent auth (tokens in device parameters)
+		AgentUpdatesDir:     cfg.AgentUpdates.Dir,
 	})
 
 	server := &http.Server{

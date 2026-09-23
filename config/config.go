@@ -25,6 +25,18 @@ type Config struct {
 	Kidslox  *KidsloxConfig  `json:"kidslox,omitempty"`
 	Notify   *NotifyConfig   `json:"notify,omitempty"`
 	Downtime *DowntimeConfig `json:"downtime,omitempty"`
+	// AgentUpdates configures Windows agent self-update distribution (optional)
+	AgentUpdates *AgentUpdatesConfig `json:"agent_updates,omitempty"`
+}
+
+// DefaultAgentUpdatesDir is used when agent_updates.dir is not configured
+// (relative to the server working directory)
+const DefaultAgentUpdatesDir = "agent-updates"
+
+// AgentUpdatesConfig contains Windows agent update distribution settings
+type AgentUpdatesConfig struct {
+	// Dir holds manifest.json and metron-win-agent.exe published by CI
+	Dir string `json:"dir"`
 }
 
 // DeviceConfig represents a device configuration
@@ -279,6 +291,13 @@ func (c *Config) Validate() error {
 
 	if c.Security.APIKey == "" {
 		return fmt.Errorf("%w: API key is required", ErrInvalidConfig)
+	}
+
+	if c.AgentUpdates == nil {
+		c.AgentUpdates = &AgentUpdatesConfig{}
+	}
+	if c.AgentUpdates.Dir == "" {
+		c.AgentUpdates.Dir = DefaultAgentUpdatesDir
 	}
 
 	// Validate timezone

@@ -17,10 +17,29 @@ import (
 const (
 	defaultPollInterval = 15
 	defaultGracePeriod  = 30
+
+	modeAgent   = "agent"
+	modeUpdater = "updater"
+
+	// agentTaskName is the user-session scheduled task created by the installer
+	agentTaskName = "MetronAgent"
+	// updaterTimeout bounds one updater run (manifest check, download, self-check)
+	updaterTimeout = 10 * time.Minute
+	// exeWatchInterval is how often the agent checks whether its binary was replaced
+	exeWatchInterval = 30 * time.Second
+)
+
+// Set at build time via -ldflags "-X main.version=... -X main.updatePublicKey=..."
+var (
+	version = "dev"
+	// updatePublicKey is the base64 ed25519 key that must sign published updates (empty = hash only)
+	updatePublicKey = ""
 )
 
 func main() {
 	// Parse command-line flags
+	mode := flag.String("mode", modeAgent, "Run mode: agent (enforce sessions) or updater (self-update and watchdog, run as SYSTEM)")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	deviceID := flag.String("device-id", "", "Device ID registered in Metron (required)")
 	token := flag.String("token", "", "Agent authentication token (required)")
 	metronURL := flag.String("url", "", "Metron API base URL (required)")
@@ -30,6 +49,11 @@ func main() {
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
 	logFormat := flag.String("log-format", "json", "Log format: json or text")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	// Validate required flags
 	if *deviceID == "" {
@@ -47,44 +71,18 @@ func main() {
 		flag.Usage()
 		os.Exit(1)
 	}
-
-	// Setup logging
-	level := logging.ParseLevel(*logLevel)
-	logConfig := logging.LoggerConfig{
-		Format: *logFormat,
-		Level:  level,
+	if *mode != modeAgent && *mode != modeUpdater {
+		fmt.Fprintf(os.Stderr, "Error: unknown -mode %q\n", *mode)
+		os.Exit(1)
 	}
 
-	// If log path is specified, set up file logging
-	var logger *slog.Logger
-	if *logPath != "" {
-		file, err := os.OpenFile(*logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
-			os.Exit(1)
-		}
-		defer file.Close()
-
-		// Create logger writing to file
-		var handler slog.Handler
-		if logConfig.Format == "json" {
-			handler = slog.NewJSONHandler(file, &slog.HandlerOptions{Level: level})
-		} else {
-			handler = slog.NewTextHandler(file, &slog.HandlerOptions{Level: level})
-		}
-		logger = slog.New(handler)
-	} else {
-		logger = logging.NewLogger(logConfig)
+	logger, closeLog, err := setupLogger(*logPath, *logFormat, *logLevel)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+		os.Exit(1)
 	}
+	defer closeLog()
 	slog.SetDefault(logger)
-
-	mainLogger := logger.With("component", "main")
-	mainLogger.Info("Metron Windows Agent starting",
-		"device_id", *deviceID,
-		"metron_url", *metronURL,
-		"poll_interval", *pollInterval,
-		"grace_period", *gracePeriod,
-	)
 
 	// Create configuration
 	config := &winagent.Config{
@@ -97,41 +95,115 @@ func main() {
 		LogLevel:      *logLevel,
 	}
 
+	mainLogger := logger.With("component", "main")
 	if err := config.Validate(); err != nil {
 		mainLogger.Error("Invalid configuration", "error", err)
 		os.Exit(1)
 	}
 
-	// Create components
+	exePath, err := os.Executable()
+	if err != nil {
+		mainLogger.Error("Cannot resolve executable path", "error", err)
+		os.Exit(1)
+	}
+
 	client := winagent.NewHTTPMetronClient(config.MetronBaseURL, config.AgentToken, logger)
+
+	if *mode == modeUpdater {
+		os.Exit(runUpdater(client, exePath, logger))
+	}
+	runAgent(client, config, exePath, logger)
+}
+
+// runAgent enforces sessions until a shutdown signal or until the binary is replaced by the updater
+func runAgent(client *winagent.HTTPMetronClient, config *winagent.Config, exePath string, logger *slog.Logger) {
+	mainLogger := logger.With("component", "main")
+	mainLogger.Info("Metron Windows Agent starting",
+		"version", version,
+		"device_id", config.DeviceID,
+		"metron_url", config.MetronBaseURL,
+		"poll_interval", config.PollInterval,
+		"grace_period", config.GracePeriod,
+	)
+
 	platform := winagent.NewPlatform(logger)
-	clock := winagent.RealClock{}
+	enforcer := winagent.NewEnforcer(client, platform, winagent.RealClock{}, config, logger)
 
-	// Create enforcer
-	enforcer := winagent.NewEnforcer(client, platform, clock, config, logger)
-
-	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle shutdown signals
+	// Restart into the new binary as soon as the updater swaps it
+	restarted := make(chan struct{})
+	go winagent.WatchExecutable(ctx, exePath, exeWatchInterval, logger, func() {
+		if err := winagent.RestartSelf(exePath); err != nil {
+			// Keep enforcing with the old image; the next logon starts the new binary
+			mainLogger.Error("Failed to start updated agent", "error", err)
+			return
+		}
+		close(restarted)
+	})
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	// Start enforcer in background
-	go func() {
-		enforcer.Start(ctx)
-	}()
+	go enforcer.Start(ctx)
 
-	// Wait for shutdown signal
-	sig := <-sigChan
-	mainLogger.Info("Shutdown signal received", "signal", sig.String())
+	select {
+	case sig := <-sigChan:
+		mainLogger.Info("Shutdown signal received", "signal", sig.String())
+	case <-restarted:
+		mainLogger.Info("Handed over to updated agent binary")
+	}
 
-	// Cancel context to stop enforcer
 	cancel()
-
 	// Give enforcer time to stop gracefully
 	time.Sleep(1 * time.Second)
-
 	mainLogger.Info("Metron Windows Agent stopped")
+}
+
+// runUpdater performs one update check and the agent watchdog. Returns the process exit code.
+func runUpdater(client *winagent.HTTPMetronClient, exePath string, logger *slog.Logger) int {
+	mainLogger := logger.With("component", "main")
+	mainLogger.Debug("Metron updater run", "version", version, "exe", exePath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), updaterTimeout)
+	defer cancel()
+
+	updater := winagent.NewUpdater(client, winagent.VerifyBinaryVersion, winagent.UpdaterConfig{
+		ExePath:        exePath,
+		CurrentVersion: version,
+		PublicKey:      updatePublicKey,
+	}, logger)
+
+	exitCode := 0
+	if _, err := updater.RunOnce(ctx); err != nil {
+		mainLogger.Error("Update failed", "error", err)
+		exitCode = 1
+	}
+
+	if err := winagent.EnsureAgentRunning(exePath, agentTaskName, logger); err != nil {
+		mainLogger.Warn("Watchdog could not start agent", "error", err)
+	}
+	return exitCode
+}
+
+// setupLogger writes to logPath when set, otherwise to stdout
+func setupLogger(logPath, format, levelName string) (*slog.Logger, func(), error) {
+	level := logging.ParseLevel(levelName)
+	if logPath == "" {
+		return logging.NewLogger(logging.LoggerConfig{Format: format, Level: level}), func() {}, nil
+	}
+
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var handler slog.Handler
+	if format == "json" {
+		handler = slog.NewJSONHandler(file, &slog.HandlerOptions{Level: level})
+	} else {
+		handler = slog.NewTextHandler(file, &slog.HandlerOptions{Level: level})
+	}
+	return slog.New(handler), func() { _ = file.Close() }, nil
 }

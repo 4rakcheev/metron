@@ -115,6 +115,8 @@ Native Windows agent that enforces screen-time by locking the workstation when n
 - `-poll-interval` (default 15s): How often to poll backend
 - `-grace-period` (default 30s): Grace period before locking on network error
 - `-log-path`, `-log-level`, `-log-format`: Logging configuration
+- `-mode` (default `agent`): `updater` runs one self-update check plus watchdog (used by the SYSTEM task)
+- `-version`: print the build version and exit
 
 **Key features:**
 - Polls `/v1/agent/session` endpoint for session status
@@ -122,6 +124,10 @@ Native Windows agent that enforces screen-time by locking the workstation when n
 - Shows warning notification at 5 minutes remaining
 - Fail-closed security: locks after grace period on network errors
 - Respects bypass mode for temporary enforcement suspension
+
+**Auto-update:** a `MetronUpdater` task (SYSTEM, every 5 minutes) runs the same binary with `-mode updater`:
+installs the build CI publishes to `/opt/metron/agent-updates` (SHA256 + optional ed25519 signature,
+self-check, rollback) and restarts the agent if it was killed. See `docs/drivers/windows-agent-autoupdate.md`.
 
 See `docs/drivers/windows-agent.md` for full documentation.
 
@@ -192,6 +198,7 @@ Device IDs must be ≤15 characters (Telegram callback data limit).
 - `docs/api/openapi.yaml` - OpenAPI 3.0 specification
 - `docs/drivers/aqara-tokens.md` - Aqara token management details
 - `docs/drivers/windows-agent.md` - Windows agent installation and configuration
+- `docs/drivers/windows-agent-autoupdate.md` - Windows agent self-update: architecture, signing keys, install, rollback
 - `deploy/systemd/` - Production deployment with systemd
 
 ### Documentation Maintenance Rules

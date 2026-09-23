@@ -90,5 +90,8 @@
     "base_url": "https://admin.kdlparentalcontrol.com",
     "api_key": "your-kidslox-api-key",
     "account_id": "your-kidslox-account-id"
+  },
+  "agent_updates": {
+    "dir": "agent-updates"
   }
 }

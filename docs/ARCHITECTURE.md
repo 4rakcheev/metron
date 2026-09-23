@@ -315,6 +315,16 @@ The Windows agent (`cmd/metron-win-agent`) runs on Windows workstations and enfo
 - **Token validation**: Backend validates token and checks device authorization
 - **Grace period**: Configurable time before locking on network errors (default: 30s)
 
+### Self-Update
+
+The same binary runs in two modes. `MetronAgent` (user session) enforces sessions. `MetronUpdater`
+(SYSTEM task, every 5 minutes, `-mode updater`) fetches `GET /v1/agent/update`, verifies the
+ed25519 signature (when a public key is compiled in), downloads and hash-checks the binary,
+self-checks it with `-version`, swaps it in place keeping `.old`, and restarts the agent if it is
+not running. The running agent notices its exe changed and re-executes itself. CI publishes builds
+to `/opt/metron/agent-updates` on every push to `master`. Details:
+[docs/drivers/windows-agent-autoupdate.md](drivers/windows-agent-autoupdate.md).
+
 ### Bypass Mode
 
 Parents can temporarily disable enforcement via Telegram bot or API:

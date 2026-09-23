@@ -113,6 +113,14 @@ After installation:
 |------|-------------|
 | `C:\Program Files\Metron\metron-win-agent.exe` | Agent binary |
 | `C:\ProgramData\Metron\agent.log` | Log file |
+| `C:\ProgramData\Metron\updater.log` | Updater/watchdog log |
+
+## Automatic Updates
+
+The installer also registers `MetronUpdater`, a SYSTEM task that runs every 5 minutes, installs the
+agent build published by CI and restarts the agent if it was killed. The agent restarts itself into the
+new binary within about a minute. Setup, signing keys, verification and rollback:
+[windows-agent-autoupdate.md](windows-agent-autoupdate.md).
 
 ## Managing the Agent
 

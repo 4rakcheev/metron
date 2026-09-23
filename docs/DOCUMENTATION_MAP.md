@@ -38,7 +38,8 @@ docs/api/
 docs/drivers/
 ├── aqara-tokens.md              # Aqara Cloud API token management guide
 ├── notify.md                    # Notify driver for manual-enforcement devices
-└── windows-agent.md             # Windows agent installation and configuration
+├── windows-agent.md             # Windows agent installation and configuration
+└── windows-agent-autoupdate.md  # Windows agent self-update, signing, rollback
 ```
 
 ### Feature Documentation (`docs/features/`)

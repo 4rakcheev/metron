@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Device parameters persisted in database for session lifetime
 
 ### Added
+- **Windows Agent Auto-Update**
+  - `MetronUpdater` SYSTEM task (every 5 minutes) installs agent builds published by CI, with SHA256 and optional ed25519 signature checks, `-version` self-check and `.old` rollback
+  - Watchdog restarts the agent if it was killed
+  - Agent restarts itself into the new binary after an update
+  - API: `GET /v1/agent/update`, `GET /v1/agent/update/download` (agent token auth), config `agent_updates.dir`
+  - CI builds, signs and publishes the agent on every push to `master`; `cmd/metron-agent-sign` for keys and manifests
 - **Kidslox Device Driver (iPad Support)**
   - Full support for Kidslox parental control API
   - Device control: lock, unlock, time extension

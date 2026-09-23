@@ -867,6 +867,73 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /v1/agent/update:
+    get:
+      tags:
+        - Agent
+      summary: Get published agent update manifest
+      description: |
+        Returns the Windows agent build currently published by CI. Used by the agent updater
+        (`metron-win-agent.exe -mode updater`). The updater installs the build when its SHA256
+        differs from the installed binary. See docs/drivers/windows-agent-autoupdate.md.
+      operationId: getAgentUpdate
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: version
+          in: query
+          required: false
+          description: Version of the requesting agent (logged only)
+          schema:
+            type: string
+            example: 20260923.1939-0176dec
+      responses:
+        '200':
+          description: Published manifest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentUpdateManifest'
+        '401':
+          description: Missing or invalid agent token
+        '404':
+          description: No agent update published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: No agent update published
+                code: UPDATE_NOT_AVAILABLE
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/agent/update/download:
+    get:
+      tags:
+        - Agent
+      summary: Download published agent binary
+      description: Streams the Windows agent binary described by the manifest.
+      operationId: downloadAgentUpdate
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Agent binary
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          description: Missing or invalid agent token
+        '404':
+          description: No agent update published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
   /v1/devices/{id}/bypass:
     get:
       tags:
@@ -1667,6 +1734,34 @@ components:
           description: Minutes until bypass expires. Omit for indefinite bypass.
           minimum: 1
           example: 60
+
+    AgentUpdateManifest:
+      type: object
+      required:
+        - version
+        - sha256
+        - size
+      properties:
+        version:
+          type: string
+          description: Version compiled into the binary (date and hash of the last commit touching agent code)
+          example: 20260923.1939-0176dec
+        sha256:
+          type: string
+          description: Hex SHA256 of the binary
+          example: 311a5b408f1af95e3b350571f938b655576f06487d8ee91a825e0b16e0eb4d5a
+        size:
+          type: integer
+          format: int64
+          description: Binary size in bytes
+          example: 9290752
+        signature:
+          type: string
+          description: Base64 ed25519 signature of "metron-win-agent:<version>:<sha256>:<size>" (absent when unsigned)
+        built_at:
+          type: string
+          format: date-time
+          description: Build time (informational)
 
     BypassStatus:
       type: object

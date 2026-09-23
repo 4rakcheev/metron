@@ -268,6 +268,25 @@ Agent tokens authenticate external agents (like the Windows agent) that poll the
 3. **Disable before delete**: Set `enabled: false` before removing a token
 4. **Rotate periodically**: Consider rotating tokens periodically for security
 
+## Agent Updates Configuration
+
+Optional. Directory from which the server publishes Windows agent updates
+(`GET /v1/agent/update`, `GET /v1/agent/update/download`). CI writes `metron-win-agent.exe` and
+`manifest.json` there on every push to `master`.
+
+```json
+{
+  "agent_updates": {
+    "dir": "agent-updates"
+  }
+}
+```
+
+- `dir` (default `agent-updates`): relative paths are resolved against the server working directory
+  (`/opt/metron` in production). When the directory has no manifest, the endpoints return 404.
+
+See [docs/drivers/windows-agent-autoupdate.md](docs/drivers/windows-agent-autoupdate.md).
+
 ## Telegram Bot Configuration
 
 Bot configuration (`bot-config.json`) includes timezone support:

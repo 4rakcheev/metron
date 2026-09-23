@@ -25,12 +25,16 @@ Installation
    - The script will install and start the agent
 
 3. The agent will start automatically at every user login.
+   A second task, MetronUpdater (runs as SYSTEM every 5 minutes), installs
+   new agent versions published by the server and restarts the agent if it
+   was closed. You only need to run INSTALL.bat once.
 
 File Locations
 --------------
 
-Binary:     C:\Program Files\Metron\metron-win-agent.exe
-Log file:   C:\ProgramData\Metron\agent.log
+Binary:      C:\Program Files\Metron\metron-win-agent.exe
+Log file:    C:\ProgramData\Metron\agent.log
+Updater log: C:\ProgramData\Metron\updater.log
 
 Checking Status
 ---------------
@@ -46,18 +50,28 @@ View recent logs:
 Updating
 --------
 
-To update the agent:
-1. Download the new release package
-2. Edit config.txt (or copy your existing config)
-3. Run install.ps1 again - it will stop, update, and restart the agent
+Updates are automatic: every push to master publishes a new agent build and
+MetronUpdater installs it within ~5 minutes. Check the installed version:
+
+  & "C:\Program Files\Metron\metron-win-agent.exe" -version
+
+Force an update check now (PowerShell as Administrator):
+
+  Start-ScheduledTask -TaskName MetronUpdater
+  Get-Content "C:\ProgramData\Metron\updater.log" -Tail 20
+
+Manual update (e.g. if the updater task is broken): run INSTALL.bat from a new
+release package - it will stop, update, and restart the agent.
 
 Uninstalling
 ------------
 
 Open PowerShell as Administrator and run:
 
-  # Stop and remove the scheduled task
+  # Stop and remove the scheduled tasks
+  Unregister-ScheduledTask -TaskName "MetronUpdater" -Confirm:$false
   Unregister-ScheduledTask -TaskName "MetronAgent" -Confirm:$false
+  Get-Process -Name "metron-win-agent" -ErrorAction SilentlyContinue | Stop-Process -Force
 
   # Remove installation files (optional)
   Remove-Item -Recurse "C:\Program Files\Metron"

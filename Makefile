@@ -1,4 +1,4 @@
-.PHONY: all build test clean install-deps fmt vet lint test-coverage build-metron build-aqara-test build-bot build-win-agent build-mac-agent release-win-agent run-aqara-test help
+.PHONY: all build test clean install-deps fmt vet lint test-coverage build-metron build-aqara-test build-bot build-win-agent publish-win-agent-manifest build-mac-agent release-win-agent run-aqara-test help
 
 # Variables
 BINARY_NAME=metron
@@ -9,6 +9,15 @@ MAC_AGENT_BINARY=metron-agent
 BUILD_DIR=bin
 COVERAGE_FILE=coverage.out
 COVERAGE_HTML=coverage.html
+
+# Windows agent build metadata (override: make build-win-agent AGENT_VERSION=...)
+# Version = last commit touching agent code, so unrelated pushes produce an identical binary
+# and agents are not updated needlessly (build is reproducible: -trimpath -buildvcs=false)
+AGENT_SOURCES=$(shell go list -deps -f '{{if .Module}}{{if eq .Module.Path "metron"}}{{.Dir}}{{end}}{{end}}' ./cmd/metron-win-agent 2>/dev/null) go.mod go.sum $(AGENT_PUBLIC_KEY_FILE)
+AGENT_VERSION?=$(shell git log -1 --format=%cd-%h --date=format:%Y%m%d.%H%M -- $(AGENT_SOURCES) 2>/dev/null || echo local)
+AGENT_PUBLIC_KEY_FILE=deploy/win-agent/update-public-key.txt
+AGENT_PUBLIC_KEY=$(shell grep -v '^\#' $(AGENT_PUBLIC_KEY_FILE) 2>/dev/null | tr -d '[:space:]')
+AGENT_LDFLAGS=-H windowsgui -X main.version=$(AGENT_VERSION) -X main.updatePublicKey=$(AGENT_PUBLIC_KEY)
 
 # Go parameters
 GOCMD=go
@@ -70,8 +79,14 @@ build-bot:
 build-win-agent:
 	@echo "Building $(WIN_AGENT_BINARY) for Windows amd64..."
 	@mkdir -p $(BUILD_DIR)
-	GOOS=windows GOARCH=amd64 $(GOBUILD) -ldflags "-H windowsgui" -o $(BUILD_DIR)/$(WIN_AGENT_BINARY) ./cmd/metron-win-agent
-	@echo "Built: $(BUILD_DIR)/$(WIN_AGENT_BINARY)"
+	GOOS=windows GOARCH=amd64 $(GOBUILD) -trimpath -buildvcs=false -ldflags "$(AGENT_LDFLAGS)" -o $(BUILD_DIR)/$(WIN_AGENT_BINARY) ./cmd/metron-win-agent
+	@echo "Built: $(BUILD_DIR)/$(WIN_AGENT_BINARY) (version $(AGENT_VERSION), signed updates: $(if $(AGENT_PUBLIC_KEY),required,not required))"
+
+## publish-win-agent-manifest: Write update manifest for the built agent (signs if AGENT_SIGNING_KEY is set)
+publish-win-agent-manifest:
+	$(GOCMD) run ./cmd/metron-agent-sign -file $(BUILD_DIR)/$(WIN_AGENT_BINARY) -version $(AGENT_VERSION) \
+		$(if $(AGENT_PUBLIC_KEY),-require-signature) -out $(BUILD_DIR)/manifest.json
+	@echo "Built: $(BUILD_DIR)/manifest.json"
 
 ## build-mac-agent: Build macOS agent (debug, logging-only enforcement)
 build-mac-agent:

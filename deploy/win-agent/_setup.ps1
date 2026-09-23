@@ -127,6 +127,12 @@ if ($ExistingTask) {
     Write-Info "No existing agent found (fresh install)"
 }
 
+# Stop the updater too, so it does not swap the binary while we copy it
+Stop-ScheduledTask -TaskName "MetronUpdater" -ErrorAction SilentlyContinue
+# Agent processes restarted by the self-update are not tied to the task; stop them explicitly
+Get-Process -Name "metron-win-agent" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
+
 # ============================================
 # Step 4: Create directories
 # ============================================
@@ -284,6 +290,54 @@ try {
 }
 
 # ============================================
+# Step 6b: Create updater/watchdog task (SYSTEM)
+# ============================================
+Write-Step "Configuring updater task..."
+
+# Runs as SYSTEM every 5 minutes: installs published updates into Program Files
+# (the user-level agent cannot write there) and restarts the agent if it was killed.
+$UpdaterTaskName = "MetronUpdater"
+$UpdaterLogPath = Join-Path $DataDir "updater.log"
+$UpdaterArguments = "-mode updater -device-id `"$DeviceID`" -token `"$Token`" -url `"$URL`" -log-path `"$UpdaterLogPath`""
+if ($Config["LOG_LEVEL"]) {
+    $UpdaterArguments += " -log-level $($Config["LOG_LEVEL"])"
+}
+
+try {
+    $UpdaterAction = New-ScheduledTaskAction -Execute $DestBinary -Argument $UpdaterArguments
+    $UpdaterTriggers = @(
+        (New-ScheduledTaskTrigger -AtStartup),
+        (New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) `
+            -RepetitionInterval (New-TimeSpan -Minutes 5) `
+            -RepetitionDuration (New-TimeSpan -Days 3650))
+    )
+    $UpdaterPrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    $UpdaterSettings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit (New-TimeSpan -Minutes 15) `
+        -Hidden
+
+    Unregister-ScheduledTask -TaskName $UpdaterTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    Register-ScheduledTask `
+        -TaskName $UpdaterTaskName `
+        -Action $UpdaterAction `
+        -Trigger $UpdaterTriggers `
+        -Principal $UpdaterPrincipal `
+        -Settings $UpdaterSettings `
+        -Description "Metron agent updater and watchdog. Installs published agent updates and restarts the agent if it stops." | Out-Null
+    Write-OK "Updater task registered (SYSTEM, every 5 minutes)"
+} catch {
+    Write-Err "Failed to register updater task: $_"
+}
+
+# Clean up leftovers of a previous self-update
+Remove-Item (Join-Path $InstallDir "$Binary.old") -Force -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $InstallDir "$Binary.new") -Force -ErrorAction SilentlyContinue
+
+# ============================================
 # Step 7: Start the agent
 # ============================================
 Write-Step "Starting agent..."
@@ -293,6 +347,13 @@ try {
     Write-OK "Start command sent"
 } catch {
     Write-Err "Failed to start task: $_"
+}
+
+try {
+    Start-ScheduledTask -TaskName "MetronUpdater"
+    Write-OK "Updater started (first update check)"
+} catch {
+    Write-Err "Failed to start updater task: $_"
 }
 
 # Wait and verify
@@ -325,6 +386,13 @@ if ($Task) {
     Write-Err "Scheduled task NOT found"
 }
 
+$UpdaterTask = Get-ScheduledTask -TaskName "MetronUpdater" -ErrorAction SilentlyContinue
+if ($UpdaterTask) {
+    Write-OK "Updater task exists (State: $($UpdaterTask.State))"
+} else {
+    Write-Err "Updater task NOT found (automatic updates disabled)"
+}
+
 # Check if log file exists (means agent started and wrote something)
 if (Test-Path $LogPath) {
     Write-OK "Log file created at $LogPath"
@@ -343,6 +411,8 @@ Write-Host "Installation directory: $InstallDir"
 Write-Host "Log file: $LogPath"
 Write-Host ""
 Write-Host "The agent will start automatically at user login."
+Write-Host "Updates are installed automatically (MetronUpdater task, every 5 minutes)."
+Write-Host "Updater log: $UpdaterLogPath"
 Write-Host ""
 Write-Host "To check agent status:"
 Write-Host "  Get-ScheduledTask -TaskName MetronAgent"

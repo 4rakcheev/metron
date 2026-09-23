@@ -27,6 +27,7 @@ type RouterConfig struct {
 	Logger              *slog.Logger
 	AqaraTokenStorage   aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
 	Devices             []config.DeviceConfig   // All devices (used for agent auth)
+	AgentUpdatesDir     string                  // Optional: directory with published agent updates
 }
 
 // NewRouter creates and configures the Gin router
@@ -196,6 +197,12 @@ func NewRouter(config RouterConfig) *gin.Engine {
 		agentGroup.Use(middleware.AgentAuth(config.Devices))
 		{
 			agentGroup.GET("/session", agentHandler.GetDeviceSession)
+
+			if config.AgentUpdatesDir != "" {
+				updateHandler := handlers.NewAgentUpdateHandler(config.AgentUpdatesDir, config.Logger)
+				agentGroup.GET("/update", updateHandler.GetManifest)
+				agentGroup.GET("/update/download", updateHandler.Download)
+			}
 		}
 
 		// Device bypass endpoints (admin auth, not agent auth)
