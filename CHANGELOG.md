@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Device Bypass**
+  - Added missing `GET /v1/devices/:id/bypass`: the bot always got 404 and showed every bypass as disabled, so an active bypass could not be seen or turned off
+  - Bot no longer swallows bypass status errors and shows when a bypass expires
+  - Replaced the bot's "Indefinite" bypass option with "Until end of day"
+- **Telegram Bot Sessions**
+  - Added "New Session" to the Sessions menu and a "Start Session" button after a reward (a reward only raises the limit, it does not unlock a device)
+- **Windows Agent**
+  - Network errors before the first successful poll (e.g. right after logon) now respect the grace period instead of locking immediately
 - **Telegram Bot Navigation**
   - Fixed Back button in new session device selection step (now preserves child selection)
   - Fixed Back button in new session duration selection step (now preserves device selection)

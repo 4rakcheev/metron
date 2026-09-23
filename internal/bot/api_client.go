@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -117,6 +118,23 @@ type ExtendSessionRequest struct {
 type APIError struct {
 	Error string `json:"error"`
 	Code  string `json:"code"`
+}
+
+// StatusError is returned by doRequest for non-2xx responses and keeps the HTTP status
+// so callers can tell "not found" apart from real failures
+type StatusError struct {
+	StatusCode int
+	Message    string
+}
+
+func (e *StatusError) Error() string {
+	return e.Message
+}
+
+// isNotFound reports whether err is an API 404 response
+func isNotFound(err error) bool {
+	var statusErr *StatusError
+	return errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound
 }
 
 // GetTodayStats retrieves today's statistics
@@ -347,10 +365,14 @@ type SetDeviceBypassRequest struct {
 	ExpiresInMinutes *int   `json:"expires_in_minutes,omitempty"`
 }
 
-// GetDeviceBypass gets the bypass status for a device
+// GetDeviceBypass gets the active bypass for a device.
+// Returns (nil, nil) when the device has no active bypass.
 func (a *MetronAPI) GetDeviceBypass(ctx context.Context, deviceID string) (*DeviceBypass, error) {
 	var bypass DeviceBypass
 	if err := a.doRequest(ctx, "GET", "/v1/devices/"+deviceID+"/bypass", nil, &bypass); err != nil {
+		if isNotFound(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	return &bypass, nil
@@ -413,9 +435,15 @@ func (a *MetronAPI) doRequest(ctx context.Context, method, path string, body int
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var apiErr APIError
 		if err := json.Unmarshal(respBody, &apiErr); err != nil {
-			return fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+			return &StatusError{
+				StatusCode: resp.StatusCode,
+				Message:    fmt.Sprintf("API error %d: %s", resp.StatusCode, string(respBody)),
+			}
 		}
-		return fmt.Errorf("API error %d: %s (%s)", resp.StatusCode, apiErr.Error, apiErr.Code)
+		return &StatusError{
+			StatusCode: resp.StatusCode,
+			Message:    fmt.Sprintf("API error %d: %s (%s)", resp.StatusCode, apiErr.Error, apiErr.Code),
+		}
 	}
 
 	if result != nil && resp.StatusCode != http.StatusNoContent {

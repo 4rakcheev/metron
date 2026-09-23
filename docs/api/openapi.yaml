@@ -868,6 +868,49 @@ paths:
           $ref: '#/components/responses/InternalError'
 
   /v1/devices/{id}/bypass:
+    get:
+      tags:
+        - Bypass
+      summary: Get device bypass status
+      description: |
+        Returns the active bypass for a device. Responds 404 when no bypass is set
+        or it has already expired (an expired bypass is cleared on read).
+      operationId: getDeviceBypass
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Device ID
+          schema:
+            type: string
+            example: win-pc1
+      responses:
+        '200':
+          description: Bypass is active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BypassStatus'
+              example:
+                device_id: win-pc1
+                enabled: true
+                reason: Telegram Bot
+                enabled_at: "2025-12-09T15:30:45Z"
+                enabled_by: api
+                expires_at: "2025-12-09T16:30:45Z"
+        '404':
+          description: No active bypass for the device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: No active bypass for device
+                code: BYPASS_NOT_FOUND
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
     post:
       tags:
         - Bypass
@@ -1644,6 +1687,10 @@ components:
           format: date-time
           description: When bypass was enabled (only present if enabled)
           example: "2025-12-09T15:30:45Z"
+        enabled_by:
+          type: string
+          description: Who enabled the bypass (only present in GET response)
+          example: api
         expires_at:
           type: string
           format: date-time

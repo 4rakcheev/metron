@@ -152,6 +152,58 @@ func (h *AgentHandler) GetDeviceSession(c *gin.Context) {
 	})
 }
 
+// GetDeviceBypass returns the active bypass for a device.
+// Responds 404 when no bypass is set or it has already expired.
+// GET /v1/devices/:id/bypass
+func (h *AgentHandler) GetDeviceBypass(c *gin.Context) {
+	deviceID := c.Param("id")
+	ctx := c.Request.Context()
+
+	bypass, err := h.storage.GetDeviceBypass(ctx, deviceID)
+	if err != nil {
+		h.logger.Error("failed to get device bypass",
+			"device_id", deviceID,
+			"error", err,
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to get bypass",
+			"code":  "INTERNAL_ERROR",
+		})
+		return
+	}
+
+	if bypass != nil && bypass.IsExpired() {
+		if err := h.storage.ClearDeviceBypass(ctx, deviceID); err != nil {
+			h.logger.Warn("failed to clear expired bypass",
+				"device_id", deviceID,
+				"error", err,
+			)
+		}
+		bypass = nil
+	}
+
+	if bypass == nil || !bypass.IsActive() {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "No active bypass for device",
+			"code":  "BYPASS_NOT_FOUND",
+		})
+		return
+	}
+
+	response := gin.H{
+		"device_id":  bypass.DeviceID,
+		"enabled":    true,
+		"reason":     bypass.Reason,
+		"enabled_at": bypass.EnabledAt.Format(time.RFC3339),
+		"enabled_by": bypass.EnabledBy,
+	}
+	if bypass.ExpiresAt != nil {
+		response["expires_at"] = bypass.ExpiresAt.Format(time.RFC3339)
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
 // SetDeviceBypass enables or disables bypass mode for a device.
 // POST /v1/devices/:id/bypass
 func (h *AgentHandler) SetDeviceBypass(c *gin.Context) {

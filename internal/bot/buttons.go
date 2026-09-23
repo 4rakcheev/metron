@@ -404,9 +404,27 @@ func BuildQuickActionsButtons() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
+// BuildRewardGrantedButtons offers starting a session right after a reward:
+// a reward only raises the daily limit, it does not unlock any device by itself
+func BuildRewardGrantedButtons() tgbotapi.InlineKeyboardMarkup {
+	quick := BuildQuickActionsButtons()
+	rows := [][]tgbotapi.InlineKeyboardButton{
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("▶️ Start Session",
+				MarshalCallback(CallbackData{Action: "newsession", Step: 0})),
+		),
+	}
+	rows = append(rows, quick.InlineKeyboard...)
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
 // BuildSessionsMenuButtons creates the sessions management submenu
 func BuildSessionsMenuButtons() tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("▶️ New Session",
+				MarshalCallback(CallbackData{Action: "newsession", Step: 0})),
+		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🎁 Reward",
 				MarshalCallback(CallbackData{Action: "reward", Step: 0})),
@@ -632,6 +650,10 @@ func BuildBypassDevicesButtons(devices []DeviceWithBypass) tgbotapi.InlineKeyboa
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
+// bypassUntilEndOfDay is the callback duration marker for "bypass until local midnight".
+// The bot never offers an indefinite bypass: a forgotten one silently disables enforcement for good.
+const bypassUntilEndOfDay = -1
+
 // BuildBypassActionsButtons creates buttons for bypass actions (enable/disable)
 func BuildBypassActionsButtons(deviceID string, currentlyEnabled bool) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -657,7 +679,7 @@ func BuildBypassActionsButtons(deviceID string, currentlyEnabled bool) tgbotapi.
 			{60, "1 hour"},
 			{120, "2 hours"},
 			{480, "Until bedtime"},
-			{0, "Indefinite"},
+			{bypassUntilEndOfDay, "Until end of day"},
 		}
 
 		for _, d := range durations {

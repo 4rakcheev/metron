@@ -200,6 +200,7 @@ func NewRouter(config RouterConfig) *gin.Engine {
 
 		// Device bypass endpoints (admin auth, not agent auth)
 		// These are managed by admin, not by agents themselves
+		v1.GET("/devices/:id/bypass", agentHandler.GetDeviceBypass)
 		v1.POST("/devices/:id/bypass", agentHandler.SetDeviceBypass)
 		v1.DELETE("/devices/:id/bypass", agentHandler.ClearDeviceBypass)
 	}

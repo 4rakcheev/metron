@@ -360,3 +360,48 @@ func TestGetState_ReturnsCopy(t *testing.T) {
 		t.Errorf("Expected state to have session ID 'test-session'")
 	}
 }
+
+func TestNetworkError_AtStartup_WithinGrace_NoLock(t *testing.T) {
+	start := time.Now()
+
+	client := &MockMetronClient{
+		ErrorToReturn: errors.New("network unreachable"),
+	}
+	platform := &MockPlatform{}
+	clock := &MockClock{CurrentTime: start}
+
+	// No successful poll yet: network is not up right after logon
+	enforcer := newTestEnforcer(client, platform, clock)
+
+	ctx := context.Background()
+	enforcer.poll(ctx)
+
+	clock.CurrentTime = start.Add(15 * time.Second)
+	enforcer.poll(ctx)
+
+	if platform.LockCallCount != 0 {
+		t.Errorf("Expected no lock within grace period after start, got %d", platform.LockCallCount)
+	}
+}
+
+func TestNetworkError_AtStartup_AfterGrace_Locks(t *testing.T) {
+	start := time.Now()
+
+	client := &MockMetronClient{
+		ErrorToReturn: errors.New("network unreachable"),
+	}
+	platform := &MockPlatform{}
+	clock := &MockClock{CurrentTime: start}
+
+	enforcer := newTestEnforcer(client, platform, clock)
+
+	ctx := context.Background()
+	enforcer.poll(ctx)
+
+	clock.CurrentTime = start.Add(31 * time.Second)
+	enforcer.poll(ctx)
+
+	if platform.LockCallCount != 1 {
+		t.Errorf("Expected lock after grace period since start, got %d", platform.LockCallCount)
+	}
+}

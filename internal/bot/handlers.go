@@ -229,15 +229,9 @@ func (b *Bot) handleBypass(ctx context.Context, message *tgbotapi.Message) error
 			"❌ No devices configured.", BuildQuickActionsButtons())
 	}
 
-	// Get bypass status for each device
-	var devicesWithBypass []DeviceWithBypass
-	for _, device := range devices {
-		bypass, _ := b.client.GetDeviceBypass(ctx, device.ID)
-		dw := DeviceWithBypass{
-			Device:        device,
-			BypassEnabled: bypass != nil && bypass.Enabled,
-		}
-		devicesWithBypass = append(devicesWithBypass, dw)
+	devicesWithBypass, err := b.loadDevicesWithBypass(ctx, devices)
+	if err != nil {
+		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	text := "🔓 *Bypass Mode*\n\n" +

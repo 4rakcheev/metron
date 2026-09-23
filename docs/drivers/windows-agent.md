@@ -159,7 +159,8 @@ Parents can temporarily disable enforcement via Telegram Bot (`/bypass` command)
 When bypass is active:
 - Agent receives `bypass_mode: true` from backend
 - No locking occurs regardless of session status
-- Can be time-limited or indefinite
+- Bot options are time-limited (1h, 2h, until bedtime, until end of day); indefinite bypass is only possible via direct API call
+- Current status and expiry are shown in the bot; an active bypass offers a "Disable Bypass" button
 
 ## Troubleshooting
 
@@ -202,6 +203,8 @@ Then reinstall or restart the agent.
 ### Fail-Closed Design
 
 If the agent cannot reach the backend, it locks the workstation after the grace period (default 30 seconds). This prevents bypassing enforcement by blocking network access.
+
+Before the first successful poll (e.g. right after logon, while the network is still coming up) the grace period is counted from agent start, so a slow network at logon does not lock the workstation immediately.
 
 ### Token Security
 

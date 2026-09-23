@@ -433,3 +433,31 @@ func getDeviceDisplayName(deviceType string) string {
 		return deviceType
 	}
 }
+
+// formatBypassExpiry describes when a bypass ends, e.g. "until 23:59" or "indefinitely"
+func formatBypassExpiry(bypass *DeviceBypass) string {
+	if bypass == nil || bypass.ExpiresAt == nil || *bypass.ExpiresAt == "" {
+		return "(no expiry, until manually disabled)"
+	}
+	expiresAt, err := time.Parse(time.RFC3339, *bypass.ExpiresAt)
+	if err != nil {
+		return fmt.Sprintf("(until %s)", *bypass.ExpiresAt)
+	}
+	return fmt.Sprintf("(until %s)", formatTime(expiresAt, "02.01 15:04"))
+}
+
+// minutesUntilEndOfDay returns whole minutes from now until the next local midnight
+// in the configured timezone (at least 1)
+func minutesUntilEndOfDay(now time.Time) int {
+	loc := timezone
+	if loc == nil {
+		loc = time.Local
+	}
+	local := now.In(loc)
+	midnight := time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, loc)
+	minutes := int(midnight.Sub(local).Minutes())
+	if minutes < 1 {
+		minutes = 1
+	}
+	return minutes
+}

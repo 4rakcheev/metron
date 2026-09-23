@@ -333,7 +333,7 @@ type DeviceBypass struct {
 When bypass is active:
 - Agent receives `bypass_mode: true` in poll response
 - Agent skips enforcement (no locking)
-- Bypass can have expiration (1 hour, 2 hours, until bedtime, indefinite)
+- Bypass can have expiration (bot offers 1 hour, 2 hours, until bedtime, until end of day; indefinite only via direct API call)
 
 ## API Architecture
 

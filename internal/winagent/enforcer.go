@@ -30,21 +30,25 @@ type Enforcer struct {
 	config   *Config
 	state    EnforcerState
 	logger   *slog.Logger
-	stopChan chan struct{}
-	wg       sync.WaitGroup
-	mu       sync.Mutex
+	// startedAt anchors the grace period before the first successful poll,
+	// so a network that is not up yet right after logon does not lock instantly
+	startedAt time.Time
+	stopChan  chan struct{}
+	wg        sync.WaitGroup
+	mu        sync.Mutex
 }
 
 // NewEnforcer creates a new enforcer
 func NewEnforcer(client MetronClient, platform Platform, clock Clock, config *Config, logger *slog.Logger) *Enforcer {
 	return &Enforcer{
-		client:   client,
-		platform: platform,
-		clock:    clock,
-		config:   config,
-		state:    EnforcerState{},
-		logger:   logger.With("component", "enforcer"),
-		stopChan: make(chan struct{}),
+		client:    client,
+		platform:  platform,
+		clock:     clock,
+		config:    config,
+		state:     EnforcerState{},
+		logger:    logger.With("component", "enforcer"),
+		stopChan:  make(chan struct{}),
+		startedAt: clock.Now(),
 	}
 }
 
@@ -184,16 +188,19 @@ func (e *Enforcer) handleNetworkError(err error) {
 	// Check if we're still within grace period
 	errorDuration := now.Sub(*e.state.NetworkErrorSince)
 	if errorDuration < e.config.GracePeriod {
-		// Within grace period - check if we had a recent successful poll
+		// Within grace period - measure from the last successful poll,
+		// or from agent start if there has not been one yet
+		lastGood := e.startedAt
 		if e.state.LastSuccessfulPoll != nil {
-			timeSinceSuccess := now.Sub(*e.state.LastSuccessfulPoll)
-			if timeSinceSuccess < e.config.GracePeriod {
-				e.logger.Debug("within grace period, continuing",
-					"error_duration", errorDuration,
-					"since_last_success", timeSinceSuccess,
-				)
-				return
-			}
+			lastGood = *e.state.LastSuccessfulPoll
+		}
+		timeSinceSuccess := now.Sub(lastGood)
+		if timeSinceSuccess < e.config.GracePeriod {
+			e.logger.Debug("within grace period, continuing",
+				"error_duration", errorDuration,
+				"since_last_success", timeSinceSuccess,
+			)
+			return
 		}
 	}
 

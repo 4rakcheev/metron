@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -18,7 +19,11 @@ func (b *Bot) handleNewSessionFlow(ctx context.Context, message *tgbotapi.Messag
 
 	switch data.Step {
 	case 0:
-		// Step 0: Back to child selection (from device selection)
+		// Step 0: Child selection (from menu or back from device selection)
+		if b.lockdownActive(ctx) {
+			return b.editMessage(message.Chat.ID, message.MessageID,
+				"🔒 *LOCKDOWN ACTIVE*\n\nAll sessions are blocked. Unlock first via ⚙️ More menu.", BuildQuickActionsButtons())
+		}
 		return b.newSessionStep1(ctx, message)
 	case 1:
 		// Step 1: Child selected (by index), show devices
@@ -607,9 +612,10 @@ func (b *Bot) grantReward(ctx context.Context, message *tgbotapi.Message, childI
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
-	text := FormatRewardGranted(childName, childEmoji, response)
+	text := FormatRewardGranted(childName, childEmoji, response) +
+		"\n\nℹ️ The reward only raises the daily limit. To unlock a device (e.g. the PC), start a session on it."
 
-	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildQuickActionsButtons())
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildRewardGrantedButtons())
 }
 
 // handleFineFlow handles the multi-step flow for applying fines
@@ -1024,16 +1030,9 @@ func (b *Bot) bypassStep0(ctx context.Context, message *tgbotapi.Message) error 
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
-	// Filter to only agent-controlled devices (passive driver) and get bypass status
-	var devicesWithBypass []DeviceWithBypass
-	for _, device := range devices {
-		// Get bypass status for each device
-		bypass, _ := b.client.GetDeviceBypass(ctx, device.ID)
-		dw := DeviceWithBypass{
-			Device:        device,
-			BypassEnabled: bypass != nil && bypass.Enabled,
-		}
-		devicesWithBypass = append(devicesWithBypass, dw)
+	devicesWithBypass, err := b.loadDevicesWithBypass(ctx, devices)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
 	}
 
 	if len(devicesWithBypass) == 0 {
@@ -1049,6 +1048,23 @@ func (b *Bot) bypassStep0(ctx context.Context, message *tgbotapi.Message) error 
 
 	keyboard := BuildBypassDevicesButtons(devicesWithBypass)
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// loadDevicesWithBypass fetches the bypass status for each device.
+// Fails instead of silently reporting "disabled" so an active bypass is never hidden.
+func (b *Bot) loadDevicesWithBypass(ctx context.Context, devices []Device) ([]DeviceWithBypass, error) {
+	result := make([]DeviceWithBypass, 0, len(devices))
+	for _, device := range devices {
+		bypass, err := b.client.GetDeviceBypass(ctx, device.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get bypass status for %s: %w", device.Name, err)
+		}
+		result = append(result, DeviceWithBypass{
+			Device:        device,
+			BypassEnabled: bypass != nil && bypass.Enabled,
+		})
+	}
+	return result, nil
 }
 
 // resolveDevice fetches the device list and returns the device with the given ID,
@@ -1078,15 +1094,18 @@ func (b *Bot) bypassStep1(ctx context.Context, message *tgbotapi.Message, device
 	}
 
 	// Get current bypass status
-	bypass, _ := b.client.GetDeviceBypass(ctx, device.ID)
+	bypass, err := b.client.GetDeviceBypass(ctx, device.ID)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildQuickActionsButtons())
+	}
 	currentlyEnabled := bypass != nil && bypass.Enabled
 
 	emoji := resolveDeviceEmoji(*device)
 	var text string
 	if currentlyEnabled {
-		text = fmt.Sprintf("🔓 *Bypass Mode*\n\n%s *%s*\n\n✅ Bypass is currently *ENABLED*\n\n"+
+		text = fmt.Sprintf("🔓 *Bypass Mode*\n\n%s *%s*\n\n✅ Bypass is currently *ENABLED* %s\n\n"+
 			"Tap below to disable bypass and resume normal enforcement:",
-			emoji, device.Name)
+			emoji, device.Name, formatBypassExpiry(bypass))
 	} else {
 		text = fmt.Sprintf("🔓 *Bypass Mode*\n\n%s *%s*\n\n🔒 Bypass is currently *DISABLED*\n\n"+
 			"Select how long to enable bypass mode:",
@@ -1108,13 +1127,20 @@ func (b *Bot) bypassEnable(ctx context.Context, message *tgbotapi.Message, devic
 			"❌ Invalid device selection.", BuildQuickActionsButtons())
 	}
 
-	// Prepare request
-	req := SetDeviceBypassRequest{
-		Enabled: true,
-		Reason:  "Telegram Bot",
+	untilEndOfDay := durationMinutes == bypassUntilEndOfDay
+	if untilEndOfDay {
+		durationMinutes = minutesUntilEndOfDay(time.Now())
 	}
-	if durationMinutes > 0 {
-		req.ExpiresInMinutes = &durationMinutes
+	if durationMinutes <= 0 {
+		// Stale buttons from older bot versions sent 0 for "Indefinite"; never create an endless bypass
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ Invalid bypass duration. Please open Bypass Mode again.", BuildQuickActionsButtons())
+	}
+
+	req := SetDeviceBypassRequest{
+		Enabled:          true,
+		Reason:           "Telegram Bot",
+		ExpiresInMinutes: &durationMinutes,
 	}
 
 	// Enable bypass
@@ -1125,14 +1151,14 @@ func (b *Bot) bypassEnable(ctx context.Context, message *tgbotapi.Message, devic
 
 	emoji := resolveDeviceEmoji(*device)
 	var durationText string
-	switch durationMinutes {
-	case 0:
-		durationText = "indefinitely (until manually disabled)"
-	case 60:
+	switch {
+	case untilEndOfDay:
+		durationText = "until the end of the day"
+	case durationMinutes == 60:
 		durationText = "for 1 hour"
-	case 120:
+	case durationMinutes == 120:
 		durationText = "for 2 hours"
-	case 480:
+	case durationMinutes == 480:
 		durationText = "until bedtime (~8 hours)"
 	default:
 		durationText = fmt.Sprintf("for %d minutes", durationMinutes)
