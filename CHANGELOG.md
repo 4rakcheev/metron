@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added missing `GET /v1/devices/:id/bypass`: the bot always got 404 and showed every bypass as disabled, so an active bypass could not be seen or turned off
   - Bot no longer swallows bypass status errors and shows when a bypass expires
   - Replaced the bot's "Indefinite" bypass option with "Until end of day"
+  - Bot lists only devices where bypass works (agent-controlled, new `supports_bypass` capability)
 - **Telegram Bot Sessions**
   - Added "New Session" to the Sessions menu and a "Start Session" button after a reward (a reward only raises the limit, it does not unlock a device)
 - **Windows Agent**

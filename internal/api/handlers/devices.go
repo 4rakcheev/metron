@@ -67,6 +67,7 @@ func (h *DevicesHandler) ListDevices(c *gin.Context) {
 				"supports_warnings":   caps.SupportsWarnings,
 				"supports_live_state": caps.SupportsLiveState,
 				"supports_scheduling": caps.SupportsScheduling,
+				"supports_bypass":     caps.SupportsBypass,
 			}
 		}
 

@@ -234,8 +234,14 @@ func (b *Bot) handleBypass(ctx context.Context, message *tgbotapi.Message) error
 		return b.sendMessage(message.Chat.ID, FormatError(err), BuildQuickActionsButtons())
 	}
 
+	if len(devicesWithBypass) == 0 {
+		return b.sendMessage(message.Chat.ID,
+			"❌ No devices available for bypass mode.", BuildQuickActionsButtons())
+	}
+
 	text := "🔓 *Bypass Mode*\n\n" +
-		"Bypass mode temporarily disables screen-time enforcement for a device.\n\n" +
+		"Bypass mode temporarily disables screen-time enforcement for a device.\n" +
+		"Only agent-controlled devices (Windows PC) support it.\n\n" +
 		"✅ = Bypass enabled (no limits)\n" +
 		"🔒 = Normal enforcement\n\n" +
 		"Select a device:"

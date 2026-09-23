@@ -85,6 +85,7 @@ type DeviceCapabilities struct {
 	SupportsWarnings   bool `json:"supports_warnings"`
 	SupportsLiveState  bool `json:"supports_live_state"`
 	SupportsScheduling bool `json:"supports_scheduling"`
+	SupportsBypass     bool `json:"supports_bypass"`
 }
 
 // Session represents a screen-time session

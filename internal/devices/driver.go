@@ -30,16 +30,18 @@ type DeviceDriver interface {
 
 // DeviceState represents the current state of a device
 type DeviceState struct {
-	DeviceID  string
-	IsActive  bool
-	Metadata  map[string]interface{}
+	DeviceID string
+	IsActive bool
+	Metadata map[string]interface{}
 }
 
 // DriverCapabilities describes what features a driver supports
 type DriverCapabilities struct {
-	SupportsWarnings  bool
-	SupportsLiveState bool
+	SupportsWarnings   bool
+	SupportsLiveState  bool
 	SupportsScheduling bool
+	// SupportsBypass is true for agent-enforced (pull-based) drivers: only agents read bypass state
+	SupportsBypass bool
 }
 
 // CapableDriver is an optional interface that drivers can implement

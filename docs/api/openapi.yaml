@@ -1154,6 +1154,10 @@ components:
           type: boolean
           description: Whether the device supports scheduled sessions
           example: false
+        supports_bypass:
+          type: boolean
+          description: Whether bypass mode has any effect (true only for agent-controlled devices, e.g. Windows PC)
+          example: false
 
     Session:
       type: object

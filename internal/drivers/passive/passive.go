@@ -74,6 +74,7 @@ func (d *Driver) Capabilities() devices.DriverCapabilities {
 		SupportsWarnings:   true, // Agent handles warnings
 		SupportsLiveState:  false,
 		SupportsScheduling: false,
+		SupportsBypass:     true, // Agent skips enforcement while bypass is active
 	}
 }
 

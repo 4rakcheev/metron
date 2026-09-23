@@ -1041,7 +1041,8 @@ func (b *Bot) bypassStep0(ctx context.Context, message *tgbotapi.Message) error 
 	}
 
 	text := "🔓 *Bypass Mode*\n\n" +
-		"Bypass mode temporarily disables screen-time enforcement for a device.\n\n" +
+		"Bypass mode temporarily disables screen-time enforcement for a device.\n" +
+		"Only agent-controlled devices (Windows PC) support it.\n\n" +
 		"✅ = Bypass enabled (no limits)\n" +
 		"🔒 = Normal enforcement\n\n" +
 		"Select a device:"
@@ -1050,11 +1051,15 @@ func (b *Bot) bypassStep0(ctx context.Context, message *tgbotapi.Message) error 
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
-// loadDevicesWithBypass fetches the bypass status for each device.
+// loadDevicesWithBypass fetches the bypass status for each device that supports bypass.
 // Fails instead of silently reporting "disabled" so an active bypass is never hidden.
 func (b *Bot) loadDevicesWithBypass(ctx context.Context, devices []Device) ([]DeviceWithBypass, error) {
 	result := make([]DeviceWithBypass, 0, len(devices))
 	for _, device := range devices {
+		// Bypass is only enforced by agents; for other devices it would silently do nothing
+		if !device.Capabilities.SupportsBypass {
+			continue
+		}
 		bypass, err := b.client.GetDeviceBypass(ctx, device.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get bypass status for %s: %w", device.Name, err)
