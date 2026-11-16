@@ -10,12 +10,12 @@ interface ChildSelectorProps {
 export function ChildSelector({ children, onSelect }: ChildSelectorProps) {
   return (
     <div className="w-full max-w-2xl mx-auto px-4">
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+      <div className="flex flex-wrap justify-center gap-4">
         {children.map((child) => (
           <button
             key={child.id}
             onClick={() => onSelect(child.id)}
-            className="card transform transition-all hover:scale-105 active:scale-95 p-8 flex flex-col items-center gap-4 bg-gradient-to-br from-white to-purple-50 hover:shadow-2xl"
+            className="card w-[calc(50%-0.5rem)] md:w-48 transform transition-all hover:scale-105 active:scale-95 p-8 flex flex-col items-center gap-4 bg-gradient-to-br from-white to-purple-50 hover:shadow-2xl"
           >
             <div className="text-6xl">{child.emoji}</div>
             <div className="text-xl font-bold text-gray-800">{child.name}</div>
