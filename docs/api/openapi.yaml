@@ -50,7 +50,9 @@ tags:
   - name: Downtime
     description: Downtime schedule management
   - name: Lockdown
-    description: Global session lockdown management
+    description: Lockdown rules (block a child or all children on a device or all devices)
+  - name: Approvals
+    description: Daily parent approval gate for child-initiated sessions (registered only when enabled)
   - name: Agent
     description: Agent endpoints for external device agents (Windows agent, etc.)
   - name: Bypass
@@ -432,14 +434,23 @@ paths:
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '409':
-          description: Lockdown is active - session creation is blocked
+          description: |
+            Session start is blocked: a lockdown rule covers this device and child
+            (`LOCKDOWN_ACTIVE`) or a child is in downtime (`DOWNTIME_ACTIVE`).
+            Parent-started sessions do not need the daily approval.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-              example:
-                error: "Lockdown is active - all sessions are blocked until manually unlocked"
-                code: "LOCKDOWN_ACTIVE"
+              examples:
+                lockdown:
+                  value:
+                    error: "lockdown active: sessions are blocked until unlocked (child simon on device ps51)"
+                    code: "LOCKDOWN_ACTIVE"
+                downtime:
+                  value:
+                    error: "session cannot be started during downtime period"
+                    code: "DOWNTIME_ACTIVE"
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -517,13 +528,15 @@ paths:
         '404':
           $ref: '#/components/responses/SessionNotFoundError'
         '409':
-          description: Lockdown is active - session extension is blocked
+          description: |
+            Extension or add_children is blocked by a lockdown rule (`LOCKDOWN_ACTIVE`),
+            or extension is blocked by downtime (`DOWNTIME_ACTIVE`).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
-                error: "Lockdown is active - all sessions are blocked until manually unlocked"
+                error: "lockdown active: sessions are blocked until unlocked (all children on device ps51)"
                 code: "LOCKDOWN_ACTIVE"
         '500':
           $ref: '#/components/responses/InternalError'
@@ -683,51 +696,142 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/lockdown:
+  /v1/lockdowns:
     get:
       tags:
         - Lockdown
-      summary: Get lockdown state
+      summary: List active lockdown rules
       description: |
-        Returns the current global lockdown state. When lockdown is enabled,
-        no session can be created or extended by anyone (child UI, bot, API)
-        until it is manually disabled. Daily time quotas are not affected.
-      operationId: getLockdown
+        Returns active lockdown rules. A rule blocks a child (or all children)
+        on a device (or all devices). While active, no matching session can be
+        started, extended or joined by anyone (child app, bot, API). Expired
+        rules are not returned. Daily time quotas are not affected.
+      operationId: listLockdowns
       responses:
         '200':
-          description: Lockdown state retrieved successfully
+          description: Active rules
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LockdownState'
-              examples:
-                enabled:
-                  summary: Lockdown is enabled
-                  value:
-                    enabled: true
-                    enabled_at: "2026-09-06T18:30:00+03:00"
-                    enabled_by: "api"
-                disabled:
-                  summary: Lockdown is disabled
-                  value:
-                    enabled: false
-                    enabled_at: null
-                    enabled_by: null
+                type: array
+                items:
+                  $ref: '#/components/schemas/LockdownRule'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    post:
+      tags:
+        - Lockdown
+      summary: Create a lockdown rule
+      description: |
+        Creates a rule and stops matching active sessions. A rule with the same
+        child and device scope is replaced. An empty body creates a global
+        lockdown (all children, all devices, until removed).
+      operationId: createLockdown
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateLockdownRequest'
+            example:
+              child_id: "simon"
+              device_id: "ps51"
+              until: "end_of_day"
+              enabled_by: "telegram"
+      responses:
+        '201':
+          description: Rule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateLockdownResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Unknown child (`CHILD_NOT_FOUND`) or device (`DEVICE_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/lockdowns/{id}:
+    delete:
+      tags:
+        - Lockdown
+      summary: Remove a lockdown rule
+      operationId: deleteLockdown
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Rule removed
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          description: Rule not found (`LOCKDOWN_NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/approvals/today:
+    get:
+      tags:
+        - Approvals
+      summary: Today's approval status for all children
+      description: |
+        On days listed in `approval_gate.required_days` a child can start sessions
+        from the child app only after a parent approves them for today.
+        Registered only when the gate is enabled.
+      operationId: listTodayApprovals
+      responses:
+        '200':
+          description: Approval status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [required, children]
+                properties:
+                  required:
+                    type: boolean
+                    description: Approval is needed today
+                  children:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChildApproval'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '500':
           $ref: '#/components/responses/InternalError'
 
-  /v1/lockdown/enable:
+  /v1/children/{id}/approval:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
     post:
       tags:
-        - Lockdown
-      summary: Enable lockdown
-      description: |
-        Enables the global lockdown: stops all active sessions and blocks
-        creation/extension of any new session until lockdown is manually disabled.
-        Daily time quotas are preserved. Idempotent.
-      operationId: enableLockdown
+        - Approvals
+      summary: Approve a child for today
+      operationId: approveChild
       requestBody:
         required: false
         content:
@@ -735,48 +839,36 @@ paths:
             schema:
               type: object
               properties:
-                enabled_by:
+                approved_by:
                   type: string
-                  description: Free-form audit label of who enabled the lockdown (defaults to "api")
+                  description: Free-form audit label (defaults to "api")
                   example: "telegram"
       responses:
-        '200':
-          description: Lockdown enabled successfully
+        '201':
+          description: Child approved for the rest of today
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EnableLockdownResponse'
-              example:
-                enabled: true
-                stopped_sessions: 2
-                failed_sessions: 0
-                message: "Lockdown enabled - all sessions are blocked until manually unlocked"
+                $ref: '#/components/schemas/ChildApproval'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/ChildNotFoundError'
         '500':
           $ref: '#/components/responses/InternalError'
-
-  /v1/lockdown/disable:
-    post:
+    delete:
       tags:
-        - Lockdown
-      summary: Disable lockdown
-      description: |
-        Disables the global lockdown. Sessions can be started again using
-        the remaining daily time.
-      operationId: disableLockdown
+        - Approvals
+      summary: Revoke today's approval
+      description: Running sessions are not stopped.
+      operationId: revokeApproval
       responses:
-        '200':
-          description: Lockdown disabled successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DisableLockdownResponse'
-              example:
-                enabled: false
-                message: "Lockdown disabled - sessions can be started again"
+        '204':
+          description: Approval revoked
         '401':
           $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/ChildNotFoundError'
         '500':
           $ref: '#/components/responses/InternalError'
 
@@ -1461,62 +1553,107 @@ components:
           nullable: true
           example: "2025-12-09"
 
-    LockdownState:
+    LockdownRule:
       type: object
-      required:
-        - enabled
+      required: [id, child_id, child_name, device_id, device_name, enabled_at, expires_at]
       properties:
-        enabled:
-          type: boolean
-          description: Whether lockdown is currently enabled
-          example: true
+        id:
+          type: integer
+          format: int64
+          example: 3
+        child_id:
+          type: string
+          nullable: true
+          description: Blocked child (null = all children)
+          example: "simon"
+        child_name:
+          type: string
+          example: "Simon"
+        device_id:
+          type: string
+          nullable: true
+          description: Blocked device (null = all devices)
+          example: "ps51"
+        device_name:
+          type: string
+          example: "PS5"
+        reason:
+          type: string
+          nullable: true
         enabled_at:
           type: string
           format: date-time
-          description: When lockdown was enabled (null when disabled)
-          nullable: true
-          example: "2026-09-06T18:30:00+03:00"
         enabled_by:
           type: string
-          description: Who enabled the lockdown (null when disabled)
           nullable: true
-          example: "api"
-
-    EnableLockdownResponse:
-      type: object
-      required:
-        - enabled
-        - stopped_sessions
-        - failed_sessions
-        - message
-      properties:
-        enabled:
-          type: boolean
-          example: true
-        stopped_sessions:
-          type: integer
-          description: Number of active sessions stopped when enabling lockdown
-          example: 2
-        failed_sessions:
-          type: integer
-          description: Number of active sessions that could not be stopped (the scheduler ends them within a minute)
-          example: 0
-        message:
+          example: "telegram"
+        expires_at:
           type: string
-          example: "Lockdown enabled - all sessions are blocked until manually unlocked"
+          format: date-time
+          nullable: true
+          description: When the rule ends (null = until removed)
 
-    DisableLockdownResponse:
+    CreateLockdownRequest:
       type: object
-      required:
-        - enabled
-        - message
       properties:
-        enabled:
-          type: boolean
-          example: false
-        message:
+        child_id:
           type: string
-          example: "Lockdown disabled - sessions can be started again"
+          description: Child to block (omit for all children)
+        device_id:
+          type: string
+          description: Device to block (omit for all devices)
+        until:
+          type: string
+          enum: [manual, end_of_day]
+          default: manual
+          description: "`end_of_day` expires at local midnight (server timezone)"
+        reason:
+          type: string
+        enabled_by:
+          type: string
+          description: Free-form audit label (defaults to "api")
+
+    CreateLockdownResponse:
+      allOf:
+        - $ref: '#/components/schemas/LockdownRule'
+        - type: object
+          required: [stopped_sessions, failed_sessions, message]
+          properties:
+            stopped_sessions:
+              type: integer
+              description: Matching active sessions stopped
+              example: 1
+            failed_sessions:
+              type: integer
+              description: Matching sessions that could not be stopped (the scheduler ends them within a minute)
+              example: 0
+            message:
+              type: string
+              example: "Lockdown created - matching sessions are blocked"
+
+    ChildApproval:
+      type: object
+      required: [child_id, child_name, required, approved]
+      properties:
+        child_id:
+          type: string
+        child_name:
+          type: string
+        child_emoji:
+          type: string
+        required:
+          type: boolean
+          description: Approval is needed today
+        approved:
+          type: boolean
+          description: Child may start sessions today (true when not required)
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        approved_by:
+          type: string
+          nullable: true
 
     TodayStats:
       type: object

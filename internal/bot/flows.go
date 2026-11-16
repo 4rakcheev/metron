@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -20,9 +21,8 @@ func (b *Bot) handleNewSessionFlow(ctx context.Context, message *tgbotapi.Messag
 	switch data.Step {
 	case 0:
 		// Step 0: Child selection (from menu or back from device selection)
-		if b.lockdownActive(ctx) {
-			return b.editMessage(message.Chat.ID, message.MessageID,
-				"🔒 *LOCKDOWN ACTIVE*\n\nAll sessions are blocked. Unlock first via ⚙️ More menu.", BuildQuickActionsButtons())
+		if b.globalLockdownActive(ctx) {
+			return b.editMessage(message.Chat.ID, message.MessageID, globalLockdownText, BuildLockdownDoneButtons())
 		}
 		return b.newSessionStep1(ctx, message)
 	case 1:
@@ -810,14 +810,30 @@ func (b *Bot) handleSessionsMenu(ctx context.Context, message *tgbotapi.Message)
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
-// lockdownActive checks the global lockdown state, treating errors as "not locked"
-func (b *Bot) lockdownActive(ctx context.Context) bool {
-	status, err := b.client.GetLockdownStatus(ctx)
+// globalLockdownText is shown when a rule for all children on all devices blocks a new session
+const globalLockdownText = "🔒 *All sessions are locked*\n\n" +
+	"A lockdown for all children on all devices is active. Unlock it first in ⚙️ More, then 🔒 Lockdowns."
+
+// activeLockdowns returns the active lockdown rules, treating errors as "no rules"
+// (used for banners and hints only; the server still enforces every rule)
+func (b *Bot) activeLockdowns(ctx context.Context) []LockdownRule {
+	rules, err := b.client.ListLockdowns(ctx)
 	if err != nil {
-		b.logger.Warn("Failed to check lockdown status", "error", err)
-		return false
+		b.logger.Warn("Failed to list lockdowns", "error", err)
+		return nil
 	}
-	return status.Enabled
+	return rules
+}
+
+// globalLockdownActive reports whether a rule blocks all children on all devices.
+// Narrower rules are left to the server, which rejects matching sessions with LOCKDOWN_ACTIVE.
+func (b *Bot) globalLockdownActive(ctx context.Context) bool {
+	for _, rule := range b.activeLockdowns(ctx) {
+		if rule.IsGlobal() {
+			return true
+		}
+	}
+	return false
 }
 
 // handleMoreMenu shows the additional features submenu
@@ -829,39 +845,69 @@ func (b *Bot) handleMoreMenu(ctx context.Context, message *tgbotapi.Message) err
 		skipActive = false
 	}
 
-	lockdownOn := b.lockdownActive(ctx)
+	rules := b.activeLockdowns(ctx)
 
 	text := `⚙️ *Additional Features*
 
 • 🌙 Skip Downtime - Temporarily skip downtime for all children
-• 🔒 Lockdown - Block all sessions until manually unlocked
+• 🔒 Lockdowns - Block a child or all children on a device or all devices (until end of day or until you unlock)
 • 🔓 Bypass Mode - Disable enforcement for specific devices`
 
-	if lockdownOn {
-		text = "🔒 *LOCKDOWN ACTIVE* - all sessions are blocked\n\n" + text
+	if len(rules) > 0 {
+		text = "🔒 *Active lockdowns*\n" + FormatLockdownLines(rules, time.Now()) + "\n" + text
 	}
 
-	keyboard := BuildMoreMenuButtons(skipActive, lockdownOn)
+	keyboard := BuildMoreMenuButtons(skipActive, len(rules))
 	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
-// handleLockdownFlow handles the lockdown toggle flow (confirm, then apply)
+// handleLockdownFlow handles the lockdown rules flow: list/unlock and the
+// "new lockdown" steps (child, then device, then duration, then create)
 func (b *Bot) handleLockdownFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	b.logger.Info("Lockdown flow",
+		"step", data.Step,
+		"sub_action", data.SubAction,
+		"child_index", data.ChildIndex,
+		"device_id", data.Device,
+		"until", data.Duration,
+		"rule_id", data.RuleID,
+	)
+
+	if data.SubAction == lockdownSubUnlock {
+		return b.lockdownUnlock(ctx, message, data.RuleID)
+	}
+
 	switch data.Step {
+	case 0:
+		return b.lockdownList(ctx, message, "")
 	case 1:
-		return b.lockdownToggle(ctx, message, data)
+		return b.lockdownPickChild(ctx, message)
+	case 2:
+		return b.lockdownPickDevice(ctx, message, data.ChildIndex)
+	case 3:
+		return b.lockdownPickDuration(ctx, message, data.ChildIndex, data.Device)
+	case 4:
+		return b.lockdownCreate(ctx, message, data)
 	default:
-		return b.lockdownConfirm(ctx, message)
+		return b.lockdownList(ctx, message, "")
 	}
 }
 
-// lockdownConfirm shows the confirmation screen before toggling lockdown.
-// The direction is decided here, from an error-checked read, and travels
-// inside the confirm button's callback data - never re-derived at apply time.
-func (b *Bot) lockdownConfirm(ctx context.Context, message *tgbotapi.Message) error {
-	status, err := b.client.GetLockdownStatus(ctx)
+// lockdownBackKeyboard returns a keyboard with a single Back button to the lockdown list
+func lockdownBackKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
+				MarshalCallback(CallbackData{Action: lockdownAction})),
+		),
+	)
+}
+
+// lockdownList shows active lockdown rules with unlock buttons. note is shown on top if not empty.
+func (b *Bot) lockdownList(ctx context.Context, message *tgbotapi.Message, note string) error {
+	rules, err := b.client.ListLockdowns(ctx)
 	if err != nil {
-		b.logger.Error("Failed to get lockdown status", "error", err)
+		b.logger.Error("Failed to list lockdowns", "error", err)
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
@@ -871,73 +917,146 @@ func (b *Bot) lockdownConfirm(ctx context.Context, message *tgbotapi.Message) er
 		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), keyboard)
 	}
 
-	var text string
-	if status.Enabled {
-		text = `🔓 *Disable Lockdown?*
-
-Children will be able to start sessions again using their remaining time.`
-	} else {
-		text = `🔒 *Enable Lockdown?*
-
-This will *STOP all active sessions* and block ALL new sessions (child app, bot, API) until you manually unlock.
-
-Time quotas are kept - remaining minutes stay available after unlock.`
-	}
-
-	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildLockdownConfirmButtons(!status.Enabled))
+	return b.editMessage(message.Chat.ID, message.MessageID,
+		FormatLockdownList(rules, note, time.Now()), BuildLockdownListButtons(rules))
 }
 
-// lockdownToggle applies the lockdown toggle after confirmation.
-// The direction comes from the callback data set by lockdownConfirm.
-func (b *Bot) lockdownToggle(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
-	skipActive, _ := b.client.IsDowntimeSkippedToday(ctx)
-
-	switch data.SubAction {
-	case "off":
-		if err := b.client.DisableLockdown(ctx); err != nil {
-			b.logger.Error("Failed to disable lockdown", "error", err)
-			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(skipActive, true))
-		}
-		text := `🔓 *Lockdown Disabled*
-
-Sessions can be started again.`
-		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(skipActive, false))
-
-	case "on":
-		result, err := b.client.EnableLockdown(ctx)
-		if err != nil {
-			b.logger.Error("Failed to enable lockdown", "error", err)
-			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(skipActive, b.lockdownActive(ctx)))
-		}
-
-		text := fmt.Sprintf(`🔒 *Lockdown Enabled*
-
-Stopped %d active session(s).
-
-All new sessions are blocked until you unlock. Time quotas are kept.`, result.StoppedSessions)
-		if result.FailedSessions > 0 {
-			text = fmt.Sprintf(`🔒 *Lockdown Enabled*
-
-Stopped %d active session(s), but %d could not be stopped - they will be ended automatically within a minute.
-
-All new sessions are blocked until you unlock. Time quotas are kept.`, result.StoppedSessions, result.FailedSessions)
-		}
-		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(skipActive, true))
-
-	default:
-		// Stale or malformed callback - show the confirmation screen again
-		return b.lockdownConfirm(ctx, message)
+// lockdownUnlock deletes a rule and shows the list again. A missing rule counts as already removed.
+func (b *Bot) lockdownUnlock(ctx context.Context, message *tgbotapi.Message, ruleID int64) error {
+	if ruleID <= 0 {
+		return b.lockdownList(ctx, message, "❌ Invalid lockdown selection.")
 	}
+
+	if err := b.client.DeleteLockdown(ctx, ruleID); err != nil {
+		if !isNotFound(err) {
+			b.logger.Error("Failed to delete lockdown", "rule_id", ruleID, "error", err)
+			return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+		}
+		return b.lockdownList(ctx, message, "🔓 Already unlocked (the lockdown was removed or expired).")
+	}
+
+	return b.lockdownList(ctx, message, "🔓 *Unlocked*")
+}
+
+// lockdownPickChild shows the child picker for a new lockdown
+func (b *Bot) lockdownPickChild(ctx context.Context, message *tgbotapi.Message) error {
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+	}
+
+	text := "🔒 *New Lockdown*\n\n👶 Step 1/3: Who should be locked?"
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildLockdownChildButtons(children))
+}
+
+// lockdownChildScope resolves the encoded child selection to (child ID, display name).
+// lockdownAllChildren maps to ("", "All children").
+func (b *Bot) lockdownChildScope(ctx context.Context, childIndex int) (string, string, error) {
+	if childIndex == lockdownAllChildren {
+		return "", "All children", nil
+	}
+	if childIndex < 0 {
+		return "", "", fmt.Errorf("invalid child index: %d", childIndex)
+	}
+	children, err := b.client.ListChildren(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	if childIndex >= len(children) {
+		return "", "", fmt.Errorf("invalid child index: %d", childIndex)
+	}
+	child := children[childIndex]
+	return child.ID, strings.TrimSpace(child.Emoji + " " + child.Name), nil
+}
+
+// lockdownDeviceScope resolves the encoded device selection to (device ID, display name).
+// lockdownAllDevices maps to ("", "all devices").
+func (b *Bot) lockdownDeviceScope(ctx context.Context, deviceID string) (string, string, error) {
+	if deviceID == lockdownAllDevices {
+		return "", "all devices", nil
+	}
+	device, err := b.resolveDevice(ctx, deviceID)
+	if err != nil {
+		return "", "", err
+	}
+	if device == nil {
+		return "", "", fmt.Errorf("device %q not found", deviceID)
+	}
+	return device.ID, resolveDeviceEmoji(*device) + " " + device.Name, nil
+}
+
+// lockdownPickDevice shows the device picker for a new lockdown
+func (b *Bot) lockdownPickDevice(ctx context.Context, message *tgbotapi.Message, childIndex int) error {
+	_, childName, err := b.lockdownChildScope(ctx, childIndex)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+	}
+
+	devices, err := b.client.ListDevices(ctx)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+	}
+
+	text := fmt.Sprintf("🔒 *New Lockdown*\n\n👶 %s\n\n📺 Step 2/3: Which device?", escapeMarkdown(childName))
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildLockdownDeviceButtons(devices, childIndex))
+}
+
+// lockdownPickDuration shows the duration picker for a new lockdown
+func (b *Bot) lockdownPickDuration(ctx context.Context, message *tgbotapi.Message, childIndex int, deviceID string) error {
+	_, childName, err := b.lockdownChildScope(ctx, childIndex)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+	}
+	_, deviceName, err := b.lockdownDeviceScope(ctx, deviceID)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+	}
+
+	text := fmt.Sprintf("🔒 *New Lockdown*\n\n👶 %s\n📺 %s\n\n⏱ Step 3/3: For how long?\n\n"+
+		"Matching active sessions will be stopped right away.",
+		escapeMarkdown(childName), escapeMarkdown(deviceName))
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildLockdownDurationButtons(childIndex, deviceID))
+}
+
+// lockdownCreate creates the lockdown rule and shows the result
+func (b *Bot) lockdownCreate(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	var until string
+	switch data.Duration {
+	case lockdownUntilEndOfDayCode:
+		until = LockdownUntilEndOfDay
+	case lockdownUntilManualCode:
+		until = LockdownUntilManual
+	default:
+		return b.editMessage(message.Chat.ID, message.MessageID,
+			"❌ Invalid lockdown duration. Please start again.", lockdownBackKeyboard())
+	}
+
+	childID, _, err := b.lockdownChildScope(ctx, data.ChildIndex)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+	}
+	deviceID, _, err := b.lockdownDeviceScope(ctx, data.Device)
+	if err != nil {
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+	}
+
+	result, err := b.client.CreateLockdown(ctx, childID, deviceID, until)
+	if err != nil {
+		b.logger.Error("Failed to create lockdown", "child_id", childID, "device_id", deviceID, "until", until, "error", err)
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), lockdownBackKeyboard())
+	}
+
+	return b.editMessage(message.Chat.ID, message.MessageID, FormatLockdownCreated(result, time.Now()), BuildLockdownDoneButtons())
 }
 
 // handleSkipDowntime handles the skip downtime today action
 func (b *Bot) handleSkipDowntime(ctx context.Context, message *tgbotapi.Message) error {
-	lockdownOn := b.lockdownActive(ctx)
+	lockdownCount := len(b.activeLockdowns(ctx))
 
 	// Check if already skipped
 	alreadySkipped, err := b.client.IsDowntimeSkippedToday(ctx)
 	if err != nil {
-		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false, lockdownOn))
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false, lockdownCount))
 	}
 
 	if alreadySkipped {
@@ -945,12 +1064,12 @@ func (b *Bot) handleSkipDowntime(ctx context.Context, message *tgbotapi.Message)
 
 Downtime is already skipped for today.
 It will resume automatically tomorrow.`
-		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true, lockdownOn))
+		return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true, lockdownCount))
 	}
 
 	// Skip downtime for today
 	if err := b.client.SkipDowntimeToday(ctx); err != nil {
-		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false, lockdownOn))
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), BuildMoreMenuButtons(false, lockdownCount))
 	}
 
 	text := `✅ *Downtime Skipped for Today!*
@@ -959,7 +1078,128 @@ All children can now use screen time without downtime restrictions until midnigh
 
 Downtime will automatically resume tomorrow.`
 
-	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true, lockdownOn))
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildMoreMenuButtons(true, lockdownCount))
+}
+
+// approvalDisabledText is shown when the server has the approval gate turned off
+const approvalDisabledText = "✅ *Approve day*\n\nApproval gate is disabled on the server (approval\\_gate in config.json)."
+
+// approvalBackKeyboard returns a keyboard with a single Back button to the approval screen
+func approvalBackKeyboard() tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
+				MarshalCallback(CallbackData{Action: approvalAction})),
+		),
+	)
+}
+
+// approvalScreen loads today's approvals and returns the screen text and keyboard.
+// note is shown on top if not empty.
+func (b *Bot) approvalScreen(ctx context.Context, note string) (string, tgbotapi.InlineKeyboardMarkup) {
+	approvals, err := b.client.ListTodayApprovals(ctx)
+	if err != nil {
+		if isFeatureDisabled(err) {
+			return approvalDisabledText, BuildQuickActionsButtons()
+		}
+		b.logger.Error("Failed to list approvals", "error", err)
+		return FormatError(err), BuildQuickActionsButtons()
+	}
+	return FormatApprovals(approvals, note), BuildApprovalButtons(approvals.Children)
+}
+
+// handleApprovalFlow handles the "Approve day" flow: show status, approve, revoke (with confirmation)
+func (b *Bot) handleApprovalFlow(ctx context.Context, message *tgbotapi.Message, data *CallbackData) error {
+	b.logger.Info("Approval flow",
+		"step", data.Step,
+		"sub_action", data.SubAction,
+		"child_index", data.ChildIndex,
+	)
+
+	switch data.SubAction {
+	case approvalSubApprove:
+		return b.approvalApprove(ctx, message, data.ChildIndex)
+	case approvalSubRevoke:
+		if data.Step == 1 {
+			return b.approvalRevoke(ctx, message, data.ChildIndex)
+		}
+		return b.approvalRevokeConfirm(ctx, message, data.ChildIndex)
+	default:
+		text, keyboard := b.approvalScreen(ctx, "")
+		return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+	}
+}
+
+// resolveApprovalChild resolves a child index in today's approval list.
+// ok is false when the screen was already rendered (feature disabled, error, bad index).
+func (b *Bot) resolveApprovalChild(ctx context.Context, message *tgbotapi.Message, childIndex int) (*ChildApproval, bool, error) {
+	approvals, err := b.client.ListTodayApprovals(ctx)
+	if err != nil {
+		if isFeatureDisabled(err) {
+			return nil, false, b.editMessage(message.Chat.ID, message.MessageID, approvalDisabledText, BuildQuickActionsButtons())
+		}
+		return nil, false, b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), approvalBackKeyboard())
+	}
+	if childIndex < 0 || childIndex >= len(approvals.Children) {
+		text, keyboard := b.approvalScreen(ctx, "❌ Invalid child selection.")
+		return nil, false, b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+	}
+	child := approvals.Children[childIndex]
+	return &child, true, nil
+}
+
+// approvalApprove approves a child for today and re-renders the screen
+func (b *Bot) approvalApprove(ctx context.Context, message *tgbotapi.Message, childIndex int) error {
+	child, ok, err := b.resolveApprovalChild(ctx, message, childIndex)
+	if !ok {
+		return err
+	}
+
+	if _, err := b.client.ApproveChild(ctx, child.ChildID); err != nil {
+		if isFeatureDisabled(err) {
+			return b.editMessage(message.Chat.ID, message.MessageID, approvalDisabledText, BuildQuickActionsButtons())
+		}
+		b.logger.Error("Failed to approve child", "child_id", child.ChildID, "error", err)
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), approvalBackKeyboard())
+	}
+
+	note := fmt.Sprintf("✅ %s can now use screen time today.", escapeMarkdown(child.ChildName))
+	text, keyboard := b.approvalScreen(ctx, note)
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
+}
+
+// approvalRevokeConfirm asks the parent to confirm revoking today's approval
+func (b *Bot) approvalRevokeConfirm(ctx context.Context, message *tgbotapi.Message, childIndex int) error {
+	child, ok, err := b.resolveApprovalChild(ctx, message, childIndex)
+	if !ok {
+		return err
+	}
+
+	text := fmt.Sprintf("↩️ *Revoke approval for %s?*\n\n"+
+		"%s will not be able to start new screen time from the app today until you approve again. "+
+		"Sessions that are already running keep running.",
+		escapeMarkdown(child.ChildName), escapeMarkdown(child.ChildName))
+	return b.editMessage(message.Chat.ID, message.MessageID, text, BuildApprovalRevokeConfirmButtons(childIndex))
+}
+
+// approvalRevoke revokes today's approval for a child and re-renders the screen
+func (b *Bot) approvalRevoke(ctx context.Context, message *tgbotapi.Message, childIndex int) error {
+	child, ok, err := b.resolveApprovalChild(ctx, message, childIndex)
+	if !ok {
+		return err
+	}
+
+	if err := b.client.RevokeApproval(ctx, child.ChildID); err != nil {
+		if isFeatureDisabled(err) {
+			return b.editMessage(message.Chat.ID, message.MessageID, approvalDisabledText, BuildQuickActionsButtons())
+		}
+		b.logger.Error("Failed to revoke approval", "child_id", child.ChildID, "error", err)
+		return b.editMessage(message.Chat.ID, message.MessageID, FormatError(err), approvalBackKeyboard())
+	}
+
+	note := fmt.Sprintf("↩️ Approval revoked for %s.", escapeMarkdown(child.ChildName))
+	text, keyboard := b.approvalScreen(ctx, note)
+	return b.editMessage(message.Chat.ID, message.MessageID, text, keyboard)
 }
 
 // handleStopAll stops all active sessions

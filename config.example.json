@@ -21,6 +21,10 @@
     "friday": { "start_time": "22:00", "end_time": "10:00" },
     "saturday": { "start_time": "22:00", "end_time": "10:00" }
   },
+  "approval_gate": {
+    "enabled": true,
+    "required_days": ["monday", "tuesday", "wednesday", "thursday", "friday"]
+  },
   "devices": [
     {
       "id": "tv1",

@@ -86,8 +86,9 @@ Primary management interface for parents. Uses webhooks for real-time updates wi
 - `/extend` - Add time to active sessions
 - `/children` - List all children with their limits
 - `/devices` - List available devices
+- `/approve` - Approve a child's screen time for today (weekday approval gate)
 
-**Key features:** whitelist security (only authorized Telegram users), real-time usage stats, session management, bypass mode control, global lockdown (block all sessions until manual unlock, see `docs/features/lockdown.md`).
+**Key features:** whitelist security (only authorized Telegram users), real-time usage stats, session management, bypass mode control, lockdowns (block a child or all children on a device or all devices, until end of day or until unlocked, see `docs/features/lockdown.md`), weekday approval gate (on configured days a child starts sessions only after a parent approves the day, see `docs/features/weekday-approval.md`).
 
 ### Child UI: React PWA (`web/children-control`)
 
@@ -182,6 +183,7 @@ Key configuration sections:
 - `devices[].parameters.agent_token`: Per-device Bearer tokens for agent authentication
 - `devices[].parameters.agent_enabled`: Set to `false` to disable agent without removing token
 - `devices[].driver`: Use "passive" for agent-controlled devices, "aqara" for push-controlled
+- `approval_gate`: `{"enabled": true, "required_days": ["monday", ...]}` (default Mon-Fri) - weekday approval gate
 
 Device IDs must be ≤15 characters (Telegram callback data limit).
 
@@ -192,6 +194,8 @@ Device IDs must be ≤15 characters (Telegram callback data limit).
 - `docs/api/openapi.yaml` - OpenAPI 3.0 specification
 - `docs/drivers/aqara-tokens.md` - Aqara token management details
 - `docs/drivers/windows-agent.md` - Windows agent installation and configuration
+- `docs/features/lockdown.md` - Lockdown rules (punishment / emergency stop)
+- `docs/features/weekday-approval.md` - Weekday approval gate
 - `deploy/systemd/` - Production deployment with systemd
 
 ### Documentation Maintenance Rules

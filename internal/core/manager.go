@@ -64,6 +64,7 @@ type SessionManager struct {
 	calculator     *TimeCalculationService
 	downtime       *DowntimeService
 	lockdown       LockdownStorage
+	approvalGate   *ApprovalGateService
 	timezone       *time.Location
 	logger         *slog.Logger
 }
@@ -94,24 +95,57 @@ func NewSessionManager(storage Storage, deviceRegistry DeviceRegistry, driverReg
 	}
 }
 
-// SetLockdownStorage sets the storage for the global lockdown flag.
+// SetLockdownStorage sets the storage for lockdown rules.
 // Must be called during wiring, before the manager serves requests.
 func (m *SessionManager) SetLockdownStorage(storage LockdownStorage) {
 	m.lockdown = storage
 }
 
-// isLockdownActive reports whether the global lockdown is enabled.
+// SetApprovalGate enables the daily approval gate for child-initiated sessions.
+// Must be called during wiring, before the manager serves requests.
+func (m *SessionManager) SetApprovalGate(gate *ApprovalGateService) {
+	m.approvalGate = gate
+}
+
+// findBlockingLockdown returns the active lockdown rule that blocks a session on
+// deviceID for any of childIDs, or nil.
 // Fails open on storage errors (consistent with skip-downtime handling).
-func (m *SessionManager) isLockdownActive(ctx context.Context) bool {
+func (m *SessionManager) findBlockingLockdown(ctx context.Context, deviceID string, childIDs []string) *LockdownRule {
 	if m.lockdown == nil {
-		return false
+		return nil
 	}
-	state, err := m.lockdown.GetLockdown(ctx)
+	now := time.Now()
+	rules, err := m.lockdown.ListActiveLockdowns(ctx, now)
 	if err != nil {
-		m.logger.Error("Failed to read lockdown state, allowing session", "error", err)
-		return false
+		m.logger.Error("Failed to read lockdown rules, allowing session", "error", err)
+		return nil
 	}
-	return state.Enabled
+	return FindMatchingLockdown(rules, now, deviceID, childIDs)
+}
+
+// lockdownError wraps ErrLockdownActive with the scope of the blocking rule
+func lockdownError(rule *LockdownRule) error {
+	return fmt.Errorf("%w (%s)", ErrLockdownActive, rule.Describe())
+}
+
+// checkApprovalGate returns ErrApprovalRequired when ctx is child-initiated, approval
+// is required today and the child has not been approved. Fails closed on storage errors.
+func (m *SessionManager) checkApprovalGate(ctx context.Context, child *Child, now time.Time) error {
+	if m.approvalGate == nil || !IsChildInitiated(ctx) {
+		return nil
+	}
+	status, err := m.approvalGate.GetApprovalStatus(ctx, child.ID, now)
+	if err != nil {
+		m.logger.Error("Failed to read approval status, blocking session", "child_id", child.ID, "error", err)
+		return fmt.Errorf("failed to check approval for child %s: %w", child.ID, err)
+	}
+	if !status.Approved {
+		m.logger.Warn("Session blocked: parent approval required today",
+			"child_id", child.ID,
+			"child_name", child.Name)
+		return ErrApprovalRequired
+	}
+	return nil
 }
 
 // StartSession starts a new session for one or more children
@@ -136,12 +170,13 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 		return nil, ErrInvalidDuration
 	}
 
-	// Check global lockdown - blocks everyone, including parent override
-	if m.isLockdownActive(ctx) {
+	// Check lockdown rules - block everyone, including parent override
+	if rule := m.findBlockingLockdown(ctx, deviceID, childIDs); rule != nil {
 		m.logger.Warn("Session start blocked by lockdown",
 			"device_id", deviceID,
-			"child_ids", childIDs)
-		return nil, ErrLockdownActive
+			"child_ids", childIDs,
+			"lockdown_id", rule.ID)
+		return nil, lockdownError(rule)
 	}
 
 	// Look up device from device registry
@@ -182,6 +217,11 @@ func (m *SessionManager) StartSession(ctx context.Context, deviceID string, chil
 				"child_name", child.Name,
 				"downtime_enabled", child.DowntimeEnabled)
 			return nil, ErrDowntimeActive
+		}
+
+		// Check daily approval gate (child-initiated only, after downtime so downtime wins)
+		if err := m.checkApprovalGate(ctx, child, now); err != nil {
+			return nil, err
 		}
 
 		// Use calculator to check time availability
@@ -408,11 +448,12 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 		"current_duration", session.ExpectedDuration,
 		"elapsed", int(time.Since(session.StartTime).Minutes()))
 
-	// Check global lockdown - extensions are blocked too
-	if m.isLockdownActive(ctx) {
+	// Check lockdown rules - extensions are blocked too
+	if rule := m.findBlockingLockdown(ctx, session.DeviceID, session.ChildIDs); rule != nil {
 		m.logger.Warn("Session extension blocked by lockdown",
-			"session_id", sessionID)
-		return nil, ErrLockdownActive
+			"session_id", sessionID,
+			"lockdown_id", rule.ID)
+		return nil, lockdownError(rule)
 	}
 
 	// Calculate maximum extension allowed based on children's remaining time
@@ -438,6 +479,11 @@ func (m *SessionManager) ExtendSession(ctx context.Context, sessionID string, ad
 				"child_name", child.Name,
 				"downtime_enabled", child.DowntimeEnabled)
 			return nil, ErrDowntimeActive
+		}
+
+		// Check daily approval gate (child-initiated only)
+		if err := m.checkApprovalGate(ctx, child, time.Now()); err != nil {
+			return nil, err
 		}
 
 		// Use calculator to get accurate remaining time for extension validation
@@ -688,6 +734,15 @@ func (m *SessionManager) AddChildrenToSession(ctx context.Context, sessionID str
 			"session_id", sessionID,
 			"status", session.Status)
 		return nil, ErrSessionNotActive
+	}
+
+	// Check lockdown rules for the children being added
+	if rule := m.findBlockingLockdown(ctx, session.DeviceID, childIDs); rule != nil {
+		m.logger.Warn("Adding children blocked by lockdown",
+			"session_id", sessionID,
+			"child_ids", childIDs,
+			"lockdown_id", rule.ID)
+		return nil, lockdownError(rule)
 	}
 
 	// Calculate elapsed time since session start

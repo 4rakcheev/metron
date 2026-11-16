@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -125,6 +126,8 @@ type APIError struct {
 // so callers can tell "not found" apart from real failures
 type StatusError struct {
 	StatusCode int
+	Code       string // API error code (e.g. LOCKDOWN_ACTIVE), empty if the body was not a JSON error
+	APIMessage string // Human-readable API error text, empty if the body was not a JSON error
 	Message    string
 }
 
@@ -136,6 +139,24 @@ func (e *StatusError) Error() string {
 func isNotFound(err error) bool {
 	var statusErr *StatusError
 	return errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound
+}
+
+// isFeatureDisabled reports whether err is a 404 for an unregistered route,
+// i.e. an optional server feature (like the approval gate) is turned off.
+// Gin answers unknown routes with a plain-text 404, so there is no API error code;
+// a 404 with a code (e.g. CHILD_NOT_FOUND) is a real "resource not found".
+func isFeatureDisabled(err error) bool {
+	var statusErr *StatusError
+	return errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound && statusErr.Code == ""
+}
+
+// apiErrorCode returns the API error code of err, or "" if there is none
+func apiErrorCode(err error) string {
+	var statusErr *StatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Code
+	}
+	return ""
 }
 
 // GetTodayStats retrieves today's statistics
@@ -308,45 +329,118 @@ func (a *MetronAPI) IsDowntimeSkippedToday(ctx context.Context) (bool, error) {
 	return status.SkippedToday, nil
 }
 
-// LockdownStatus represents the global lockdown state
-type LockdownStatus struct {
-	Enabled   bool    `json:"enabled"`
-	EnabledAt *string `json:"enabled_at"`
-	EnabledBy *string `json:"enabled_by"`
+// LockdownRule is an active lockdown rule. A nil ChildID means all children,
+// a nil DeviceID means all devices, a nil ExpiresAt means "until manually removed".
+type LockdownRule struct {
+	ID         int64   `json:"id"`
+	ChildID    *string `json:"child_id"`
+	ChildName  string  `json:"child_name"`
+	DeviceID   *string `json:"device_id"`
+	DeviceName string  `json:"device_name"`
+	Reason     *string `json:"reason"`
+	EnabledAt  string  `json:"enabled_at"`
+	EnabledBy  *string `json:"enabled_by"`
+	ExpiresAt  *string `json:"expires_at"`
 }
 
-// GetLockdownStatus returns the current global lockdown state
-func (a *MetronAPI) GetLockdownStatus(ctx context.Context) (*LockdownStatus, error) {
-	var status LockdownStatus
-	if err := a.doRequest(ctx, "GET", "/v1/lockdown", nil, &status); err != nil {
+// IsGlobal reports whether the rule blocks all children on all devices
+func (r LockdownRule) IsGlobal() bool {
+	return r.ChildID == nil && r.DeviceID == nil
+}
+
+// CreateLockdownResult is the response of creating a lockdown rule
+type CreateLockdownResult struct {
+	LockdownRule
+	StoppedSessions int    `json:"stopped_sessions"`
+	FailedSessions  int    `json:"failed_sessions"`
+	Message         string `json:"message"`
+}
+
+// Lockdown durations accepted by POST /v1/lockdowns
+const (
+	LockdownUntilManual   = "manual"
+	LockdownUntilEndOfDay = "end_of_day"
+)
+
+// ListLockdowns returns all active lockdown rules
+func (a *MetronAPI) ListLockdowns(ctx context.Context) ([]LockdownRule, error) {
+	var rules []LockdownRule
+	if err := a.doRequest(ctx, "GET", "/v1/lockdowns", nil, &rules); err != nil {
 		return nil, err
 	}
-	return &status, nil
+	return rules, nil
 }
 
-// EnableLockdownResult reports the outcome of enabling lockdown
-type EnableLockdownResult struct {
-	Enabled         bool `json:"enabled"`
-	StoppedSessions int  `json:"stopped_sessions"`
-	FailedSessions  int  `json:"failed_sessions"`
-}
-
-// EnableLockdown enables the global lockdown, stopping all active sessions
-func (a *MetronAPI) EnableLockdown(ctx context.Context) (*EnableLockdownResult, error) {
+// CreateLockdown creates (or replaces) a lockdown rule. Empty childID / deviceID mean all.
+// until is LockdownUntilManual or LockdownUntilEndOfDay.
+func (a *MetronAPI) CreateLockdown(ctx context.Context, childID, deviceID, until string) (*CreateLockdownResult, error) {
 	req := struct {
+		ChildID   string `json:"child_id,omitempty"`
+		DeviceID  string `json:"device_id,omitempty"`
+		Until     string `json:"until,omitempty"`
 		EnabledBy string `json:"enabled_by"`
-	}{EnabledBy: "telegram"}
+	}{
+		ChildID:   childID,
+		DeviceID:  deviceID,
+		Until:     until,
+		EnabledBy: "telegram",
+	}
 
-	var resp EnableLockdownResult
-	if err := a.doRequest(ctx, "POST", "/v1/lockdown/enable", req, &resp); err != nil {
+	var resp CreateLockdownResult
+	if err := a.doRequest(ctx, "POST", "/v1/lockdowns", req, &resp); err != nil {
 		return nil, err
 	}
 	return &resp, nil
 }
 
-// DisableLockdown disables the global lockdown
-func (a *MetronAPI) DisableLockdown(ctx context.Context) error {
-	return a.doRequest(ctx, "POST", "/v1/lockdown/disable", nil, nil)
+// DeleteLockdown removes a lockdown rule by ID (404 if it does not exist)
+func (a *MetronAPI) DeleteLockdown(ctx context.Context, id int64) error {
+	return a.doRequest(ctx, "DELETE", "/v1/lockdowns/"+strconv.FormatInt(id, 10), nil, nil)
+}
+
+// ChildApproval is a child's approval status for today
+type ChildApproval struct {
+	ChildID    string  `json:"child_id"`
+	ChildName  string  `json:"child_name"`
+	ChildEmoji string  `json:"child_emoji"`
+	Required   bool    `json:"required"`
+	Approved   bool    `json:"approved"`
+	ApprovedAt *string `json:"approved_at"`
+	ApprovedBy *string `json:"approved_by"`
+}
+
+// TodayApprovals is the response of GET /v1/approvals/today
+type TodayApprovals struct {
+	Required bool            `json:"required"`
+	Children []ChildApproval `json:"children"`
+}
+
+// ListTodayApprovals returns today's approval status for all children.
+// Returns a 404 StatusError when the approval gate is disabled on the server (see isFeatureDisabled).
+func (a *MetronAPI) ListTodayApprovals(ctx context.Context) (*TodayApprovals, error) {
+	var resp TodayApprovals
+	if err := a.doRequest(ctx, "GET", "/v1/approvals/today", nil, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ApproveChild approves a child for the rest of today
+func (a *MetronAPI) ApproveChild(ctx context.Context, childID string) (*ChildApproval, error) {
+	req := struct {
+		ApprovedBy string `json:"approved_by"`
+	}{ApprovedBy: "telegram"}
+
+	var resp ChildApproval
+	if err := a.doRequest(ctx, "POST", "/v1/children/"+childID+"/approval", req, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// RevokeApproval removes today's approval for a child (running sessions keep running)
+func (a *MetronAPI) RevokeApproval(ctx context.Context, childID string) error {
+	return a.doRequest(ctx, "DELETE", "/v1/children/"+childID+"/approval", nil, nil)
 }
 
 // DeviceBypass represents a device bypass status
@@ -435,7 +529,7 @@ func (a *MetronAPI) doRequest(ctx context.Context, method, path string, body int
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var apiErr APIError
-		if err := json.Unmarshal(respBody, &apiErr); err != nil {
+		if err := json.Unmarshal(respBody, &apiErr); err != nil || (apiErr.Error == "" && apiErr.Code == "") {
 			return &StatusError{
 				StatusCode: resp.StatusCode,
 				Message:    fmt.Sprintf("API error %d: %s", resp.StatusCode, string(respBody)),
@@ -443,6 +537,8 @@ func (a *MetronAPI) doRequest(ctx context.Context, method, path string, body int
 		}
 		return &StatusError{
 			StatusCode: resp.StatusCode,
+			Code:       apiErr.Code,
+			APIMessage: apiErr.Error,
 			Message:    fmt.Sprintf("API error %d: %s (%s)", resp.StatusCode, apiErr.Error, apiErr.Code),
 		}
 	}

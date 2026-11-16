@@ -7,7 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Weekday Approval Gate** (`approval_gate` in config, default Monday to Friday)
+  - On configured days a child can start or extend sessions from the child app only after a parent approves that child for today
+  - Bot: `/approve` command and "Approve day" button; `/today` shows approval status
+  - API: `GET /v1/approvals/today`, `POST/DELETE /v1/children/:id/approval`; `GET /child/today` returns `approval`
+  - Downtime and lockdowns still apply after approval; parent-started sessions are not gated
+
+### Changed
+- **Lockdown is now a set of rules** (child or all children, device or all devices, until end of day or until unlocked)
+  - Use it as a punishment (e.g. "Simon cannot use PS5 today") or as a global stop
+  - API: `GET/POST /v1/lockdowns`, `DELETE /v1/lockdowns/:id` replace `GET /v1/lockdown`, `POST /v1/lockdown/enable|disable`
+  - An enabled global lockdown is migrated to an "all children, all devices" rule on start
+  - `GET /child/devices` marks devices locked for the child; adding a child to a session also respects lockdowns
+
 ### Fixed
+- **Session error codes**: `INSUFFICIENT_TIME` was never returned (wrapped error compared with `==`), and downtime errors had no code. Now `INSUFFICIENT_TIME` (400) and `DOWNTIME_ACTIVE` (409 admin / 403 child app) are returned
 - **Device Bypass**
   - Added missing `GET /v1/devices/:id/bypass`: the bot always got 404 and showed every bypass as disabled, so an active bypass could not be seen or turned off
   - Bot no longer swallows bypass status errors and shows when a bypass expires

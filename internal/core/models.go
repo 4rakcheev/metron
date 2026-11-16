@@ -79,7 +79,9 @@ var (
 	ErrChildNotFound       = errors.New("child not found")
 	ErrExtensionTooSoon    = errors.New("extension request too soon after previous extension")
 	ErrDowntimeActive      = errors.New("session cannot be started during downtime period")
-	ErrLockdownActive      = errors.New("lockdown active: all sessions are blocked until manually unlocked")
+	ErrLockdownActive      = errors.New("lockdown active: sessions are blocked until unlocked")
+	ErrLockdownNotFound    = errors.New("lockdown rule not found")
+	ErrApprovalRequired    = errors.New("parent approval required today before starting screen time")
 )
 
 // Validate validates a Child

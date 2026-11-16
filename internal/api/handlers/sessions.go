@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"metron/internal/core"
 	"metron/internal/storage"
@@ -151,27 +150,7 @@ func (h *SessionsHandler) CreateSession(c *gin.Context) {
 			"error", err,
 		)
 
-		// Map known errors to appropriate status codes
-		if err == core.ErrInsufficientTime {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": err.Error(),
-				"code":  "INSUFFICIENT_TIME",
-			})
-			return
-		}
-
-		if errors.Is(err, core.ErrLockdownActive) {
-			c.JSON(http.StatusConflict, gin.H{
-				"error": "Lockdown is active - all sessions are blocked until manually unlocked",
-				"code":  "LOCKDOWN_ACTIVE",
-			})
-			return
-		}
-
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-			"code":  "SESSION_CREATE_FAILED",
-		})
+		writeParentSessionError(c, err, "SESSION_CREATE_FAILED")
 		return
 	}
 
@@ -247,34 +226,7 @@ func (h *SessionsHandler) UpdateSession(c *gin.Context) {
 				"error", err,
 			)
 
-			if err == core.ErrSessionNotFound {
-				c.JSON(http.StatusNotFound, gin.H{
-					"error": "Session not found",
-					"code":  "SESSION_NOT_FOUND",
-				})
-				return
-			}
-
-			if err == core.ErrInsufficientTime {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": err.Error(),
-					"code":  "INSUFFICIENT_TIME",
-				})
-				return
-			}
-
-			if errors.Is(err, core.ErrLockdownActive) {
-				c.JSON(http.StatusConflict, gin.H{
-					"error": "Lockdown is active - all sessions are blocked until manually unlocked",
-					"code":  "LOCKDOWN_ACTIVE",
-				})
-				return
-			}
-
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": err.Error(),
-				"code":  "SESSION_EXTEND_FAILED",
-			})
+			writeParentSessionError(c, err, "SESSION_EXTEND_FAILED")
 			return
 		}
 
@@ -324,26 +276,7 @@ func (h *SessionsHandler) UpdateSession(c *gin.Context) {
 				"error", err,
 			)
 
-			if err == core.ErrSessionNotFound {
-				c.JSON(http.StatusNotFound, gin.H{
-					"error": "Session not found",
-					"code":  "SESSION_NOT_FOUND",
-				})
-				return
-			}
-
-			if err == core.ErrSessionNotActive {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "Session is not active",
-					"code":  "SESSION_NOT_ACTIVE",
-				})
-				return
-			}
-
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": err.Error(),
-				"code":  "ADD_CHILDREN_FAILED",
-			})
+			writeParentSessionError(c, err, "ADD_CHILDREN_FAILED")
 			return
 		}
 

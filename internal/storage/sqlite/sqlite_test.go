@@ -331,44 +331,123 @@ func TestSQLiteStorage_ForeignKeyConstraints(t *testing.T) {
 	assert.Equal(t, "child2", retrieved.ChildIDs[0])
 }
 
-func TestSQLiteStorage_Lockdown(t *testing.T) {
+func TestSQLiteStorage_LockdownRules(t *testing.T) {
+	storage := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+
+	rules, err := storage.ListActiveLockdowns(ctx, now)
+	require.NoError(t, err)
+	assert.Empty(t, rules)
+
+	global := &core.LockdownRule{ChildID: core.LockdownAll, DeviceID: core.LockdownAll, EnabledBy: "test"}
+	require.NoError(t, storage.AddLockdown(ctx, global))
+	assert.NotZero(t, global.ID)
+
+	tomorrow := now.Add(24 * time.Hour)
+	scoped := &core.LockdownRule{ChildID: "child1", DeviceID: "ps5", Reason: "grades", EnabledBy: "telegram", ExpiresAt: &tomorrow}
+	require.NoError(t, storage.AddLockdown(ctx, scoped))
+
+	rules, err = storage.ListActiveLockdowns(ctx, now)
+	require.NoError(t, err)
+	require.Len(t, rules, 2)
+	assert.True(t, rules[0].IsGlobal())
+	assert.Equal(t, "child1", rules[1].ChildID)
+	assert.Equal(t, "ps5", rules[1].DeviceID)
+	assert.Equal(t, "grades", rules[1].Reason)
+	assert.Equal(t, "telegram", rules[1].EnabledBy)
+	require.NotNil(t, rules[1].ExpiresAt)
+	assert.WithinDuration(t, tomorrow, *rules[1].ExpiresAt, time.Second)
+	assert.Nil(t, rules[0].ExpiresAt)
+
+	// Same scope again replaces the rule (keeps one row, updates expiry)
+	again := &core.LockdownRule{ChildID: "child1", DeviceID: "ps5", EnabledBy: "telegram"}
+	require.NoError(t, storage.AddLockdown(ctx, again))
+	assert.Equal(t, scoped.ID, again.ID)
+	rules, err = storage.ListActiveLockdowns(ctx, now)
+	require.NoError(t, err)
+	require.Len(t, rules, 2)
+	assert.Nil(t, rules[1].ExpiresAt)
+
+	// Remove
+	require.NoError(t, storage.RemoveLockdown(ctx, global.ID))
+	assert.ErrorIs(t, storage.RemoveLockdown(ctx, global.ID), core.ErrLockdownNotFound)
+	rules, err = storage.ListActiveLockdowns(ctx, now)
+	require.NoError(t, err)
+	assert.Len(t, rules, 1)
+}
+
+func TestSQLiteStorage_LockdownRules_ExpiredAreDropped(t *testing.T) {
 	storage := setupTestDB(t)
 	ctx := context.Background()
 
-	// Default state: no row means disabled
-	state, err := storage.GetLockdown(ctx)
-	require.NoError(t, err)
-	assert.False(t, state.Enabled)
-	assert.Nil(t, state.EnabledAt)
-	assert.Empty(t, state.EnabledBy)
+	past := time.Now().Add(-time.Minute)
+	require.NoError(t, storage.AddLockdown(ctx, &core.LockdownRule{ChildID: "child1", DeviceID: core.LockdownAll, ExpiresAt: &past}))
 
-	// Enable lockdown
-	err = storage.SetLockdown(ctx, true, "test")
+	rules, err := storage.ListActiveLockdowns(ctx, time.Now())
 	require.NoError(t, err)
+	assert.Empty(t, rules)
 
-	state, err = storage.GetLockdown(ctx)
+	var count int
+	require.NoError(t, storage.db.QueryRow(`SELECT COUNT(*) FROM lockdown_rules`).Scan(&count))
+	assert.Equal(t, 0, count)
+}
+
+func TestSQLiteStorage_LegacyLockdownMigration(t *testing.T) {
+	storage := setupTestDB(t)
+	ctx := context.Background()
+
+	// Simulate a pre-upgrade database with the global lockdown enabled
+	_, err := storage.db.Exec(`CREATE TABLE lockdown (id INTEGER PRIMARY KEY CHECK (id = 1), enabled BOOLEAN NOT NULL DEFAULT 0,
+		enabled_at DATETIME, enabled_by TEXT, updated_at DATETIME NOT NULL)`)
 	require.NoError(t, err)
-	assert.True(t, state.Enabled)
-	require.NotNil(t, state.EnabledAt)
-	assert.WithinDuration(t, time.Now(), *state.EnabledAt, 5*time.Second)
-	assert.Equal(t, "test", state.EnabledBy)
-
-	// Re-enable is idempotent
-	err = storage.SetLockdown(ctx, true, "test2")
-	require.NoError(t, err)
-
-	state, err = storage.GetLockdown(ctx)
-	require.NoError(t, err)
-	assert.True(t, state.Enabled)
-	assert.Equal(t, "test2", state.EnabledBy)
-
-	// Disable lockdown clears audit fields
-	err = storage.SetLockdown(ctx, false, "test")
+	_, err = storage.db.Exec(`INSERT INTO lockdown (id, enabled, enabled_at, enabled_by, updated_at) VALUES (1, 1, ?, 'telegram', ?)`,
+		time.Now(), time.Now())
 	require.NoError(t, err)
 
-	state, err = storage.GetLockdown(ctx)
+	require.NoError(t, storage.migrateLegacyLockdown())
+	// Running again is a no-op
+	require.NoError(t, storage.migrateLegacyLockdown())
+
+	rules, err := storage.ListActiveLockdowns(ctx, time.Now())
 	require.NoError(t, err)
-	assert.False(t, state.Enabled)
-	assert.Nil(t, state.EnabledAt)
-	assert.Empty(t, state.EnabledBy)
+	require.Len(t, rules, 1)
+	assert.True(t, rules[0].IsGlobal())
+	assert.Nil(t, rules[0].ExpiresAt)
+	assert.Equal(t, "telegram", rules[0].EnabledBy)
+}
+
+func TestSQLiteStorage_DailyApprovals(t *testing.T) {
+	storage := setupTestDB(t)
+	ctx := context.Background()
+	require.NoError(t, storage.CreateChild(ctx, &core.Child{ID: "child1", Name: "Alice", WeekdayLimit: 60, WeekendLimit: 60}))
+
+	today := time.Now()
+	a, err := storage.GetDailyApproval(ctx, "child1", today)
+	require.NoError(t, err)
+	assert.Nil(t, a)
+
+	require.NoError(t, storage.SaveDailyApproval(ctx, &core.DailyApproval{
+		ChildID: "child1", Date: today, ApprovedAt: today, ApprovedBy: "telegram",
+	}))
+	// Saving twice is an upsert
+	require.NoError(t, storage.SaveDailyApproval(ctx, &core.DailyApproval{
+		ChildID: "child1", Date: today, ApprovedAt: today, ApprovedBy: "telegram2",
+	}))
+
+	a, err = storage.GetDailyApproval(ctx, "child1", today)
+	require.NoError(t, err)
+	require.NotNil(t, a)
+	assert.Equal(t, "telegram2", a.ApprovedBy)
+	assert.WithinDuration(t, today, a.ApprovedAt, time.Second)
+
+	// Different day: no approval
+	a, err = storage.GetDailyApproval(ctx, "child1", today.Add(48*time.Hour))
+	require.NoError(t, err)
+	assert.Nil(t, a)
+
+	require.NoError(t, storage.DeleteDailyApproval(ctx, "child1", today))
+	a, err = storage.GetDailyApproval(ctx, "child1", today)
+	require.NoError(t, err)
+	assert.Nil(t, a)
 }

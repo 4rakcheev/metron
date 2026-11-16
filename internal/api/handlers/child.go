@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"log/slog"
 	"metron/internal/api/middleware"
 	"metron/internal/core"
@@ -22,7 +21,26 @@ type ChildHandler struct {
 	sessionManager *middleware.SessionManager
 	downtime       *core.DowntimeService
 	lockdown       core.LockdownStorage
+	approvalGate   *core.ApprovalGateService
 	logger         *slog.Logger
+}
+
+// SetApprovalGate enables reporting of the daily approval status in GET /child/today
+func (h *ChildHandler) SetApprovalGate(gate *core.ApprovalGateService) {
+	h.approvalGate = gate
+}
+
+// activeLockdowns returns active lockdown rules, or nil on error/not configured
+func (h *ChildHandler) activeLockdowns(c *gin.Context) []*core.LockdownRule {
+	if h.lockdown == nil {
+		return nil
+	}
+	rules, err := h.lockdown.ListActiveLockdowns(c.Request.Context(), time.Now())
+	if err != nil {
+		h.logger.Error("Failed to list lockdown rules", "error", err)
+		return nil
+	}
+	return rules
 }
 
 // NewChildHandler creates a new child handler
@@ -288,15 +306,35 @@ func (h *ChildHandler) GetToday(c *gin.Context) {
 		response["in_downtime"] = false
 	}
 
-	// Add global lockdown status
+	// Lockdown: true when a rule blocks this child on all devices
 	response["lockdown"] = false
-	if h.lockdown != nil {
-		state, err := h.lockdown.GetLockdown(c.Request.Context())
-		if err != nil {
-			h.logger.Error("Failed to get lockdown state", "error", err)
-		} else {
-			response["lockdown"] = state.Enabled
+	for _, rule := range h.activeLockdowns(c) {
+		if rule.DeviceID == core.LockdownAll && rule.CoversChild(childID) {
+			response["lockdown"] = true
+			if rule.ExpiresAt != nil {
+				response["lockdown_until"] = rule.ExpiresAt.Format(time.RFC3339)
+			}
+			break
 		}
+	}
+
+	// Daily approval gate (only reported when the feature is enabled)
+	if h.approvalGate != nil {
+		approval := gin.H{"required": false, "approved": true, "approved_at": nil}
+		st, err := h.approvalGate.GetApprovalStatus(c.Request.Context(), childID, time.Now())
+		if err != nil {
+			// Fail closed, matching the session start check
+			h.logger.Error("Failed to get approval status", "child_id", childID, "error", err)
+			approval["required"] = true
+			approval["approved"] = false
+		} else {
+			approval["required"] = st.Required
+			approval["approved"] = st.Approved
+			if st.ApprovedAt != nil {
+				approval["approved_at"] = st.ApprovedAt.Format(time.RFC3339)
+			}
+		}
+		response["approval"] = approval
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -305,7 +343,10 @@ func (h *ChildHandler) GetToday(c *gin.Context) {
 // ListDevices returns available devices
 // GET /child/devices (PROTECTED)
 func (h *ChildHandler) ListDevices(c *gin.Context) {
+	childID, _ := middleware.GetChildID(c)
 	deviceList := h.deviceRegistry.List()
+	rules := h.activeLockdowns(c)
+	now := time.Now()
 
 	response := make([]gin.H, 0, len(deviceList))
 	for _, device := range deviceList {
@@ -316,6 +357,13 @@ func (h *ChildHandler) ListDevices(c *gin.Context) {
 		}
 		if device.Emoji != "" {
 			d["emoji"] = device.Emoji
+		}
+		d["locked"] = false
+		if rule := core.FindMatchingLockdown(rules, now, device.ID, []string{childID}); rule != nil {
+			d["locked"] = true
+			if rule.ExpiresAt != nil {
+				d["locked_until"] = rule.ExpiresAt.Format(time.RFC3339)
+			}
 		}
 		response = append(response, d)
 	}
@@ -388,8 +436,8 @@ func (h *ChildHandler) CreateSession(c *gin.Context) {
 	// Session only for this child
 	childIDs := []string{childID}
 
-	// Start session
-	session, err := h.manager.StartSession(c.Request.Context(), req.DeviceID, childIDs, req.Minutes)
+	// Start session (marked as child-initiated so the daily approval gate applies)
+	session, err := h.manager.StartSession(core.WithChildInitiated(c.Request.Context()), req.DeviceID, childIDs, req.Minutes)
 	if err != nil {
 		h.logger.Error("Failed to start session",
 			"child_id", childID,
@@ -398,26 +446,7 @@ func (h *ChildHandler) CreateSession(c *gin.Context) {
 			"error", err,
 		)
 
-		if err == core.ErrInsufficientTime {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "Not enough time remaining",
-				"code":  "INSUFFICIENT_TIME",
-			})
-			return
-		}
-
-		if errors.Is(err, core.ErrLockdownActive) {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Sessions are locked by your parents",
-				"code":  "LOCKDOWN_ACTIVE",
-			})
-			return
-		}
-
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-			"code":  "SESSION_CREATE_FAILED",
-		})
+		writeChildSessionError(c, err, "SESSION_CREATE_FAILED")
 		return
 	}
 
@@ -551,7 +580,7 @@ func (h *ChildHandler) ExtendSession(c *gin.Context) {
 	}
 
 	// Extend the session
-	extendedSession, err := h.manager.ExtendSession(c.Request.Context(), sessionID, req.AdditionalMinutes)
+	extendedSession, err := h.manager.ExtendSession(core.WithChildInitiated(c.Request.Context()), sessionID, req.AdditionalMinutes)
 	if err != nil {
 		h.logger.Error("Failed to extend session",
 			"child_id", childID,
@@ -560,26 +589,7 @@ func (h *ChildHandler) ExtendSession(c *gin.Context) {
 			"error", err,
 		)
 
-		if err == core.ErrInsufficientTime {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": err.Error(),
-				"code":  "INSUFFICIENT_TIME",
-			})
-			return
-		}
-
-		if errors.Is(err, core.ErrLockdownActive) {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Sessions are locked by your parents",
-				"code":  "LOCKDOWN_ACTIVE",
-			})
-			return
-		}
-
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-			"code":  "SESSION_EXTEND_FAILED",
-		})
+		writeChildSessionError(c, err, "SESSION_EXTEND_FAILED")
 		return
 	}
 

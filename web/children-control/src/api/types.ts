@@ -22,7 +22,19 @@ export interface TodayStats {
   downtime_enabled: boolean;
   in_downtime: boolean;
   downtime_end?: string;
+  // True only when a parent lockdown blocks this child on ALL devices
   lockdown?: boolean;
+  // RFC3339; absent means "until parents unlock"
+  lockdown_until?: string;
+  // Present only when the server has the daily approval gate enabled
+  approval?: ApprovalStatus;
+}
+
+export interface ApprovalStatus {
+  // True on days when a parent must allow screen time first (school days)
+  required: boolean;
+  approved: boolean;
+  approved_at: string | null;
 }
 
 export interface Device {
@@ -30,6 +42,10 @@ export interface Device {
   name: string;
   type: string;
   emoji?: string;
+  // The parent blocked this device for this child
+  locked?: boolean;
+  // RFC3339; absent means "until parents unlock"
+  locked_until?: string;
 }
 
 export interface Session {
@@ -56,8 +72,16 @@ export interface CreateSessionRequest {
   minutes: number;
 }
 
+export type APIErrorCode =
+  | 'LOCKDOWN_ACTIVE'
+  | 'DOWNTIME_ACTIVE'
+  | 'APPROVAL_REQUIRED'
+  | 'INSUFFICIENT_TIME'
+  | 'NETWORK_ERROR'
+  | (string & {});
+
 export interface APIError {
   error: string;
-  code: string;
+  code: APIErrorCode;
   details?: string;
 }

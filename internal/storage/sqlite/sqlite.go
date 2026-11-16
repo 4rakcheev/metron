@@ -350,18 +350,42 @@ func (s *SQLiteStorage) runMigrations() error {
 		return fmt.Errorf("failed to create device_bypass table: %w", err)
 	}
 
-	// Create lockdown table for the global session lockdown flag
+	// Create lockdown_rules table: scoped lockdowns (child or all) x (device or all).
+	// '*' is used instead of NULL so the UNIQUE constraint works.
 	_, err = s.db.Exec(`
-		CREATE TABLE IF NOT EXISTS lockdown (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
-			enabled BOOLEAN NOT NULL DEFAULT 0,
-			enabled_at DATETIME,
+		CREATE TABLE IF NOT EXISTS lockdown_rules (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			child_id TEXT NOT NULL,
+			device_id TEXT NOT NULL,
+			reason TEXT,
+			enabled_at DATETIME NOT NULL,
 			enabled_by TEXT,
-			updated_at DATETIME NOT NULL
+			expires_at DATETIME,
+			UNIQUE(child_id, device_id)
 		);
 	`)
 	if err != nil {
-		return fmt.Errorf("failed to create lockdown table: %w", err)
+		return fmt.Errorf("failed to create lockdown_rules table: %w", err)
+	}
+
+	// Migrate the legacy single-row global lockdown flag into a '*'/'*' rule
+	if err := s.migrateLegacyLockdown(); err != nil {
+		return fmt.Errorf("failed to migrate legacy lockdown: %w", err)
+	}
+
+	// Create daily_approvals table for the weekday approval gate
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS daily_approvals (
+			child_id TEXT NOT NULL,
+			date TEXT NOT NULL,
+			approved_at DATETIME NOT NULL,
+			approved_by TEXT,
+			PRIMARY KEY (child_id, date),
+			FOREIGN KEY (child_id) REFERENCES children(id) ON DELETE CASCADE
+		);
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to create daily_approvals table: %w", err)
 	}
 
 	return nil
@@ -1220,56 +1244,168 @@ func (s *SQLiteStorage) SetDowntimeSkipDate(ctx context.Context, date time.Time)
 // LOCKDOWN STORAGE - Global session lockdown flag
 // ============================================================================
 
-// GetLockdown retrieves the global lockdown state
-// A missing row means lockdown is disabled
-func (s *SQLiteStorage) GetLockdown(ctx context.Context) (*core.LockdownState, error) {
+// migrateLegacyLockdown moves an enabled legacy global lockdown into lockdown_rules
+// and drops the legacy table. Safe to run on every start.
+func (s *SQLiteStorage) migrateLegacyLockdown() error {
+	var tables int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'lockdown'`).Scan(&tables); err != nil {
+		return err
+	}
+	if tables == 0 {
+		return nil
+	}
+
 	var enabled bool
 	var enabledAt sql.NullTime
 	var enabledBy sql.NullString
+	err := s.db.QueryRow(`SELECT enabled, enabled_at, enabled_by FROM lockdown WHERE id = 1`).
+		Scan(&enabled, &enabledAt, &enabledBy)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil && enabled {
+		at := time.Now().UTC()
+		if enabledAt.Valid {
+			at = enabledAt.Time.UTC()
+		}
+		if _, err := s.db.Exec(`
+			INSERT OR IGNORE INTO lockdown_rules (child_id, device_id, reason, enabled_at, enabled_by, expires_at)
+			VALUES (?, ?, ?, ?, ?, NULL)
+		`, core.LockdownAll, core.LockdownAll, "migrated global lockdown", at, enabledBy.String); err != nil {
+			return err
+		}
+	}
+	_, err = s.db.Exec(`DROP TABLE IF EXISTS lockdown`)
+	return err
+}
 
+// ListActiveLockdowns returns lockdown rules active at now, oldest first.
+// Expired rules are deleted. Expiry is evaluated in Go to avoid comparing
+// DATETIME strings with different timezone offsets.
+func (s *SQLiteStorage) ListActiveLockdowns(ctx context.Context, now time.Time) ([]*core.LockdownRule, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, child_id, device_id, reason, enabled_at, enabled_by, expires_at
+		FROM lockdown_rules ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var active []*core.LockdownRule
+	var expired []int64
+	for rows.Next() {
+		var r core.LockdownRule
+		var reason, enabledBy sql.NullString
+		var expiresAt sql.NullTime
+		if err := rows.Scan(&r.ID, &r.ChildID, &r.DeviceID, &reason, &r.EnabledAt, &enabledBy, &expiresAt); err != nil {
+			return nil, err
+		}
+		r.Reason = reason.String
+		r.EnabledBy = enabledBy.String
+		if expiresAt.Valid {
+			t := expiresAt.Time
+			r.ExpiresAt = &t
+		}
+		if r.IsActive(now) {
+			active = append(active, &r)
+		} else {
+			expired = append(expired, r.ID)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+
+	// Best-effort cleanup of expired rules
+	for _, id := range expired {
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM lockdown_rules WHERE id = ?`, id)
+	}
+	return active, nil
+}
+
+// AddLockdown creates a rule or replaces the rule with the same (child, device) scope
+func (s *SQLiteStorage) AddLockdown(ctx context.Context, rule *core.LockdownRule) error {
+	if rule.EnabledAt.IsZero() {
+		rule.EnabledAt = time.Now()
+	}
+	var expiresAt interface{}
+	if rule.ExpiresAt != nil {
+		expiresAt = rule.ExpiresAt.UTC()
+	}
 	err := s.db.QueryRowContext(ctx, `
-		SELECT enabled, enabled_at, enabled_by FROM lockdown WHERE id = 1
-	`).Scan(&enabled, &enabledAt, &enabledBy)
+		INSERT INTO lockdown_rules (child_id, device_id, reason, enabled_at, enabled_by, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		ON CONFLICT(child_id, device_id) DO UPDATE SET
+			reason = excluded.reason,
+			enabled_at = excluded.enabled_at,
+			enabled_by = excluded.enabled_by,
+			expires_at = excluded.expires_at
+		RETURNING id
+	`, rule.ChildID, rule.DeviceID, rule.Reason, rule.EnabledAt.UTC(), rule.EnabledBy, expiresAt).Scan(&rule.ID)
+	return err
+}
 
+// RemoveLockdown deletes a rule by ID
+func (s *SQLiteStorage) RemoveLockdown(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM lockdown_rules WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return core.ErrLockdownNotFound
+	}
+	return nil
+}
+
+// ============================================================================
+// DAILY APPROVALS - Weekday approval gate
+// ============================================================================
+
+// approvalDateKey formats a date as YYYY-MM-DD in the configured timezone
+func (s *SQLiteStorage) approvalDateKey(date time.Time) string {
+	return s.normalizeDate(date).Format("2006-01-02")
+}
+
+// GetDailyApproval returns the approval for a child on a date, or nil if none
+func (s *SQLiteStorage) GetDailyApproval(ctx context.Context, childID string, date time.Time) (*core.DailyApproval, error) {
+	a := core.DailyApproval{ChildID: childID, Date: s.normalizeDate(date)}
+	var approvedBy sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT approved_at, approved_by FROM daily_approvals WHERE child_id = ? AND date = ?
+	`, childID, s.approvalDateKey(date)).Scan(&a.ApprovedAt, &approvedBy)
 	if err == sql.ErrNoRows {
-		return &core.LockdownState{Enabled: false}, nil
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-
-	state := &core.LockdownState{
-		Enabled:   enabled,
-		EnabledBy: enabledBy.String,
-	}
-	if enabledAt.Valid {
-		state.EnabledAt = &enabledAt.Time
-	}
-	return state, nil
+	a.ApprovedBy = approvedBy.String
+	return &a, nil
 }
 
-// SetLockdown sets the global lockdown state
-// Uses upsert pattern for the single-row table
-func (s *SQLiteStorage) SetLockdown(ctx context.Context, enabled bool, enabledBy string) error {
-	now := time.Now()
-
-	var enabledAt *time.Time
-	var enabledByVal *string
-	if enabled {
-		enabledAt = &now
-		enabledByVal = &enabledBy
-	}
-
+// SaveDailyApproval creates or replaces the approval for a child on a date
+func (s *SQLiteStorage) SaveDailyApproval(ctx context.Context, a *core.DailyApproval) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO lockdown (id, enabled, enabled_at, enabled_by, updated_at)
-		VALUES (1, ?, ?, ?, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			enabled = excluded.enabled,
-			enabled_at = excluded.enabled_at,
-			enabled_by = excluded.enabled_by,
-			updated_at = excluded.updated_at
-	`, enabled, enabledAt, enabledByVal, now)
+		INSERT INTO daily_approvals (child_id, date, approved_at, approved_by)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT(child_id, date) DO UPDATE SET
+			approved_at = excluded.approved_at,
+			approved_by = excluded.approved_by
+	`, a.ChildID, s.approvalDateKey(a.Date), a.ApprovedAt.UTC(), a.ApprovedBy)
+	return err
+}
 
+// DeleteDailyApproval removes the approval for a child on a date (no error if absent)
+func (s *SQLiteStorage) DeleteDailyApproval(ctx context.Context, childID string, date time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		DELETE FROM daily_approvals WHERE child_id = ? AND date = ?
+	`, childID, s.approvalDateKey(date))
 	return err
 }
 

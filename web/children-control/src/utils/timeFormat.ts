@@ -43,3 +43,22 @@ export function formatMinutesDetailed(minutes: number): {
     formatted: formatMinutes(minutes),
   };
 }
+
+/**
+ * Formats an RFC3339 timestamp as a local clock time ("HH:MM").
+ * Adds a short date when the time is not today.
+ * @param iso - RFC3339 timestamp
+ * @returns Formatted string like "18:30" or "Tue 18:30"
+ */
+export function formatClockTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (date.toDateString() === new Date().toDateString()) {
+    return time;
+  }
+
+  const day = date.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  return `${day} ${time}`;
+}
