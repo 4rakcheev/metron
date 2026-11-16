@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Bot: `/approve` command and "Approve day" button; `/today` shows approval status
   - API: `GET /v1/approvals/today`, `POST/DELETE /v1/children/:id/approval`; `GET /child/today` returns `approval`
   - Downtime and lockdowns still apply after approval; parent-started sessions are not gated
+- **Child app translations**: Russian is the default language, English is available with a RU/EN switch (saved on the device)
 
 ### Changed
 - **Lockdown is now a set of rules** (child or all children, device or all devices, until end of day or until unlocked)
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `GET /child/devices` marks devices locked for the child; adding a child to a session also respects lockdowns
 
 ### Fixed
+- **Child app login**: a wrong PIN showed "Session expired" instead of "Invalid PIN"; network failures now show a clear message
 - **Session error codes**: `INSUFFICIENT_TIME` was never returned (wrapped error compared with `==`), and downtime errors had no code. Now `INSUFFICIENT_TIME` (400) and `DOWNTIME_ACTIVE` (409 admin / 403 child app) are returned
 - **Device Bypass**
   - Added missing `GET /v1/devices/:id/bypass`: the bot always got 404 and showed every bypass as disabled, so an active bypass could not be seen or turned off

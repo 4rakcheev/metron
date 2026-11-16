@@ -5,11 +5,14 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { api } from '../api/client';
 import { ChildSelector } from '../components/ChildSelector';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { useI18n } from '../i18n/LanguageContext';
 import type { ChildForAuth } from '../api/types';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { isAuthenticated, login } = useApp();
+  const { t } = useI18n();
   const [children, setChildren] = useState<ChildForAuth[]>([]);
   const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
   const [pin, setPin] = useState('');
@@ -30,12 +33,12 @@ export function LoginPage() {
         const childrenList = await api.listChildren();
         setChildren(childrenList);
       } catch (err) {
-        setError('Failed to load children list');
+        setError(t('login.errLoadChildren'));
         console.error(err);
       }
     }
     loadChildren();
-  }, []);
+  }, [t]);
 
   // Handle child selection
   const handleChildSelect = (childId: string) => {
@@ -58,12 +61,12 @@ export function LoginPage() {
     e.preventDefault();
 
     if (!selectedChildId) {
-      setError('Please select a child');
+      setError(t('login.errSelectChild'));
       return;
     }
 
     if (pin.length !== 4) {
-      setError('PIN must be 4 digits');
+      setError(t('login.errPinLength'));
       return;
     }
 
@@ -73,7 +76,7 @@ export function LoginPage() {
       await login(selectedChildId, pin);
       navigate('/');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid PIN');
+      setError(err instanceof Error ? err.message : t('error.INVALID_CREDENTIALS'));
       setPin('');
     } finally {
       setLoading(false);
@@ -90,15 +93,18 @@ export function LoginPage() {
   const selectedChild = children.find(c => c.id === selectedChildId);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 relative">
+      <div className="absolute top-4 right-4">
+        <LanguageSwitcher />
+      </div>
       <div className="w-full max-w-2xl">
         {/* Title */}
         <div className="text-center mb-8">
           <h1 className="text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-600 mb-2">
-            {selectedChildId ? `Hi ${selectedChild?.name}! 👋` : 'Who wants to play? 🎮'}
+            {selectedChildId ? t('login.titleHi', { name: selectedChild?.name ?? '' }) : t('login.titleSelect')}
           </h1>
           <p className="text-gray-600 text-lg">
-            {selectedChildId ? 'Enter your PIN to continue' : 'Select your name below'}
+            {selectedChildId ? t('login.subtitlePin') : t('login.subtitleSelect')}
           </p>
         </div>
 
@@ -114,7 +120,7 @@ export function LoginPage() {
               {/* PIN Input */}
               <div>
                 <label className="block text-gray-700 font-semibold mb-2 text-center text-lg">
-                  Enter your 4-digit PIN
+                  {t('login.pinLabel')}
                 </label>
                 <input
                   type="password"
@@ -145,14 +151,14 @@ export function LoginPage() {
                   disabled={loading}
                   className="flex-1 bg-gray-200 text-gray-700 font-bold py-3 px-6 rounded-2xl hover:bg-gray-300 transition disabled:opacity-50"
                 >
-                  Back
+                  {t('login.back')}
                 </button>
                 <button
                   type="submit"
                   disabled={loading || pin.length !== 4}
                   className="flex-1 btn-primary"
                 >
-                  {loading ? 'Logging in...' : 'Login'}
+                  {loading ? t('login.submitting') : t('login.submit')}
                 </button>
               </div>
             </form>

@@ -12,17 +12,16 @@ import type {
   APIError,
   APIErrorCode,
 } from './types';
+import { hasMessage, translate } from '../i18n';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
 const SESSION_KEY = 'metron_child_session';
 
-// Child-friendly messages for known error codes (fall back to the server text)
-const FRIENDLY_ERROR_MESSAGES: Record<string, string> = {
-  LOCKDOWN_ACTIVE: '🔒 Your parents have locked screen time right now.',
-  DOWNTIME_ACTIVE: '🌙 It is rest time now. Screen time is not available.',
-  APPROVAL_REQUIRED: '📚 Ask your parents to allow screen time for today.',
-  INSUFFICIENT_TIME: '⏰ Not enough time left today.',
-};
+// Child-friendly, translated message for an error code (generic text for unknown codes)
+function friendlyErrorMessage(code: string): string {
+  const key = `error.${code}`;
+  return hasMessage(key) ? translate(key) : translate('error.generic');
+}
 
 // Codes that mean the screen state changed and the UI should refresh
 const BLOCKING_ERROR_CODES = new Set<string>([
@@ -70,16 +69,16 @@ class MetronAPI {
       headers.set('Authorization', `Bearer ${this.sessionId}`);
     }
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      ...options,
-      headers,
-      credentials: 'include', // Include cookies
-    });
-
-    // Handle 401 errors by clearing session
-    if (response.status === 401) {
-      this.clearSession();
-      throw new Error('Session expired. Please login again.');
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        ...options,
+        headers,
+        credentials: 'include', // Include cookies
+      });
+    } catch (err) {
+      console.error('Network error:', err);
+      throw new APIRequestError(translate('error.network'), 'NETWORK_ERROR', 0);
     }
 
     // Handle non-2xx responses
@@ -88,8 +87,17 @@ class MetronAPI {
         error: `HTTP ${response.status}: ${response.statusText}`,
         code: 'NETWORK_ERROR',
       }));
-      const message = FRIENDLY_ERROR_MESSAGES[error.code] || error.error || 'Network error';
-      throw new APIRequestError(message, error.code, response.status);
+
+      // Wrong PIN on login is also a 401, but it is not an expired session
+      if (response.status === 401 && error.code !== 'INVALID_CREDENTIALS') {
+        this.clearSession();
+        throw new APIRequestError(translate('error.sessionExpired'), error.code, response.status);
+      }
+
+      if (!hasMessage(`error.${error.code}`)) {
+        console.error('API error:', response.status, error.code, error.error);
+      }
+      throw new APIRequestError(friendlyErrorMessage(error.code), error.code, response.status);
     }
 
     // Handle 204 No Content

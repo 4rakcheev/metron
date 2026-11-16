@@ -103,7 +103,7 @@ npm run lint    # ESLint
 ```
 
 **Tech stack:** React 18, TypeScript, Vite, Tailwind CSS, React Router
-**Key features:** 4-digit PIN login, real-time session status, 30-second auto-refresh, offline-capable PWA, mobile-responsive
+**Key features:** Russian UI by default (RU/EN switch, texts in `src/i18n/messages.ts`), 4-digit PIN login, real-time session status, 30-second auto-refresh, offline-capable PWA, mobile-responsive
 
 ### Windows Agent (`cmd/metron-win-agent`)
 

@@ -12,7 +12,8 @@ export default defineConfig({
       manifest: {
         name: 'Metron Kids',
         short_name: 'Metron',
-        description: 'Child screen time management app',
+        description: 'Экранное время для детей',
+        lang: 'ru',
         theme_color: '#8b5cf6',
         background_color: '#ffffff',
         display: 'standalone',

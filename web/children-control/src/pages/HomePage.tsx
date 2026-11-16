@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { formatMinutes, formatClockTime } from '../utils/timeFormat';
+import { formatMinutes, formatClockTime, formatTimeOnly } from '../utils/timeFormat';
 import { isBlockingError } from '../api/client';
 import { TimeDisplay } from '../components/TimeDisplay';
 import { ActiveSession } from '../components/ActiveSession';
 import { DeviceButton } from '../components/DeviceButton';
 import { DurationPicker } from '../components/DurationPicker';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { useI18n } from '../i18n/LanguageContext';
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -24,6 +26,7 @@ export function HomePage() {
     extendSession,
     refresh,
   } = useApp();
+  const { t, lang } = useI18n();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -53,7 +56,7 @@ export function HomePage() {
       await createSession(selectedDeviceId, minutes);
       setSelectedDeviceId(null);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to start session');
+      alert(err instanceof Error ? err.message : t('action.startFailed'));
       if (isBlockingError(err)) {
         setSelectedDeviceId(null);
         void refresh();
@@ -71,7 +74,7 @@ export function HomePage() {
       setActionLoading(true);
       await stopSession(activeSession.id);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to stop session');
+      alert(err instanceof Error ? err.message : t('action.stopFailed'));
     } finally {
       setActionLoading(false);
     }
@@ -85,7 +88,7 @@ export function HomePage() {
       setActionLoading(true);
       await extendSession(activeSession.id, minutes);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to extend session');
+      alert(err instanceof Error ? err.message : t('action.extendFailed'));
       if (isBlockingError(err)) {
         void refresh();
       }
@@ -97,7 +100,7 @@ export function HomePage() {
   if (!child || !stats) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="text-2xl text-gray-600">Loading...</div>
+        <div className="text-2xl text-gray-600">{t('home.loading')}</div>
       </div>
     );
   }
@@ -120,13 +123,13 @@ export function HomePage() {
   // Why extending the active session is not allowed (priority: lockdown > downtime > approval > device lock)
   let extendBlockedReason: string | null = null;
   if (isLockdown) {
-    extendBlockedReason = '🔒 Screen time is locked. You cannot add more time.';
+    extendBlockedReason = t('extend.lockdown');
   } else if (isInDowntime) {
-    extendBlockedReason = '🌙 It is rest time now. You cannot add more time.';
+    extendBlockedReason = t('extend.downtime');
   } else if (needsApproval) {
-    extendBlockedReason = '📚 Ask your parents to allow screen time for today to add more time.';
+    extendBlockedReason = t('extend.approval');
   } else if (activeDevice?.locked) {
-    extendBlockedReason = '🔒 This device is locked. You cannot add more time.';
+    extendBlockedReason = t('extend.deviceLocked');
   }
 
   return (
@@ -136,23 +139,26 @@ export function HomePage() {
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-800">
-              Hi, {child.name}! 👋
+              {t('home.hi', { name: child.name })}
             </h1>
             <p className="text-sm text-gray-500">
-              Ready to have fun?
+              {t('home.subtitle')}
               {isApprovedToday && !isLockdown && (
                 <span className="ml-2 inline-block text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
-                  ✅ Allowed today
+                  {t('home.allowedToday')}
                 </span>
               )}
             </p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-xl hover:bg-gray-300 transition"
-          >
-            Logout
-          </button>
+          <div className="flex items-center gap-3">
+            <LanguageSwitcher />
+            <button
+              onClick={handleLogout}
+              className="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-xl hover:bg-gray-300 transition"
+            >
+              {t('home.logout')}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -166,16 +172,16 @@ export function HomePage() {
             <div className="text-center py-10 px-6">
               <div className="text-7xl mb-4">🔒</div>
               <div className="text-3xl font-black mb-3 text-white">
-                Screen time is locked
+                {t('lockdown.title')}
               </div>
               <div className="text-lg font-semibold text-white max-w-md mx-auto">
-                Your parents have locked screen time. No sessions can be started right now. Your remaining time is saved.
+                {t('lockdown.text')}
               </div>
               {stats.lockdown_until && (
                 <div className="mt-6 inline-block bg-white/20 backdrop-blur-sm rounded-2xl px-8 py-4 border-2 border-white/30">
-                  <div className="text-sm font-semibold text-white/90 mb-1">Locked until</div>
+                  <div className="text-sm font-semibold text-white/90 mb-1">{t('lockdown.until')}</div>
                   <div className="text-3xl font-black text-white">
-                    {formatClockTime(stats.lockdown_until)}
+                    {formatClockTime(stats.lockdown_until, lang)}
                   </div>
                 </div>
               )}
@@ -192,19 +198,16 @@ export function HomePage() {
             <div className="text-center py-10 px-6">
               <div className="text-7xl mb-4">🌙</div>
               <div className="text-3xl font-black mb-3 text-white">
-                Downtime Period
+                {t('downtime.title')}
               </div>
               <div className="text-lg font-semibold text-white mb-6 max-w-md mx-auto">
-                It's rest time now! You cannot start or extend sessions during downtime.
+                {t('downtime.text')}
               </div>
               {stats.downtime_end && (
                 <div className="mt-4 inline-block bg-white/20 backdrop-blur-sm rounded-2xl px-8 py-4 border-2 border-white/30">
-                  <div className="text-sm font-semibold text-white/90 mb-1">Downtime ends at</div>
+                  <div className="text-sm font-semibold text-white/90 mb-1">{t('downtime.ends')}</div>
                   <div className="text-3xl font-black text-white">
-                    {new Date(stats.downtime_end).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    {formatTimeOnly(stats.downtime_end, lang)}
                   </div>
                 </div>
               )}
@@ -218,10 +221,10 @@ export function HomePage() {
             <div className="text-center py-8 px-6">
               <div className="text-6xl mb-4">📚</div>
               <div className="text-2xl font-bold text-gray-800 mb-2">
-                First homework
+                {t('approval.title')}
               </div>
               <div className="text-gray-600 max-w-md mx-auto">
-                Ask your parents to allow screen time for today. This page will update by itself.
+                {t('approval.text')}
               </div>
             </div>
           </div>
@@ -239,7 +242,7 @@ export function HomePage() {
         {activeSession && (
           <div>
             <h2 className="text-xl font-bold text-gray-800 mb-4">
-              🎮 Active Session
+              {t('home.activeTitle')}
             </h2>
             <ActiveSession
               session={activeSession}
@@ -258,10 +261,10 @@ export function HomePage() {
             <div className="text-center py-8">
               <div className="text-6xl mb-4">⏰</div>
               <div className="text-2xl font-bold text-gray-800 mb-2">
-                No time left today
+                {t('noTime.title')}
               </div>
               <div className="text-gray-600">
-                You've used all your screen time for today. Come back tomorrow!
+                {t('noTime.text')}
               </div>
             </div>
           </div>
@@ -273,10 +276,10 @@ export function HomePage() {
             <div className="text-center py-8">
               <div className="text-6xl mb-4">🔒</div>
               <div className="text-2xl font-bold text-gray-800 mb-2">
-                All devices are locked
+                {t('allLocked.title')}
               </div>
               <div className="text-gray-600">
-                Your parents have locked all devices for now.
+                {t('allLocked.text')}
               </div>
             </div>
           </div>
@@ -286,7 +289,7 @@ export function HomePage() {
         {!activeSession && !hasNoTime && !isBlocked && !allDevicesLocked && (
           <div>
             <h2 className="text-xl font-bold text-gray-800 mb-4">
-              📱 Choose a device
+              {t('home.chooseDevice')}
             </h2>
             <div className="overflow-x-auto pb-4">
               <div className="flex gap-4 px-2">
@@ -313,7 +316,7 @@ export function HomePage() {
             />
             {actionLoading && (
               <div className="text-center mt-4 text-purple-600 font-semibold">
-                Starting session...
+                {t('home.starting')}
               </div>
             )}
           </div>
@@ -324,21 +327,21 @@ export function HomePage() {
           <div className="grid grid-cols-3 gap-4 text-center">
             <div>
               <div className="text-3xl font-black text-purple-600">
-                {formatMinutes(stats.used_minutes)}
+                {formatMinutes(stats.used_minutes, lang)}
               </div>
-              <div className="text-sm text-gray-600 font-medium">Used</div>
+              <div className="text-sm text-gray-600 font-medium">{t('home.statsUsed')}</div>
             </div>
             <div>
               <div className="text-3xl font-black text-green-600">
-                {formatMinutes(stats.remaining_minutes)}
+                {formatMinutes(stats.remaining_minutes, lang)}
               </div>
-              <div className="text-sm text-gray-600 font-medium">Remaining</div>
+              <div className="text-sm text-gray-600 font-medium">{t('home.statsRemaining')}</div>
             </div>
             <div>
               <div className="text-3xl font-black text-blue-600">
                 {stats.sessions_count}
               </div>
-              <div className="text-sm text-gray-600 font-medium">Sessions</div>
+              <div className="text-sm text-gray-600 font-medium">{t('home.statsSessions')}</div>
             </div>
           </div>
         </div>

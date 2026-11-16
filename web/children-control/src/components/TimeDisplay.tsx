@@ -1,6 +1,7 @@
 // Time Display Component with Circular Progress
 
 import { formatMinutes, formatMinutesDetailed } from '../utils/timeFormat';
+import { useI18n } from '../i18n/LanguageContext';
 
 interface TimeDisplayProps {
   remainingMinutes: number;
@@ -8,12 +9,15 @@ interface TimeDisplayProps {
 }
 
 export function TimeDisplay({ remainingMinutes, totalMinutes }: TimeDisplayProps) {
+  const { t, lang } = useI18n();
   const percentage = totalMinutes > 0 ? (remainingMinutes / totalMinutes) * 100 : 0;
   const radius = 90;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
-  const timeFormatted = formatMinutesDetailed(remainingMinutes);
+  const timeFormatted = formatMinutesDetailed(remainingMinutes, lang);
+  // Long labels ("1 ч 15 мин") need a smaller font to fit inside the circle
+  const timeFontSize = timeFormatted.formatted.length > 7 ? 'text-3xl' : 'text-4xl';
 
   // Color based on remaining time
   const getColor = (): string => {
@@ -64,15 +68,15 @@ export function TimeDisplay({ remainingMinutes, totalMinutes }: TimeDisplayProps
 
         {/* Time display in center */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className={`text-4xl font-black ${getColor()} tracking-tight`}>
+          <div className={`${timeFontSize} font-black ${getColor()} tracking-tight`}>
             {timeFormatted.formatted}
           </div>
-          <div className="text-gray-600 text-lg font-semibold mt-1">left</div>
+          <div className="text-gray-600 text-lg font-semibold mt-1">{t('time.left')}</div>
         </div>
       </div>
 
       <div className="text-center">
-        <div className="text-base font-semibold text-gray-800">Out of {formatMinutes(totalMinutes)} today</div>
+        <div className="text-base font-semibold text-gray-800">{t('time.outOf', { total: formatMinutes(totalMinutes, lang) })}</div>
       </div>
     </div>
   );

@@ -1,5 +1,8 @@
 // Duration Picker Component
 
+import { useI18n } from '../i18n/LanguageContext';
+import type { MessageKey } from '../i18n';
+
 interface DurationPickerProps {
   onSelect: (minutes: number) => void;
   maxMinutes: number;
@@ -8,18 +11,20 @@ interface DurationPickerProps {
 
 interface DurationOption {
   minutes: number;
-  label: string;
+  labelKey: MessageKey;
   gradient: string;
 }
 
 const durationOptions: DurationOption[] = [
-  { minutes: 5, label: '5 min', gradient: 'from-green-400 to-emerald-500' },
-  { minutes: 15, label: '15 min', gradient: 'from-blue-400 to-cyan-500' },
-  { minutes: 30, label: '30 min', gradient: 'from-purple-400 to-pink-500' },
-  { minutes: 60, label: '1 hour', gradient: 'from-orange-400 to-red-500' },
+  { minutes: 5, labelKey: 'duration.minutes', gradient: 'from-green-400 to-emerald-500' },
+  { minutes: 15, labelKey: 'duration.minutes', gradient: 'from-blue-400 to-cyan-500' },
+  { minutes: 30, labelKey: 'duration.minutes', gradient: 'from-purple-400 to-pink-500' },
+  { minutes: 60, labelKey: 'duration.hour', gradient: 'from-orange-400 to-red-500' },
 ];
 
 export function DurationPicker({ onSelect, maxMinutes, disabled }: DurationPickerProps) {
+  const { t } = useI18n();
+
   const handleSelect = (requestedMinutes: number) => {
     // If there's any time available, allocate up to the requested amount
     const minutesToAllocate = Math.min(requestedMinutes, maxMinutes);
@@ -29,7 +34,7 @@ export function DurationPicker({ onSelect, maxMinutes, disabled }: DurationPicke
   return (
     <div className="w-full">
       <div className="text-center text-gray-800 font-bold mb-4 text-lg">
-        How long do you want to play?
+        {t('duration.title')}
       </div>
 
       <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
@@ -54,14 +59,14 @@ export function DurationPicker({ onSelect, maxMinutes, disabled }: DurationPicke
                 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
               `}
             >
-              {option.label}
+              {t(option.labelKey, { n: option.minutes })}
               {willGetLess && (
                 <div className="text-xs mt-1">
-                  ({maxMinutes} min available)
+                  {t('duration.available', { n: maxMinutes })}
                 </div>
               )}
               {hasNoTime && (
-                <div className="text-xs mt-1">No time left</div>
+                <div className="text-xs mt-1">{t('duration.noTime')}</div>
               )}
             </button>
           );

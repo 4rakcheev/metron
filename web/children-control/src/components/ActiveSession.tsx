@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { formatMinutes } from '../utils/timeFormat';
 import { resolveDeviceEmoji } from '../utils/deviceEmoji';
 import type { Session, Device } from '../api/types';
+import { useI18n } from '../i18n/LanguageContext';
 
 interface ActiveSessionProps {
   session: Session;
@@ -19,6 +20,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, exte
   const [localRemaining, setLocalRemaining] = useState(session.remaining_minutes);
   const [syncedRemaining, setSyncedRemaining] = useState(session.remaining_minutes);
   const [showExtendOptions, setShowExtendOptions] = useState(false);
+  const { t, lang } = useI18n();
 
   // Reset the local countdown when the server value changes (adjust state during render)
   if (session.remaining_minutes !== syncedRemaining) {
@@ -51,7 +53,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, exte
           <div className="flex items-center gap-3">
             <div className="text-5xl">{resolveDeviceEmoji(device, session.device_type)}</div>
             <div>
-              <div className="text-sm opacity-90">Currently playing on</div>
+              <div className="text-sm opacity-90">{t('active.playingOn')}</div>
               <div className="text-2xl font-bold">{device?.name || session.device_id}</div>
             </div>
           </div>
@@ -59,8 +61,8 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, exte
 
         {/* Time remaining - BIG AND VISIBLE */}
         <div className="bg-white/25 backdrop-blur-sm rounded-3xl p-6 text-center border-2 border-white/30">
-          <div className="text-5xl font-black tracking-tight mb-2">{formatMinutes(localRemaining)}</div>
-          <div className="text-base font-semibold opacity-95">remaining</div>
+          <div className="text-5xl font-black tracking-tight mb-2">{formatMinutes(localRemaining, lang)}</div>
+          <div className="text-base font-semibold opacity-95">{t('active.remaining')}</div>
         </div>
 
         {/* Extend blocked hint (lockdown, downtime, approval, locked device) */}
@@ -79,7 +81,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, exte
                 disabled={loading}
                 className="bg-white/20 backdrop-blur-sm text-white font-bold py-4 px-6 rounded-2xl border-2 border-white/30 shadow-lg transform transition hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
               >
-                ⏱️ Extend
+                {t('active.extend')}
               </button>
             )}
             <button
@@ -87,13 +89,13 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, exte
               disabled={loading}
               className="bg-white text-purple-600 font-bold py-4 px-6 rounded-2xl shadow-lg transform transition hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
             >
-              {loading ? '...' : '🛑 Stop'}
+              {loading ? '...' : t('active.stop')}
             </button>
           </div>
         ) : (
           <div className="space-y-3">
             <div className="text-center text-sm font-semibold opacity-90">
-              How much more time?
+              {t('active.howMuch')}
             </div>
             <div className="grid grid-cols-2 gap-2">
               {extendOptions.map((mins) => (
@@ -103,7 +105,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, exte
                   disabled={loading}
                   className="bg-white/20 backdrop-blur-sm text-white font-bold py-3 px-4 rounded-xl border-2 border-white/30 shadow transform transition hover:scale-105 active:scale-95 disabled:opacity-50"
                 >
-                  +{mins} min
+                  {t('active.plusMin', { n: mins })}
                 </button>
               ))}
             </div>
@@ -111,7 +113,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, exte
               onClick={() => setShowExtendOptions(false)}
               className="w-full bg-white/10 backdrop-blur-sm text-white font-semibold py-2 px-4 rounded-xl border border-white/20 hover:bg-white/20 transition"
             >
-              Cancel
+              {t('active.cancel')}
             </button>
           </div>
         )}

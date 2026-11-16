@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { api } from '../api/client';
+import { translate } from '../i18n';
 import type { Child, TodayStats, Device, Session } from '../api/types';
 
 interface AppState {
@@ -78,7 +79,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setState(prev => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : 'Failed to load data',
+        error: err instanceof Error ? err.message : translate('error.loadFailed'),
         isAuthenticated: false,
       }));
     }
@@ -104,7 +105,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setState(prev => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : 'Login failed',
+        error: err instanceof Error ? err.message : translate('error.generic'),
       }));
       throw err;
     }
@@ -142,7 +143,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setState(prev => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : 'Failed to create session',
+        error: err instanceof Error ? err.message : translate('action.startFailed'),
       }));
       throw err;
     }
@@ -161,7 +162,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setState(prev => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : 'Failed to stop session',
+        error: err instanceof Error ? err.message : translate('action.stopFailed'),
       }));
       throw err;
     }
@@ -180,7 +181,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setState(prev => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : 'Failed to extend session',
+        error: err instanceof Error ? err.message : translate('action.extendFailed'),
       }));
       throw err;
     }
