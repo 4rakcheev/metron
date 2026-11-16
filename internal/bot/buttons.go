@@ -18,6 +18,7 @@ type CallbackData struct {
 	Duration     int    `json:"m,omitempty"`   // Duration in minutes
 	Session      string `json:"ses,omitempty"` // Session ID (resolved from index)
 	SessionIndex int    `json:"si,omitempty"`  // Session index in list (for compact callback)
+	RuleID       int64  `json:"i,omitempty"`   // Lockdown rule ID (lockdown unlock)
 }
 
 // MarshalCallback converts CallbackData to JSON string
@@ -385,6 +386,10 @@ func BuildMainMenuButtons() tgbotapi.InlineKeyboardMarkup {
 				MarshalCallback(CallbackData{Action: "sessions_menu"})),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ Approve day",
+				MarshalCallback(CallbackData{Action: approvalAction})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("⚙️ More...",
 				MarshalCallback(CallbackData{Action: "more_menu"})),
 		),
@@ -446,16 +451,17 @@ func BuildSessionsMenuButtons() tgbotapi.InlineKeyboardMarkup {
 	)
 }
 
-// BuildMoreMenuButtons creates the additional features submenu
-func BuildMoreMenuButtons(skipDowntimeActive, lockdownActive bool) tgbotapi.InlineKeyboardMarkup {
+// BuildMoreMenuButtons creates the additional features submenu.
+// activeLockdowns is the number of active lockdown rules (shown on the button).
+func BuildMoreMenuButtons(skipDowntimeActive bool, activeLockdowns int) tgbotapi.InlineKeyboardMarkup {
 	skipText := "🌙 Skip Downtime Today"
 	if skipDowntimeActive {
 		skipText = "✅ Downtime Skipped Today"
 	}
 
-	lockdownText := "🔒 Lock All Sessions"
-	if lockdownActive {
-		lockdownText = "🔓 Unlock Sessions (LOCKED)"
+	lockdownText := "🔒 Lockdowns"
+	if activeLockdowns > 0 {
+		lockdownText = fmt.Sprintf("🔒 Lockdowns (%d active)", activeLockdowns)
 	}
 
 	return tgbotapi.NewInlineKeyboardMarkup(
@@ -465,7 +471,7 @@ func BuildMoreMenuButtons(skipDowntimeActive, lockdownActive bool) tgbotapi.Inli
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(lockdownText,
-				MarshalCallback(CallbackData{Action: "lockdown"})),
+				MarshalCallback(CallbackData{Action: lockdownAction})),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🔓 Bypass Mode",
@@ -478,21 +484,181 @@ func BuildMoreMenuButtons(skipDowntimeActive, lockdownActive bool) tgbotapi.Inli
 	)
 }
 
-// BuildLockdownConfirmButtons creates the confirmation keyboard for the lockdown toggle.
-// The intended direction is encoded in the callback so the apply step never has to
-// re-read (and possibly misread) the current state to decide what to do.
-func BuildLockdownConfirmButtons(enable bool) tgbotapi.InlineKeyboardMarkup {
-	subAction := "off"
-	if enable {
-		subAction = "on"
+// Lockdown flow callback encoding (action "lk", kept short for the 64-byte limit):
+//
+//	{"a":"lk"}                               list of active rules
+//	{"a":"lk","sa":"u","i":<rule id>}        unlock (delete) a rule
+//	{"a":"lk","s":1}                         new rule: pick child
+//	{"a":"lk","s":2,"ci":<child>}            new rule: pick device
+//	{"a":"lk","s":3,"ci":<child>,"d":<dev>}  new rule: pick duration
+//	{"a":"lk","s":4,"ci":<child>,"d":<dev>,"m":<until>}  create the rule
+//
+// <child> is the child index in ListChildren, or lockdownAllChildren (-1) for all children.
+// "All" is always encoded explicitly, so an omitted "ci" (index 0) is never read as "all".
+// <dev> is the device ID, or lockdownAllDevices ("*") for all devices.
+// <until> is lockdownUntilEndOfDayCode or lockdownUntilManualCode; anything else is rejected.
+const (
+	lockdownAction            = "lk"
+	lockdownSubUnlock         = "u"
+	lockdownAllChildren       = -1
+	lockdownAllDevices        = "*"
+	lockdownUntilEndOfDayCode = 1
+	lockdownUntilManualCode   = 2
+)
+
+// BuildLockdownListButtons creates the lockdown overview keyboard: one unlock button
+// per active rule, plus "New lockdown" and "Back"
+func BuildLockdownListButtons(rules []LockdownRule) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	for _, rule := range rules {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔓 Unlock "+lockdownScopeLabel(rule),
+				MarshalCallback(CallbackData{Action: lockdownAction, SubAction: lockdownSubUnlock, RuleID: rule.ID})),
+		))
 	}
 
+	rows = append(rows,
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("➕ New lockdown",
+				MarshalCallback(CallbackData{Action: lockdownAction, Step: 1})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back",
+				MarshalCallback(CallbackData{Action: "more_menu"})),
+		),
+	)
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// lockdownBackCancelRow returns a [Back, Cancel] row where Back goes to the given callback
+func lockdownBackCancelRow(back CallbackData) []tgbotapi.InlineKeyboardButton {
+	return tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("◀️ Back", MarshalCallback(back)),
+		tgbotapi.NewInlineKeyboardButtonData("❌ Cancel", MarshalCallback(CallbackData{Action: "cancel"})),
+	)
+}
+
+// BuildLockdownChildButtons creates the child picker for a new lockdown ("All children" first)
+func BuildLockdownChildButtons(children []Child) tgbotapi.InlineKeyboardMarkup {
+	rows := [][]tgbotapi.InlineKeyboardButton{
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("👥 All children",
+				MarshalCallback(CallbackData{Action: lockdownAction, Step: 2, ChildIndex: lockdownAllChildren})),
+		),
+	}
+
+	for i, child := range children {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("%s %s", child.Emoji, child.Name),
+				MarshalCallback(CallbackData{Action: lockdownAction, Step: 2, ChildIndex: i})),
+		))
+	}
+
+	rows = append(rows, lockdownBackCancelRow(CallbackData{Action: lockdownAction}))
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// BuildLockdownDeviceButtons creates the device picker for a new lockdown ("All devices" first)
+func BuildLockdownDeviceButtons(devices []Device, childIndex int) tgbotapi.InlineKeyboardMarkup {
+	rows := [][]tgbotapi.InlineKeyboardButton{
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("📺 All devices",
+				MarshalCallback(CallbackData{Action: lockdownAction, Step: 3, ChildIndex: childIndex, Device: lockdownAllDevices})),
+		),
+	}
+
+	for _, device := range devices {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("%s %s", resolveDeviceEmoji(device), device.Name),
+				MarshalCallback(CallbackData{Action: lockdownAction, Step: 3, ChildIndex: childIndex, Device: device.ID})),
+		))
+	}
+
+	rows = append(rows, lockdownBackCancelRow(CallbackData{Action: lockdownAction, Step: 1}))
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// BuildLockdownDurationButtons creates the duration picker for a new lockdown
+func BuildLockdownDurationButtons(childIndex int, deviceID string) tgbotapi.InlineKeyboardMarkup {
 	return tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✅ Confirm",
-				MarshalCallback(CallbackData{Action: "lockdown", SubAction: subAction, Step: 1})),
+			tgbotapi.NewInlineKeyboardButtonData("🌙 Until end of day",
+				MarshalCallback(CallbackData{
+					Action: lockdownAction, Step: 4, ChildIndex: childIndex, Device: deviceID, Duration: lockdownUntilEndOfDayCode,
+				})),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔐 Until I unlock",
+				MarshalCallback(CallbackData{
+					Action: lockdownAction, Step: 4, ChildIndex: childIndex, Device: deviceID, Duration: lockdownUntilManualCode,
+				})),
+		),
+		lockdownBackCancelRow(CallbackData{Action: lockdownAction, Step: 2, ChildIndex: childIndex}),
+	)
+}
+
+// BuildLockdownDoneButtons is shown after a lockdown is created: back to the list or quick actions
+func BuildLockdownDoneButtons() tgbotapi.InlineKeyboardMarkup {
+	quick := BuildQuickActionsButtons()
+	rows := [][]tgbotapi.InlineKeyboardButton{
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔒 Lockdowns",
+				MarshalCallback(CallbackData{Action: lockdownAction})),
+		),
+	}
+	rows = append(rows, quick.InlineKeyboard...)
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// Approval flow callback encoding (action "apr"):
+//
+//	{"a":"apr"}                         approval screen
+//	{"a":"apr","sa":"ok","ci":<i>}      approve child i
+//	{"a":"apr","sa":"rv","ci":<i>}      ask to confirm revoking child i
+//	{"a":"apr","sa":"rv","s":1,"ci":<i>} revoke child i
+//
+// <i> is the child index in the GET /v1/approvals/today children list.
+const (
+	approvalAction     = "apr"
+	approvalSubApprove = "ok"
+	approvalSubRevoke  = "rv"
+)
+
+// BuildApprovalButtons creates the approval screen keyboard: approve or revoke per child, plus Back
+func BuildApprovalButtons(children []ChildApproval) tgbotapi.InlineKeyboardMarkup {
+	var rows [][]tgbotapi.InlineKeyboardButton
+
+	for i, child := range children {
+		label := "✅ Approve " + child.ChildName
+		sub := approvalSubApprove
+		if child.Approved {
+			label = "↩️ Revoke " + child.ChildName
+			sub = approvalSubRevoke
+		}
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(label,
+				MarshalCallback(CallbackData{Action: approvalAction, SubAction: sub, ChildIndex: i})),
+		))
+	}
+
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("⬅️ Back",
+			MarshalCallback(CallbackData{Action: "main_menu"})),
+	))
+
+	return tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+// BuildApprovalRevokeConfirmButtons asks to confirm revoking today's approval for a child
+func BuildApprovalRevokeConfirmButtons(childIndex int) tgbotapi.InlineKeyboardMarkup {
+	return tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("↩️ Yes, revoke",
+				MarshalCallback(CallbackData{Action: approvalAction, SubAction: approvalSubRevoke, Step: 1, ChildIndex: childIndex})),
 			tgbotapi.NewInlineKeyboardButtonData("◀️ Back",
-				MarshalCallback(CallbackData{Action: "more_menu"})),
+				MarshalCallback(CallbackData{Action: approvalAction})),
 		),
 	)
 }

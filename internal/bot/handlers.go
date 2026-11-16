@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -15,9 +16,13 @@ I help you manage your children's screen time across all devices.
 *Available Commands:*
 
 📊 /today - View today's screen time summary
+✅ /approve - Approve today's screen time for a child (after homework)
+➕ /newsession - Start a session
 👶 /children - List all children and toggle downtime
 📺 /devices - List available devices
 🔓 /bypass - Enable/disable bypass mode for devices
+
+🔒 *Lockdowns* (⚙️ More) block a child or all children on one or all devices, until end of day or until you unlock.
 
 *Quick Actions:*`
 
@@ -50,11 +55,38 @@ func (b *Bot) handleToday(ctx context.Context, message *tgbotapi.Message) error 
 		childrenMap[child.ID] = child
 	}
 
-	text := FormatTodayStats(stats, sessions, childrenMap)
-	if b.lockdownActive(ctx) {
-		text = "🔒 *LOCKDOWN ACTIVE* - all sessions blocked until unlocked\n\n" + text
+	text := FormatTodayStats(stats, sessions, childrenMap, b.todayApprovalsMap(ctx))
+	if rules := b.activeLockdowns(ctx); len(rules) > 0 {
+		text = "🔒 *Lockdowns*\n" + FormatLockdownLines(rules, time.Now()) + "\n" + text
 	}
 	return b.sendMessage(message.Chat.ID, text, BuildQuickActionsButtons())
+}
+
+// todayApprovalsMap returns today's approval status by child ID, or nil when approval
+// is not required today, the approval gate is disabled, or the request fails
+// (the /today summary must not break because of the optional approval lines)
+func (b *Bot) todayApprovalsMap(ctx context.Context) map[string]ChildApproval {
+	approvals, err := b.client.ListTodayApprovals(ctx)
+	if err != nil {
+		if !isFeatureDisabled(err) {
+			b.logger.Warn("Failed to list approvals", "error", err)
+		}
+		return nil
+	}
+	if !approvals.Required {
+		return nil
+	}
+	result := make(map[string]ChildApproval, len(approvals.Children))
+	for _, child := range approvals.Children {
+		result[child.ChildID] = child
+	}
+	return result
+}
+
+// handleApprove handles the /approve command - shows today's approval status per child
+func (b *Bot) handleApprove(ctx context.Context, message *tgbotapi.Message) error {
+	text, keyboard := b.approvalScreen(ctx, "")
+	return b.sendMessage(message.Chat.ID, text, keyboard)
 }
 
 // handleChildren handles the /children command
@@ -83,10 +115,10 @@ func (b *Bot) handleDevices(ctx context.Context, message *tgbotapi.Message) erro
 
 // handleNewSession handles the /newsession command (step 0)
 func (b *Bot) handleNewSession(ctx context.Context, message *tgbotapi.Message) error {
-	// Short-circuit under lockdown instead of letting the user walk the whole flow into a 409
-	if b.lockdownActive(ctx) {
-		return b.sendMessage(message.Chat.ID,
-			"🔒 *LOCKDOWN ACTIVE*\n\nAll sessions are blocked. Unlock first via ⚙️ More menu.", BuildQuickActionsButtons())
+	// Short-circuit under a global lockdown instead of letting the user walk the whole flow into a 409.
+	// Narrower rules (one child or one device) are left to the server, which answers 409 LOCKDOWN_ACTIVE.
+	if b.globalLockdownActive(ctx) {
+		return b.sendMessage(message.Chat.ID, globalLockdownText, BuildLockdownDoneButtons())
 	}
 
 	// Get children list

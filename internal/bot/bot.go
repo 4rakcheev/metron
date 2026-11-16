@@ -119,6 +119,8 @@ func (b *Bot) handleMessage(ctx context.Context, message *tgbotapi.Message) erro
 		return b.handleStart(ctx, message)
 	case "today":
 		return b.handleToday(ctx, message)
+	case "approve":
+		return b.handleApprove(ctx, message)
 	case "newsession":
 		return b.handleNewSession(ctx, message)
 	case "extend":
@@ -159,9 +161,9 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 	if len(callback.Data) > 0 && callback.Data[0] == '/' {
 		// Handle as command
 		msg := &tgbotapi.Message{
-			Chat:    callback.Message.Chat,
-			From:    callback.From,
-			Text:    callback.Data,
+			Chat: callback.Message.Chat,
+			From: callback.From,
+			Text: callback.Data,
 			Entities: []tgbotapi.MessageEntity{
 				{Type: "bot_command", Offset: 0, Length: len(callback.Data)},
 			},
@@ -216,8 +218,13 @@ func (b *Bot) handleCallback(ctx context.Context, callback *tgbotapi.CallbackQue
 		return b.handleMoreMenu(ctx, callback.Message)
 	case "skip_downtime":
 		return b.handleSkipDowntime(ctx, callback.Message)
-	case "lockdown":
+	case lockdownAction:
 		return b.handleLockdownFlow(ctx, callback.Message, data)
+	case "lockdown":
+		// Stale buttons from the old global lockdown toggle: show the new lockdown list
+		return b.handleLockdownFlow(ctx, callback.Message, &CallbackData{Action: lockdownAction})
+	case approvalAction:
+		return b.handleApprovalFlow(ctx, callback.Message, data)
 	case "stop_all":
 		return b.handleStopAll(ctx, callback.Message)
 	case "main_menu":

@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { formatMinutes } from '../utils/timeFormat';
+import { formatMinutes, formatClockTime } from '../utils/timeFormat';
+import { isBlockingError } from '../api/client';
 import { TimeDisplay } from '../components/TimeDisplay';
 import { ActiveSession } from '../components/ActiveSession';
 import { DeviceButton } from '../components/DeviceButton';
@@ -21,6 +22,7 @@ export function HomePage() {
     createSession,
     stopSession,
     extendSession,
+    refresh,
   } = useApp();
 
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export function HomePage() {
 
   // Handle session creation
   const handleCreateSession = async (minutes: number) => {
-    if (!selectedDeviceId) return;
+    if (!selectedDeviceId || devices.find(d => d.id === selectedDeviceId)?.locked) return;
 
     try {
       setActionLoading(true);
@@ -52,6 +54,10 @@ export function HomePage() {
       setSelectedDeviceId(null);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start session');
+      if (isBlockingError(err)) {
+        setSelectedDeviceId(null);
+        void refresh();
+      }
     } finally {
       setActionLoading(false);
     }
@@ -80,6 +86,9 @@ export function HomePage() {
       await extendSession(activeSession.id, minutes);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to extend session');
+      if (isBlockingError(err)) {
+        void refresh();
+      }
     } finally {
       setActionLoading(false);
     }
@@ -96,6 +105,29 @@ export function HomePage() {
   const hasNoTime = stats.remaining_minutes === 0;
   const isInDowntime = stats.downtime_enabled && stats.in_downtime;
   const isLockdown = !!stats.lockdown;
+  const approvalRequired = !!stats.approval?.required;
+  const needsApproval = approvalRequired && !stats.approval?.approved;
+  const isApprovedToday = approvalRequired && !!stats.approval?.approved;
+  // Any state where the child cannot start a session
+  const isBlocked = isLockdown || isInDowntime || needsApproval;
+
+  const allDevicesLocked = devices.length > 0 && devices.every(d => d.locked);
+  // Ignore a selection that became locked after a refresh
+  const selectedDevice = devices.find(d => d.id === selectedDeviceId && !d.locked);
+
+  const activeDevice = activeSession ? devices.find(d => d.id === activeSession.device_id) : undefined;
+
+  // Why extending the active session is not allowed (priority: lockdown > downtime > approval > device lock)
+  let extendBlockedReason: string | null = null;
+  if (isLockdown) {
+    extendBlockedReason = '🔒 Screen time is locked. You cannot add more time.';
+  } else if (isInDowntime) {
+    extendBlockedReason = '🌙 It is rest time now. You cannot add more time.';
+  } else if (needsApproval) {
+    extendBlockedReason = '📚 Ask your parents to allow screen time for today to add more time.';
+  } else if (activeDevice?.locked) {
+    extendBlockedReason = '🔒 This device is locked. You cannot add more time.';
+  }
 
   return (
     <div className="min-h-screen pb-8">
@@ -106,7 +138,14 @@ export function HomePage() {
             <h1 className="text-2xl font-bold text-gray-800">
               Hi, {child.name}! 👋
             </h1>
-            <p className="text-sm text-gray-500">Ready to have fun?</p>
+            <p className="text-sm text-gray-500">
+              Ready to have fun?
+              {isApprovedToday && !isLockdown && (
+                <span className="ml-2 inline-block text-xs font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
+                  ✅ Allowed today
+                </span>
+              )}
+            </p>
           </div>
           <button
             onClick={handleLogout}
@@ -132,6 +171,14 @@ export function HomePage() {
               <div className="text-lg font-semibold text-white max-w-md mx-auto">
                 Your parents have locked screen time. No sessions can be started right now. Your remaining time is saved.
               </div>
+              {stats.lockdown_until && (
+                <div className="mt-6 inline-block bg-white/20 backdrop-blur-sm rounded-2xl px-8 py-4 border-2 border-white/30">
+                  <div className="text-sm font-semibold text-white/90 mb-1">Locked until</div>
+                  <div className="text-3xl font-black text-white">
+                    {formatClockTime(stats.lockdown_until)}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -165,6 +212,21 @@ export function HomePage() {
           </div>
         )}
 
+        {/* Approval Notice - school days: parents must allow screen time first */}
+        {!isLockdown && !isInDowntime && needsApproval && !activeSession && !hasNoTime && (
+          <div className="card bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200">
+            <div className="text-center py-8 px-6">
+              <div className="text-6xl mb-4">📚</div>
+              <div className="text-2xl font-bold text-gray-800 mb-2">
+                First homework
+              </div>
+              <div className="text-gray-600 max-w-md mx-auto">
+                Ask your parents to allow screen time for today. This page will update by itself.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Time Display */}
         <div className="card">
           <TimeDisplay
@@ -181,11 +243,11 @@ export function HomePage() {
             </h2>
             <ActiveSession
               session={activeSession}
-              device={devices.find(d => d.id === activeSession.device_id)}
+              device={activeDevice}
               onStop={handleStopSession}
               onExtend={handleExtendSession}
               loading={actionLoading}
-              lockdown={isLockdown}
+              extendBlockedReason={extendBlockedReason}
             />
           </div>
         )}
@@ -205,8 +267,23 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Device Selection (only if no active session, has time, not in downtime, and not locked) */}
-        {!activeSession && !hasNoTime && !isInDowntime && !isLockdown && (
+        {/* All devices locked */}
+        {!activeSession && !hasNoTime && !isBlocked && allDevicesLocked && (
+          <div className="card bg-gray-50 border-2 border-gray-200">
+            <div className="text-center py-8">
+              <div className="text-6xl mb-4">🔒</div>
+              <div className="text-2xl font-bold text-gray-800 mb-2">
+                All devices are locked
+              </div>
+              <div className="text-gray-600">
+                Your parents have locked all devices for now.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Device Selection (only if no active session, has time, and nothing blocks it) */}
+        {!activeSession && !hasNoTime && !isBlocked && !allDevicesLocked && (
           <div>
             <h2 className="text-xl font-bold text-gray-800 mb-4">
               📱 Choose a device
@@ -217,7 +294,7 @@ export function HomePage() {
                   <DeviceButton
                     key={device.id}
                     device={device}
-                    selected={selectedDeviceId === device.id}
+                    selected={selectedDevice?.id === device.id}
                     onClick={() => setSelectedDeviceId(device.id)}
                   />
                 ))}
@@ -226,8 +303,8 @@ export function HomePage() {
           </div>
         )}
 
-        {/* Duration Selection (only if device selected, not in downtime, and not locked) */}
-        {!activeSession && !hasNoTime && !isInDowntime && !isLockdown && selectedDeviceId && (
+        {/* Duration Selection (only if an unlocked device is selected and nothing blocks it) */}
+        {!activeSession && !hasNoTime && !isBlocked && selectedDevice && (
           <div className="card bg-gradient-to-br from-purple-50 to-pink-50">
             <DurationPicker
               onSelect={handleCreateSession}

@@ -219,6 +219,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 }
 
 // Custom hook to use the app context
+// eslint-disable-next-line react-refresh/only-export-components
 export function useApp(): AppContextValue {
   const context = useContext(AppContext);
   if (!context) {

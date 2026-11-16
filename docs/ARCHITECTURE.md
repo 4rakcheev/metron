@@ -89,12 +89,26 @@ The SQLite storage implements this interface, and the `DowntimeService` receives
 ```go
 // internal/core/lockdown.go
 type LockdownStorage interface {
-    GetLockdown(ctx context.Context) (*LockdownState, error)
-    SetLockdown(ctx context.Context, enabled bool, enabledBy string) error
+    ListActiveLockdowns(ctx context.Context, now time.Time) ([]*LockdownRule, error)
+    AddLockdown(ctx context.Context, rule *LockdownRule) error // upsert by (child_id, device_id)
+    RemoveLockdown(ctx context.Context, id int64) error
 }
 ```
 
-The global lockdown flag (see `docs/features/lockdown.md`) blocks all session creation/extension until manually disabled. The SQLite storage implements this interface; `SessionManager` and the scheduler receive it via `SetLockdownStorage()`.
+Lockdown rules (see `docs/features/lockdown.md`) block a child (or all, `"*"`) on a device (or all, `"*"`), until removed or until local midnight. `SessionManager` checks them before start, extend and add-children; the scheduler ends matching sessions on every tick. Both receive the storage via `SetLockdownStorage()`. Storage errors fail open.
+
+**Example: Approval Gate Storage**
+
+```go
+// internal/core/approval_gate.go
+type ApprovalGateStorage interface {
+    GetDailyApproval(ctx context.Context, childID string, date time.Time) (*DailyApproval, error)
+    SaveDailyApproval(ctx context.Context, approval *DailyApproval) error
+    DeleteDailyApproval(ctx context.Context, childID string, date time.Time) error
+}
+```
+
+The daily approval gate (see `docs/features/weekday-approval.md`) is an `ApprovalGateService` set on the manager with `SetApprovalGate()` when `approval_gate.enabled` is true. It applies only to child-initiated actions: the child API handler marks the request context with `core.WithChildInitiated(ctx)`. Parent sessions from the bot or `/v1/sessions` are not gated. Check order in `StartSession`: lockdown, device, downtime, approval gate, remaining time, so downtime always wins over an approval. Storage errors fail closed.
 
 ### Driver-Specific Storage
 

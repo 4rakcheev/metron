@@ -70,7 +70,7 @@ func NewScheduler(storage Storage, deviceRegistry DeviceRegistry, driverRegistry
 	}
 }
 
-// SetLockdownStorage sets the storage for the global lockdown flag.
+// SetLockdownStorage sets the storage for lockdown rules.
 // Must be called before Start() - the field is not synchronized.
 func (s *Scheduler) SetLockdownStorage(storage core.LockdownStorage) {
 	s.lockdown = storage
@@ -126,21 +126,23 @@ func (s *Scheduler) tick() {
 	s.logger.Debug("Scheduler tick",
 		"active_sessions", len(sessions))
 
-	// Safety net: if global lockdown is enabled, end any session that
-	// slipped past the lockdown stop-all (e.g. started during a race)
-	if s.isLockdownActive(ctx) {
-		for _, session := range sessions {
+	// Safety net: end any session covered by an active lockdown rule that
+	// slipped past the stop on lockdown creation (e.g. started during a race)
+	rules := s.activeLockdowns(ctx)
+	now := time.Now()
+
+	for _, session := range sessions {
+		if rule := core.FindMatchingLockdown(rules, now, session.DeviceID, session.ChildIDs); rule != nil {
 			s.logger.Warn("Ending session due to lockdown",
 				"session_id", session.ID,
-				"device_id", session.DeviceID)
+				"device_id", session.DeviceID,
+				"lockdown_id", rule.ID)
 			if err := s.endSession(ctx, session); err != nil {
 				s.logger.Error("Failed to end session during lockdown", "session_id", session.ID, "error", err)
 			}
+			continue
 		}
-		return
-	}
 
-	for _, session := range sessions {
 		s.logger.Debug("Processing session",
 			"session_id", session.ID,
 			"start_time", session.StartTime,
@@ -153,18 +155,18 @@ func (s *Scheduler) tick() {
 	}
 }
 
-// isLockdownActive reports whether the global lockdown is enabled.
-// Fails open on storage errors so a broken flag never kills sessions.
-func (s *Scheduler) isLockdownActive(ctx context.Context) bool {
+// activeLockdowns returns the active lockdown rules.
+// Fails open on storage errors so a broken store never kills sessions.
+func (s *Scheduler) activeLockdowns(ctx context.Context) []*core.LockdownRule {
 	if s.lockdown == nil {
-		return false
+		return nil
 	}
-	state, err := s.lockdown.GetLockdown(ctx)
+	rules, err := s.lockdown.ListActiveLockdowns(ctx, time.Now())
 	if err != nil {
-		s.logger.Error("Failed to read lockdown state", "error", err)
-		return false
+		s.logger.Error("Failed to read lockdown rules", "error", err)
+		return nil
 	}
-	return state.Enabled
+	return rules
 }
 
 // processSession processes a single session

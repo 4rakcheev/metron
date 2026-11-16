@@ -337,6 +337,16 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 	// Wire up lockdown storage (SQLite storage also implements core.LockdownStorage)
 	baseManager.SetLockdownStorage(db)
 
+	// Daily approval gate (child-initiated sessions need a parent's approval on configured days)
+	var approvalGate *core.ApprovalGateService
+	if cfg.ApprovalGate != nil && cfg.ApprovalGate.Enabled {
+		approvalGate = core.NewApprovalGateService(cfg.ApprovalGate.Days(), db, timezone)
+		baseManager.SetApprovalGate(approvalGate)
+		mainLogger.Info("Approval gate enabled", "required_days", cfg.ApprovalGate.Days())
+	} else {
+		mainLogger.Info("Approval gate disabled (no configuration)")
+	}
+
 	// Wrap session manager with logging decorator
 	sessionManager := logging.NewSessionManagerLogger(baseManager, logger)
 
@@ -356,6 +366,8 @@ func run(configPath string, useEnv bool, logger *slog.Logger) error {
 		Downtime:            downtimeService,
 		DowntimeSkipStorage: db, // SQLite storage also implements core.DowntimeSkipStorage
 		LockdownStorage:     db, // SQLite storage also implements core.LockdownStorage
+		ApprovalGate:        approvalGate,
+		Timezone:            timezone,
 		APIKey:              cfg.Security.APIKey,
 		Logger:              apiLogger,
 		AqaraTokenStorage:   db,          // SQLite storage also implements aqara.AqaraTokenStorage

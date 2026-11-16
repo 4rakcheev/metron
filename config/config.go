@@ -25,6 +25,40 @@ type Config struct {
 	Kidslox  *KidsloxConfig  `json:"kidslox,omitempty"`
 	Notify   *NotifyConfig   `json:"notify,omitempty"`
 	Downtime *DowntimeConfig `json:"downtime,omitempty"`
+	// ApprovalGate requires a parent's daily approval (e.g. after homework) before a child
+	// can start sessions from the child app on the configured days
+	ApprovalGate *ApprovalGateConfig `json:"approval_gate,omitempty"`
+}
+
+// DefaultApprovalDays are used when approval_gate.required_days is empty
+var DefaultApprovalDays = []string{"monday", "tuesday", "wednesday", "thursday", "friday"}
+
+// ApprovalGateConfig contains settings for the daily parent approval gate
+type ApprovalGateConfig struct {
+	Enabled      bool     `json:"enabled"`
+	RequiredDays []string `json:"required_days,omitempty"` // lowercase day names; default Mon-Fri
+}
+
+// Days returns the configured required days, or DefaultApprovalDays when none are set
+func (a *ApprovalGateConfig) Days() []string {
+	if len(a.RequiredDays) == 0 {
+		return DefaultApprovalDays
+	}
+	return a.RequiredDays
+}
+
+// Validate validates the approval gate configuration
+func (a *ApprovalGateConfig) Validate() error {
+	valid := map[string]bool{
+		"sunday": true, "monday": true, "tuesday": true, "wednesday": true,
+		"thursday": true, "friday": true, "saturday": true,
+	}
+	for _, day := range a.RequiredDays {
+		if !valid[day] {
+			return fmt.Errorf("invalid day name %q in approval_gate.required_days (use lowercase English names)", day)
+		}
+	}
+	return nil
 }
 
 // DeviceConfig represents a device configuration
@@ -325,6 +359,12 @@ func (c *Config) Validate() error {
 	// Validate downtime config if present
 	if c.Downtime != nil {
 		if err := c.Downtime.Validate(); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+		}
+	}
+
+	if c.ApprovalGate != nil {
+		if err := c.ApprovalGate.Validate(); err != nil {
 			return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 		}
 	}

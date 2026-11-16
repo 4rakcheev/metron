@@ -10,10 +10,44 @@ import type {
   LoginResponse,
   CreateSessionRequest,
   APIError,
+  APIErrorCode,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE || 'http://localhost:8080';
 const SESSION_KEY = 'metron_child_session';
+
+// Child-friendly messages for known error codes (fall back to the server text)
+const FRIENDLY_ERROR_MESSAGES: Record<string, string> = {
+  LOCKDOWN_ACTIVE: '🔒 Your parents have locked screen time right now.',
+  DOWNTIME_ACTIVE: '🌙 It is rest time now. Screen time is not available.',
+  APPROVAL_REQUIRED: '📚 Ask your parents to allow screen time for today.',
+  INSUFFICIENT_TIME: '⏰ Not enough time left today.',
+};
+
+// Codes that mean the screen state changed and the UI should refresh
+const BLOCKING_ERROR_CODES = new Set<string>([
+  'LOCKDOWN_ACTIVE',
+  'DOWNTIME_ACTIVE',
+  'APPROVAL_REQUIRED',
+  'INSUFFICIENT_TIME',
+]);
+
+export class APIRequestError extends Error {
+  readonly code: APIErrorCode;
+  readonly status: number;
+
+  constructor(message: string, code: APIErrorCode, status: number) {
+    super(message);
+    this.name = 'APIRequestError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+// True when the error means a block (lockdown, downtime, approval, no time)
+export function isBlockingError(err: unknown): boolean {
+  return err instanceof APIRequestError && BLOCKING_ERROR_CODES.has(err.code);
+}
 
 class MetronAPI {
   private sessionId: string | null = null;
@@ -54,7 +88,8 @@ class MetronAPI {
         error: `HTTP ${response.status}: ${response.statusText}`,
         code: 'NETWORK_ERROR',
       }));
-      throw new Error(error.error || 'Network error');
+      const message = FRIENDLY_ERROR_MESSAGES[error.code] || error.error || 'Network error';
+      throw new APIRequestError(message, error.code, response.status);
     }
 
     // Handle 204 No Content

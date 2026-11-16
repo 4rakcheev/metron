@@ -765,22 +765,44 @@ func TestSessionManager_MultipleChildren(t *testing.T) {
 	assert.Equal(t, usage1.MinutesUsed, usage2.MinutesUsed)
 }
 
-// mockLockdownStorage implements LockdownStorage for tests
+// mockLockdownStorage implements LockdownStorage for tests.
+// enabled=true acts as a global (all children, all devices) rule.
 type mockLockdownStorage struct {
 	enabled bool
+	rules   []*LockdownRule
 	err     error
 }
 
-func (m *mockLockdownStorage) GetLockdown(ctx context.Context) (*LockdownState, error) {
+func (m *mockLockdownStorage) ListActiveLockdowns(ctx context.Context, now time.Time) ([]*LockdownRule, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return &LockdownState{Enabled: m.enabled}, nil
+	var active []*LockdownRule
+	if m.enabled {
+		active = append(active, &LockdownRule{ID: 1, ChildID: LockdownAll, DeviceID: LockdownAll})
+	}
+	for _, r := range m.rules {
+		if r.IsActive(now) {
+			active = append(active, r)
+		}
+	}
+	return active, nil
 }
 
-func (m *mockLockdownStorage) SetLockdown(ctx context.Context, enabled bool, enabledBy string) error {
-	m.enabled = enabled
+func (m *mockLockdownStorage) AddLockdown(ctx context.Context, rule *LockdownRule) error {
+	rule.ID = int64(len(m.rules) + 100)
+	m.rules = append(m.rules, rule)
 	return nil
+}
+
+func (m *mockLockdownStorage) RemoveLockdown(ctx context.Context, id int64) error {
+	for i, r := range m.rules {
+		if r.ID == id {
+			m.rules = append(m.rules[:i], m.rules[i+1:]...)
+			return nil
+		}
+	}
+	return ErrLockdownNotFound
 }
 
 func setupLockdownTestManager(t *testing.T) (*SessionManager, *mockStorage) {

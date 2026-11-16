@@ -10,6 +10,7 @@ import (
 	"metron/internal/drivers"
 	"metron/internal/drivers/aqara"
 	"metron/internal/storage"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -21,8 +22,10 @@ type RouterConfig struct {
 	DriverRegistry      *drivers.Registry
 	DeviceRegistry      *devices.Registry
 	Downtime            *core.DowntimeService
-	DowntimeSkipStorage core.DowntimeSkipStorage // For skip downtime feature
-	LockdownStorage     core.LockdownStorage     // For global lockdown feature
+	DowntimeSkipStorage core.DowntimeSkipStorage  // For skip downtime feature
+	LockdownStorage     core.LockdownStorage      // For lockdown rules feature
+	ApprovalGate        *core.ApprovalGateService // Optional: daily approval gate (nil = disabled)
+	Timezone            *time.Location            // Local timezone (for "until end of day" lockdowns)
 	APIKey              string
 	Logger              *slog.Logger
 	AqaraTokenStorage   aqara.AqaraTokenStorage // Optional: only needed if Aqara driver is used
@@ -141,12 +144,27 @@ func NewRouter(config RouterConfig) *gin.Engine {
 		if config.LockdownStorage != nil {
 			lockdownHandler := handlers.NewLockdownHandler(
 				config.LockdownStorage,
+				config.Storage,
 				config.Manager,
+				config.DeviceRegistry,
+				config.Timezone,
 				config.Logger,
 			)
-			v1.GET("/lockdown", lockdownHandler.GetLockdown)
-			v1.POST("/lockdown/enable", lockdownHandler.EnableLockdown)
-			v1.POST("/lockdown/disable", lockdownHandler.DisableLockdown)
+			v1.GET("/lockdowns", lockdownHandler.ListLockdowns)
+			v1.POST("/lockdowns", lockdownHandler.CreateLockdown)
+			v1.DELETE("/lockdowns/:id", lockdownHandler.DeleteLockdown)
+		}
+
+		// Daily approval gate endpoints (only register if the gate is enabled)
+		if config.ApprovalGate != nil {
+			approvalHandler := handlers.NewApprovalHandler(
+				config.ApprovalGate,
+				config.Storage,
+				config.Logger,
+			)
+			v1.GET("/approvals/today", approvalHandler.ListTodayApprovals)
+			v1.POST("/children/:id/approval", approvalHandler.ApproveChild)
+			v1.DELETE("/children/:id/approval", approvalHandler.RevokeApproval)
 		}
 	}
 
@@ -164,6 +182,9 @@ func NewRouter(config RouterConfig) *gin.Engine {
 			config.LockdownStorage,
 			config.Logger,
 		)
+		if config.ApprovalGate != nil {
+			childHandler.SetApprovalGate(config.ApprovalGate)
+		}
 
 		// Public routes (no auth required)
 		authGroup := childGroup.Group("/auth")

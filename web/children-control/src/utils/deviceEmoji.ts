@@ -7,6 +7,7 @@ const emojiMap: Record<string, string> = {
   phone: '📱',
   iphone: '📱',
   ps5: '🎮',
+  game: '🎮',
   xbox: '🎮',
   computer: '💻',
 };

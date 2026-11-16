@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -27,8 +28,11 @@ func formatTime(t time.Time, layout string) string {
 	return t.Format(layout)
 }
 
-// FormatTodayStats formats today's statistics into a Telegram message
-func FormatTodayStats(stats *TodayStats, activeSessions []Session, childrenMap map[string]Child) string {
+// FormatTodayStats formats today's statistics into a Telegram message.
+// approvals maps child ID to today's approval status; pass nil when approval
+// is not required today or the approval gate is disabled (no approval lines are shown).
+func FormatTodayStats(stats *TodayStats, activeSessions []Session, childrenMap map[string]Child,
+	approvals map[string]ChildApproval) string {
 	var sb strings.Builder
 
 	sb.WriteString("📊 *Today's Screen Time Summary*\n")
@@ -61,6 +65,14 @@ func FormatTodayStats(stats *TodayStats, activeSessions []Session, childrenMap m
 
 		if child.SessionsToday > 0 {
 			sb.WriteString(fmt.Sprintf("   Sessions: %d\n", child.SessionsToday))
+		}
+
+		if approval, ok := approvals[child.ChildID]; ok && approval.Required {
+			if approval.Approved {
+				sb.WriteString(fmt.Sprintf("   ✅ Approved today%s\n", formatApprovedAt(approval, " at ")))
+			} else {
+				sb.WriteString("   ⏳ Waiting for approval (/approve)\n")
+			}
 		}
 
 		// Show active sessions for this child
@@ -355,14 +367,150 @@ func FormatFineApplied(childName, childEmoji string, response *DeductFineRespons
 	return sb.String()
 }
 
+// markdownEscaper escapes Telegram legacy Markdown control characters
+var markdownEscaper = strings.NewReplacer("_", "\\_", "*", "\\*", "`", "\\`", "[", "\\[")
+
+// escapeMarkdown escapes user/API-provided text so it can be embedded in a Markdown message
+func escapeMarkdown(s string) string {
+	return markdownEscaper.Replace(s)
+}
+
 // FormatError formats an error message
 func FormatError(err error) string {
 	// Escape Markdown control characters: an unbalanced _ or * in an error
 	// message (e.g. error codes like LOCKDOWN_ACTIVE) makes Telegram reject
 	// the whole message with a parse error, so the user would see nothing.
-	msg := err.Error()
-	replacer := strings.NewReplacer("_", "\\_", "*", "\\*", "`", "\\`", "[", "\\[")
-	return fmt.Sprintf("❌ *Error*\n\n%s", replacer.Replace(msg))
+	switch apiErrorCode(err) {
+	case "LOCKDOWN_ACTIVE":
+		var statusErr *StatusError
+		detail := ""
+		if errors.As(err, &statusErr) && statusErr.APIMessage != "" {
+			detail = "\n\n" + escapeMarkdown(statusErr.APIMessage)
+		}
+		return "🔒 *Blocked by a lockdown*" + detail +
+			"\n\nTo unlock, open ⚙️ More, then 🔒 Lockdowns."
+	case "DOWNTIME_ACTIVE":
+		return "🌙 *Downtime is active*\n\nSessions cannot start during downtime." +
+			"\n\nTo allow screen time today, open ⚙️ More, then 🌙 Skip Downtime Today."
+	}
+	return fmt.Sprintf("❌ *Error*\n\n%s", escapeMarkdown(err.Error()))
+}
+
+// lockdownScopeLabel describes the scope of a rule, e.g. "Simon: PS5" or "All children: all devices"
+func lockdownScopeLabel(rule LockdownRule) string {
+	child := "All children"
+	if rule.ChildID != nil {
+		child = rule.ChildName
+	}
+	device := "all devices"
+	if rule.DeviceID != nil {
+		device = rule.DeviceName
+	}
+	return child + ": " + device
+}
+
+// lockdownExpiryText describes when a rule ends: "until unlocked", "until end of day" or "until 02.01 15:04"
+func lockdownExpiryText(rule LockdownRule, now time.Time) string {
+	if rule.ExpiresAt == nil || *rule.ExpiresAt == "" {
+		return "until unlocked"
+	}
+	expiresAt, err := time.Parse(time.RFC3339, *rule.ExpiresAt)
+	if err != nil {
+		return "until " + *rule.ExpiresAt
+	}
+	loc := timezone
+	if loc == nil {
+		loc = time.Local
+	}
+	local := now.In(loc)
+	midnight := time.Date(local.Year(), local.Month(), local.Day()+1, 0, 0, 0, 0, loc)
+	if expiresAt.Equal(midnight) {
+		return "until end of day"
+	}
+	return "until " + formatTime(expiresAt, "02.01 15:04")
+}
+
+// FormatLockdownLines formats active rules as Markdown bullet lines, one per rule
+func FormatLockdownLines(rules []LockdownRule, now time.Time) string {
+	var sb strings.Builder
+	for _, rule := range rules {
+		sb.WriteString(fmt.Sprintf("• %s — %s\n", escapeMarkdown(lockdownScopeLabel(rule)), lockdownExpiryText(rule, now)))
+	}
+	return sb.String()
+}
+
+// FormatLockdownList formats the lockdown overview screen
+func FormatLockdownList(rules []LockdownRule, note string, now time.Time) string {
+	var sb strings.Builder
+	if note != "" {
+		sb.WriteString(note + "\n\n")
+	}
+	sb.WriteString("🔒 *Lockdowns*\n\n")
+	sb.WriteString("A lockdown stops matching sessions and blocks new ones (child app, bot, API). Time quotas are kept.\n\n")
+	if len(rules) == 0 {
+		sb.WriteString("No active lockdowns.\n")
+		return sb.String()
+	}
+	sb.WriteString("*Active:*\n")
+	sb.WriteString(FormatLockdownLines(rules, now))
+	return sb.String()
+}
+
+// FormatLockdownCreated formats the result of creating a lockdown rule
+func FormatLockdownCreated(result *CreateLockdownResult, now time.Time) string {
+	var sb strings.Builder
+	sb.WriteString("🔒 *Lockdown Enabled*\n\n")
+	sb.WriteString(fmt.Sprintf("%s — %s\n\n",
+		escapeMarkdown(lockdownScopeLabel(result.LockdownRule)), lockdownExpiryText(result.LockdownRule, now)))
+	sb.WriteString(fmt.Sprintf("Stopped %d session(s).\n", result.StoppedSessions))
+	if result.FailedSessions > 0 {
+		sb.WriteString(fmt.Sprintf("⚠️ %d session(s) could not be stopped. They will be ended automatically within a minute.\n",
+			result.FailedSessions))
+	}
+	sb.WriteString("\nTime quotas are kept.")
+	return sb.String()
+}
+
+// formatApprovedAt returns prefix + local approval time (e.g. " at 16:05"), or "" if unknown
+func formatApprovedAt(approval ChildApproval, prefix string) string {
+	if approval.ApprovedAt == nil || *approval.ApprovedAt == "" {
+		return ""
+	}
+	t, err := time.Parse(time.RFC3339, *approval.ApprovedAt)
+	if err != nil {
+		return ""
+	}
+	return prefix + formatTime(t, "15:04")
+}
+
+// FormatApprovals formats the "Approve day" screen
+func FormatApprovals(approvals *TodayApprovals, note string) string {
+	var sb strings.Builder
+	if note != "" {
+		sb.WriteString(note + "\n\n")
+	}
+	sb.WriteString("✅ *Approve day*\n\n")
+	if approvals.Required {
+		sb.WriteString("Approval is required today: children can start screen time only after you approve them " +
+			"(for example, after homework). Sessions you start from the bot do not need approval.\n\n")
+	} else {
+		sb.WriteString("Approval is not required today (weekend) — children can start on their own.\n\n")
+	}
+
+	if len(approvals.Children) == 0 {
+		sb.WriteString("No children configured.\n")
+		return sb.String()
+	}
+
+	for _, child := range approvals.Children {
+		name := escapeMarkdown(strings.TrimSpace(child.ChildEmoji + " " + child.ChildName))
+		if child.Approved {
+			sb.WriteString(fmt.Sprintf("✅ %s — approved%s\n", name, formatApprovedAt(child, " at ")))
+		} else {
+			sb.WriteString(fmt.Sprintf("⏳ %s — waiting\n", name))
+		}
+	}
+	return sb.String()
 }
 
 // calculateSessionEnd calculates when a session will end and how many minutes remain

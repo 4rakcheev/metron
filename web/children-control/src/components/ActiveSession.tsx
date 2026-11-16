@@ -11,17 +11,23 @@ interface ActiveSessionProps {
   onStop: () => void;
   onExtend: (minutes: number) => void;
   loading?: boolean;
-  lockdown?: boolean;
+  // When set, extending is not allowed and this hint is shown instead
+  extendBlockedReason?: string | null;
 }
 
-export function ActiveSession({ session, device, onStop, onExtend, loading, lockdown }: ActiveSessionProps) {
+export function ActiveSession({ session, device, onStop, onExtend, loading, extendBlockedReason }: ActiveSessionProps) {
   const [localRemaining, setLocalRemaining] = useState(session.remaining_minutes);
+  const [syncedRemaining, setSyncedRemaining] = useState(session.remaining_minutes);
   const [showExtendOptions, setShowExtendOptions] = useState(false);
+
+  // Reset the local countdown when the server value changes (adjust state during render)
+  if (session.remaining_minutes !== syncedRemaining) {
+    setSyncedRemaining(session.remaining_minutes);
+    setLocalRemaining(session.remaining_minutes);
+  }
 
   // Local countdown timer that updates every minute
   useEffect(() => {
-    setLocalRemaining(session.remaining_minutes);
-
     const interval = setInterval(() => {
       setLocalRemaining(prev => Math.max(0, prev - 1));
     }, 60000); // Update every minute
@@ -30,6 +36,7 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, lock
   }, [session.remaining_minutes]);
 
   const extendOptions = [5, 15, 30, 60];
+  const extendBlocked = !!extendBlockedReason;
 
   const handleExtend = (minutes: number) => {
     setShowExtendOptions(false);
@@ -56,10 +63,17 @@ export function ActiveSession({ session, device, onStop, onExtend, loading, lock
           <div className="text-base font-semibold opacity-95">remaining</div>
         </div>
 
-        {/* Action buttons (extending is blocked during lockdown, stopping stays available) */}
-        {!showExtendOptions || lockdown ? (
-          <div className={`grid ${lockdown ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
-            {!lockdown && (
+        {/* Extend blocked hint (lockdown, downtime, approval, locked device) */}
+        {extendBlocked && (
+          <div className="text-center text-sm font-semibold bg-white/15 rounded-2xl px-4 py-3 border border-white/20">
+            {extendBlockedReason}
+          </div>
+        )}
+
+        {/* Action buttons (extending can be blocked, stopping stays available) */}
+        {!showExtendOptions || extendBlocked ? (
+          <div className={`grid ${extendBlocked ? 'grid-cols-1' : 'grid-cols-2'} gap-3`}>
+            {!extendBlocked && (
               <button
                 onClick={() => setShowExtendOptions(true)}
                 disabled={loading}
