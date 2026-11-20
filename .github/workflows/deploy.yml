@@ -12,8 +12,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # ed25519 host key of the Metron VPS (ssh-keygen -lf), checked by every scp/ssh step
-  HOST_FINGERPRINT: SHA256:chQdxiPCd1K2Dd1exoINhsXMSoE610rhi+tu7GULum8
+  # ECDSA host key of the Metron VPS (ssh-keygen -lf): appleboy (Go x/crypto/ssh) asks for ECDSA
+  # before ed25519, so the ed25519 fingerprint never matched. Checked by every scp/ssh step.
+  HOST_FINGERPRINT: SHA256:XxqjkdqXWRRzhehL2xB7u5OoQJSx7ZX4iR5X9+LYZDg
 
 jobs:
   build:
